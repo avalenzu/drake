@@ -1,4 +1,4 @@
-function  [H,C] = HandC( model, q, qd, f_ext, grav_accn )
+function  [C] = G( model, q, grav_accn )
 
 % HandC  Calculate coefficients of equation of motion.
 % [H,C]=HandC(model,q,qd,f_ext,grav_accn) calculates the coefficients of
@@ -18,6 +18,7 @@ function  [H,C] = HandC( model, q, qd, f_ext, grav_accn )
 %
 % UPDATED by russt:  f_ext is an empty or (sparse) 6 x model.NB matrix
 
+qd = zeros(size(q));
 
 if nargin < 5
   a_grav = [0;0;0;0;0;-9.81];
@@ -25,34 +26,23 @@ else
   a_grav = [0;0;0;grav_accn(1);grav_accn(2);grav_accn(3)];
 end
 
-external_force = ( nargin > 3 && length(f_ext) > 0 );
-
 for i = 1:model.NB
   %DEBUG
-  fprintf('First loop, body %d\n',i);
+%   fprintf('First loop, body %d\n',i);
   %END_DEBUG
   n = model.dofnum(i);
   [ XJ, S{i} ] = jcalc( model.pitch(i), q(n) );
-  vJ = S{i}*qd(n);
   Xup{i} = XJ * model.Xtree{i};
   if model.parent(i) == 0
-    v{i} = vJ;
     avp{i} = Xup{i} * -a_grav;
   else
-    v{i} = Xup{i}*v{model.parent(i)} + vJ;
-    avp{i} = Xup{i}*avp{model.parent(i)} + crm(v{i})*vJ;
+    avp{i} = Xup{i}*avp{model.parent(i)};
   end
   Xup{i} = cleanIfNecessary(Xup{i});
-  v{i} = cleanIfNecessary(v{i});
   avp{i} = cleanIfNecessary(avp{i});
-  fvp{i} = model.I{i}*avp{i} + crf(v{i})*model.I{i}*v{i};
-  if external_force
-    fvp{i} = fvp{i} - f_ext(:,i);
-  end
+  fvp{i} = model.I{i}*avp{i};
   fvp{i} = cleanIfNecessary(fvp{i});
 end
-
-IC = model.I;				% composite inertia calculation
 
 if any(cellfun(@(obj) isa(obj,'msspoly'), fvp))
   C = msspoly(zeros(model.NB,1)*q(1));
@@ -61,47 +51,16 @@ else
 end
 for i = model.NB:-1:1
   %DEBUG
-  fprintf('Second loop, body %d\n',i);
+%   fprintf('Second loop, body %d\n',i);
   %END_DEBUG
   n = model.dofnum(i);
   C(n,1) = S{i}' * fvp{i};
   if model.parent(i) ~= 0
-    fvp{model.parent(i)} = fvp{model.parent(i)} + Xup{i}'*fvp{i};
-    IC{model.parent(i)} = IC{model.parent(i)} + Xup{i}'*IC{i}*Xup{i};
-    fvp{model.parent(i)} = cleanIfNecessary(fvp{model.parent(i)});
-    IC{model.parent(i)} = cleanIfNecessary(IC{model.parent(i)});
+    fvp{model.parent(i)} = cleanIfNecessary(fvp{model.parent(i)} + Xup{i}'*fvp{i});
+%     fvp{model.parent(i)} = cleanIfNecessary(fvp{model.parent(i)});
   end
 end
 
-% minor adjustment to make TaylorVar work better.
-%H = zeros(model.NB);
-if any(cellfun(@(obj) isa(obj,'msspoly'), IC)) || any(cellfun(@(obj) isa(obj,'msspoly'), S))
-  H=msspoly(zeros(model.NB)*q(1));
-else
-  H=zeros(model.NB)*q(1);
-end
-
-for i = 1:model.NB
-  %DEBUG
-  fprintf('Third loop, body %d\n',i);
-  %END_DEBUG
-  n = model.dofnum(i);
-  fh = cleanIfNecessary(IC{i} * S{i});
-%   fh = cleanIfNecessary(fh);
-  H(n,n) = S{i}' * fh;
-%   H(n,n) = cleanIfNecessary(H(n,n));
-  j = i;
-  while model.parent(j) > 0
-    fh = Xup{j}' * fh;
-    j = model.parent(j);
-    np = model.dofnum(j);
-    H(n,np) = S{j}' * fh;
-    H(np,n) = H(n,np);
-%     H(n,np) = cleanIfNecessary(H(n,n));
-%     H(np,n) = cleanIfNecessary(H(n,n));
-  end
-%   C = cleanIfNecessary(C);
-end
 
 function p = cleanIfNecessary(p)
   [m,n] = size(p);
