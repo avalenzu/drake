@@ -70,12 +70,15 @@ function p = cleanIfNecessary(p)
       p = double(getmsspoly(p));
     else
       p = clean(p,tol);
+      % p(1)*0 is a hack to get us back to a TrigPoly if we started with one
+      p = p(1)*0 + mss_standardize_trig_power(getmsspoly(p),getCos(p),getSin(p));
     end
   elseif isa(p,'msspoly')
     if deg(p) == 0
       p = double(p);
     else
       p = clean(p,tol);
+      p = mss_standardize_trig_power(p,getCos(p),getSin(p));
     end
   else
     return;
