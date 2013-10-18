@@ -18,10 +18,10 @@ classdef AcrobotPlant < Manipulator
   
   methods
     function obj = AcrobotPlant
-      obj = obj@Manipulator(2,1);
+      obj = obj@Manipulator(2,2);
       obj = setInputLimits(obj,-10,10);
 
-      obj = setInputFrame(obj,CoordinateFrame('AcrobotInput',1,'u',{'tau'}));
+      obj = setInputFrame(obj,CoordinateFrame('AcrobotInput',2,'u',{'tau1','tau2'}));
       obj = setStateFrame(obj,CoordinateFrame('AcrobotState',4,'x',{'theta1','theta2','theta1dot','theta2dot'}));
       obj = setOutputFrame(obj,obj.getStateFrame);
       
@@ -62,7 +62,8 @@ classdef AcrobotPlant < Manipulator
       % accumate total C and add a damping term:
       C = C*qd + G + [b1;b2].*qd;
 
-      B = [0; 1];
+%       B = [0; 1];
+      B = eye(2);
     end
     
     % todo: also implement sodynamics here so that I can keep the
