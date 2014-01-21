@@ -5,8 +5,6 @@ warning('OFF','Drake:RigidBody:SimplifiedCollisionGeometry');
 rbm = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas.urdf',struct('floating',true));
 rbm_w_params = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas_param.urdf',struct('floating',true));
 warning(S);
-%rbm = RigidBodyManipulator('urdf/planar_quarter_atlas.urdf',struct('floating',true));
-%rbm_w_params = RigidBodyManipulator('urdf/planar_quarter_atlas_param.urdf',struct('floating',true));
 foot = length(rbm.body);
 foot_frame = RigidBodyFrame(foot,zeros(3,1),zeros(3,1),'foot_origin');
 rbm = addFrame(rbm,foot_frame);
@@ -19,26 +17,18 @@ nu = rbm.getNumInputs();
 % tsrbm = addSensor(tsrbm,encoders);
 %% Add sensors
 tsrbm = addSensor(tsrbm,FullStateFeedbackSensor());
-tsrbm_ft = addSensor(tsrbm,ContactForceTorqueSensor(tsrbm,foot_frame));
+tsrbm = addSensor(tsrbm,ContactForceTorqueSensor(tsrbm,foot_frame));
 tsrbm = compile(tsrbm);
-tsrbm_ft = compile(tsrbm_ft);
-delay = LinearSystem([],[],[],eye(tsrbm_ft.getNumOutputs()),eye(tsrbm_ft.getNumOutputs()),[]);
-delay = delay.setStateFrame(CoordinateFrame('DelayState',delay.getNumStates,'d'));
-delay = delay.setInputFrame(tsrbm_ft.getOutputFrame());
-delay = delay.setSampleTime(tsrbm_ft.getSampleTime());
-% sys_ft = cascade(tsrbm_ft,delay);
-sys_ft = tsrbm_ft;
+nx = tsrbm.getOutputFrame().getFrameByNum(1).dim;
+nf = tsrbm.getOutputFrame().getFrameByNum(2).dim;
 %%
 v = tsrbm.constructVisualizer();
 foot_pts = rbm.body(foot).getContactPoints();
-% foot_pts(2,[1,4]) = 1;
-% foot_pts(2,[2,3]) = -1;
 qsc = QuasiStaticConstraint(rbm);
 qsc = qsc.addContact(foot,foot_pts);
 qsc = qsc.setActive(true);
 qsc = qsc.setShrinkFactor(0.2);
 kc_foot = WorldPositionConstraint(rbm,foot,foot_pts,[nan(2,4);zeros(1,4)],[nan(2,4);zeros(1,4)]);
-%above_ground_kc = WorldCoMConstraint(rbm,[0;0;0],[0;0;Inf]);
 above_ground_kc = WorldCoMConstraint(rbm,[0;0;0],[0;Inf;Inf]);
 %%
 [joint_limits_min,joint_limits_max] = rbm.getJointLimits();
@@ -49,20 +39,14 @@ ikoptions = ikoptions.setMex(true);
 %%
 Kp = diag([5e3,5e3,1e4,1e4]);
 Kd = 1e-1*eye(nu);
-% Kd(4,4) = 1e4;
 %%
-sys_ft_pd = tsrbm.pdcontrol(Kp,Kd);
-[pdff,pdfb] = pdcontrol(tsrbm.getManipulator,Kp,Kp);
-%pdfb = LinearSystem([],[],[],[],[],[pdfb.D,zeros(4,6)]);
-% pdfb = LinearSystem([],[],[],[],[],[pdfb.D,zeros(4,3)]);
-% pdfb = pdfb.setInputFrame(sys_ft.getOutputFrame());
-% pdfb = pdfb.setOutputFrame(sys_ft.getInputFrame());
-% sys_ft_pd = cascade(pdff,feedback(sys_ft,pdfb));
+sys = tsrbm.pdcontrol(Kp,Kd);
 %%
-n = 100;
+n = 10;
 t_data = zeros(1,n);
 q_data = zeros(nq,n);
 ft_data = zeros(6,n);
+x_traj_data = cell(1,n);
 i = 1;
 while i < n
   fprintf('Iteration %d\n',i);
@@ -73,7 +57,6 @@ while i < n
   if info == 1
     try
       [xstar,ustar,success] = findFixedPoint(tsrbm,[q;zeros(nq,1)],zeros(nu,1));
-      %xstar(6) = 0;
     catch ex
       success = false;
     end
@@ -81,13 +64,9 @@ while i < n
     success = false;
   end
   if success
-    sys_ft_pd_qstar = cascade(ConstantTrajectory(Point(sys_ft_pd.getInputFrame,xstar(tsrbm_ft.getActuatedJoints))),sys_ft_pd);
-    %sys_pd = cascade(ConstantTrajectory(Point(sys_pd.getInputFrame(),xstar(tsrbm.getActuatedJoints))),sys_pd);
-    %u_traj = ConstantTrajectory(Point(tsrbm_ft.getInputFrame,ustar));
-    %u_traj = setOutputFrame(u_traj,getInputFrame(tsrbm_ft));
-    %sys_ft = cascade(u_traj,tsrbm_ft);
+    sys_sim = cascade(ConstantTrajectory(Point(sys.getInputFrame,xstar(tsrbm_ft.getActuatedJoints))),sys);
     try
-      [x_traj,y_traj] = simulate(sys_ft_pd_qstar,[0,1],[xstar]);
+      [x_traj,y_traj] = simulate(sys_sim,[0,1],[xstar]);
       x_traj_vis = PPTrajectory(foh(x_traj.tt,x_traj.xx(1:2*nq,:)));
       x_traj_vis = x_traj_vis.setOutputFrame(v.getInputFrame());
       v.playback(x_traj_vis)
@@ -96,19 +75,16 @@ while i < n
     end
   end
   if success
+    x_traj_data{i} = x_traj;
     q_data(:,i) = mean(x_traj.xx(1:nq,:),2);
     t_data(i) = mean(x_traj.tt);
-    ft_data(:,i) = mean(x_traj.xx(end-5:end,:),2);
+    ft_data(:,i) = mean(x_traj.xx(nx+(1:nf),:),2);
     kinsol = doKinematics(rbm,q_data(:,i));
     com = getCOM(rbm,kinsol);
-    %plot(com(1),com(2),'*');hold on;
-    %v.playback(x_traj);
     v.draw(0,xstar);
-    %plot(com(1),com(2),'*')
     i = i+1;
   else
     disp('Failed to find fixed point near this seed.');
   end
+  save('staticData','q_data','t_data','ft_data','i');
 end;
-q_data(6,:) = 0;
-save('staticData','q_data','t_data','ft_data');
