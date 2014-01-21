@@ -1,7 +1,8 @@
-<?xml version="1.0" ?>
-<robot xmlns="http://drake.mit.edu"
- xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
- xsi:schemaLocation="http://drake.mit.edu ../../../doc/drakeURDF.xsd" name="hatlas">
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="drc_skeleton">
+<!--<robot xmlns="http://drake.mit.edu"-->
+ <!--xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"-->
+ <!--xsi:schemaLocation="http://drake.mit.edu ../../../doc/drakeURDF.xsd" name="hatlas">-->
   <material name="LightGrey">
     <color rgba="0.8 0.8 0.8 1.0"/>
   </material>
@@ -23,12 +24,14 @@
   </link>
   <link name="Back">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0.98"/>
       <inertia ixx="0.0142307887763" ixy="0.0" ixz="0.0" iyy="0.0142307887763" iyz="0.0" izz="0.0232537942048"/>
     </inertial>
   </link>
-  <link name="Pelvis-link1">
+  <link name="Pelvis_link1">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="2.85"/>
       <inertia ixx="0.0167937478046" ixy="0.0" ixz="0.0" iyy="0.0130953182366" iyz="0.0" izz="0.0188435137939"/>
     </inertial>
@@ -40,8 +43,9 @@
       <material name="LightGrey"/>
     </visual>
   </link>
-  <link name="Pelvis-link2">
+  <link name="Pelvis_link2">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="2.85"/>
       <inertia ixx="0.0167937478046" ixy="0.0" ixz="0.0" iyy="0.0188435137939" iyz="0.0" izz="0.0130953182366"/>
     </inertial>
@@ -55,24 +59,28 @@
   </link>
   <link name="BackYaw_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0.98"/>
       <inertia ixx="0.0168406694011" ixy="0.0" ixz="0.0" iyy="0.0168406694011" iyz="0.0" izz="0.0284735554544"/>
     </inertial>
   </link>
   <link name="BackPitch_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0.98"/>
       <inertia ixx="0.0391167022824" ixy="0.0" ixz="0.0" iyy="0.0213060832327" iyz="0.0" izz="0.0230184023975"/>
     </inertial>
   </link>
   <link name="BackRoll_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0.98"/>
       <inertia ixx="0.0391167022824" ixy="0.0" ixz="0.0" iyy="0.0213060832327" iyz="0.0" izz="0.0230184023975"/>
     </inertial>
   </link>
   <link name="Torso">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="15.347"/>
       <inertia ixx="0.612575540743" ixy="0.0" ixz="0.0" iyy="0.333657611605" iyz="0.0" izz="0.360472879178"/>
     </inertial>
@@ -86,18 +94,21 @@
   </link>
   <link name="RHipYaw_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="3.38522222222"/>
       <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0" izz="0.00485710822221"/>
     </inertial>
   </link>
   <link name="RHipPitch_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="3.38522222222"/>
       <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0" izz="0.00485710822221"/>
     </inertial>
   </link>
   <link name="RHipRoll_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="3.38522222222"/>
       <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0" izz="0.00485710822221"/>
     </inertial>
@@ -111,6 +122,7 @@
   </link>
   <link name="RKneePitch_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="5.07783333333"/>
       <inertia ixx="0.0839686075882" ixy="0.0" ixz="0.0" iyy="0.0839686075882" iyz="0.0" izz="0.00728566233332"/>
     </inertial>
@@ -124,6 +136,7 @@
   </link>
   <link name="RAnklePitch_link">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="1.0"/>
       <inertia ixx="0.000313145101483" ixy="0.0" ixz="0.0" iyy="0.000313145101483" iyz="0.0" izz="0.0003125"/>
     </inertial>
@@ -137,12 +150,14 @@
   </link>
   <link name="RAnkle">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="1.0"/>
       <inertia ixx="0.000313145101483" ixy="0.0" ixz="0.0" iyy="0.000313145101483" iyz="0.0" izz="0.0003125"/>
     </inertial>
   </link>
   <link name="RFoot">
     <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="2.0"/>
       <inertia ixx="0.0006375" ixy="0.0" ixz="0.0" iyy="0.00509955043915" iyz="0.0" izz="0.00566205043915"/>
     </inertial>
@@ -154,25 +169,25 @@
       <material name="LightGrey"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="-0.025 0.03 0"/>
+      <origin rpy="0 0 0" xyz="-0.025 0.3 0"/>
       <geometry>
         <sphere radius="0"/>
       </geometry>
     </collision>
     <collision>
-      <origin rpy="0 0 0" xyz="-0.025 -0.03 0"/>
+      <origin rpy="0 0 0" xyz="-0.025 -0.3 0"/>
       <geometry>
         <sphere radius="0"/>
       </geometry>
     </collision>
     <collision>
-      <origin rpy="0 0 0" xyz="0.199276512 -0.03 0"/>
+      <origin rpy="0 0 0" xyz="0.199276512 -0.3 0"/>
       <geometry>
         <sphere radius="0"/>
       </geometry>
     </collision>
     <collision>
-      <origin rpy="0 0 0" xyz="0.199276512 0.03 0"/>
+      <origin rpy="0 0 0" xyz="0.199276512 0.3 0"/>
       <geometry>
         <sphere radius="0"/>
       </geometry>
@@ -222,25 +237,25 @@
     <joint name="BackRoll"/>
     <mechanicalReduction>1</mechanicalReduction>
   </transmission>
-  <joint name="BackRoll_Torso_joint" type="fixed">
+  <joint name="BackRol_Torso_joint" type="fixed">
     <child link="Torso"/>
     <parent link="BackRoll_link"/>
     <origin rpy="0 0 0" xyz="0 0 0"/>
   </joint>
   <joint name="Back_Pelvis_Joint" type="fixed">
     <parent link="Back"/>
-    <child link="Pelvis-link1"/>
+    <child link="Pelvis_link1"/>
     <origin rpy="0 0 0" xyz="0 0 0"/>
   </joint>
   <joint name="Mid_Pelvis_Joint" type="fixed">
-    <parent link="Pelvis-link1"/>
-    <child link="Pelvis-link2"/>
+    <parent link="Pelvis_link1"/>
+    <child link="Pelvis_link2"/>
     <origin rpy="0 0 0" xyz="0 0 -0.152491948"/>
   </joint>
   <joint name="RHipYaw" type="revolute">
-    <parent link="Pelvis-link2"/>
+    <parent link="Pelvis_link2"/>
     <child link="RHipYaw_link"/>
-    <origin rpy="0 0 0" xyz="0 -0.10892282 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit effort="110" lower="-1.2217304757" upper="0.1745329251" velocity="3"/>
     <dynamics damping="1" friction="10"/>

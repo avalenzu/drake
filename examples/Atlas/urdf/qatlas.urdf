@@ -240,7 +240,7 @@
     <joint name="BackRoll"/>
     <mechanicalReduction>1</mechanicalReduction>
   </transmission>
-  <joint name="BackRoll_Torso_joint" type="fixed">
+  <joint name="Torso_joint" type="fixed">
     <child link="Torso"/>
     <parent link="BackRoll_link"/>
     <origin rpy="0 0 0" xyz="0 0 0"/>
