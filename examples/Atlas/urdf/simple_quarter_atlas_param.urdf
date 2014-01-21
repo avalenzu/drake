@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="drc_skeleton">
+<!--<robot xmlns="http://drake.mit.edu"-->
+ <!--xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"-->
+ <!--xsi:schemaLocation="http://drake.mit.edu ../../../doc/drakeURDF.xsd" name="hatlas">-->
+  <material name="LightGrey">
+      <color rgba="0.8 0.8 0.8 1.0"/>
+  </material>
+  <material name="Grey">
+      <color rgba="0.6 0.6 0.6 1.0"/>
+  </material>
+  <material name="DarkGrey">
+      <color rgba="0.3 0.3 0.3 1.0"/>
+  </material>
+  <material name="Black">
+      <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+  <parameter name="m__base_link" value="0.01"/>
+  <parameter name="com_x__base_link" value="0"/>
+  <parameter name="com_y__base_link" value="0"/>
+  <parameter name="com_z__base_link" value="0"/>
+  <link name="base_link">
+      <inertial>
+         <origin xyz="$com_x__base_link $com_y__base_link $com_z__base_link"/>
+         <mass value="$m__base_link"/>
+         <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+      </inertial>
+  </link>
+  <parameter name="m__Back" value="0.98"/>
+  <parameter name="com_x__Back" value="0"/>
+  <parameter name="com_y__Back" value="0"/>
+  <parameter name="com_z__Back" value="0"/>
+  <link name="Back">
+      <inertial>
+         <origin xyz="$com_x__Back $com_y__Back $com_z__Back"/>
+         <mass value="$m__Back"/>
+         <inertia ixx="0.0142307887763" ixy="0.0" ixz="0.0" iyy="0.0142307887763" iyz="0.0"
+                  izz="0.0232537942048"/>
+      </inertial>
+  </link>
+  <parameter name="m__Pelvis_link1" value="2.85"/>
+  <parameter name="com_x__Pelvis_link1" value="0"/>
+  <parameter name="com_y__Pelvis_link1" value="0"/>
+  <parameter name="com_z__Pelvis_link1" value="0"/>
+  <link name="Pelvis_link1">
+      <inertial>
+         <origin xyz="$com_x__Pelvis_link1 $com_y__Pelvis_link1 $com_z__Pelvis_link1"/>
+         <mass value="$m__Pelvis_link1"/>
+         <inertia ixx="0.0167937478046" ixy="0.0" ixz="0.0" iyy="0.0130953182366" iyz="0.0"
+                  izz="0.0188435137939"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0 0 -0.076245974"/>
+         <geometry>
+            <cylinder length="0.112491948" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__Pelvis_link2" value="2.85"/>
+  <parameter name="com_x__Pelvis_link2" value="0"/>
+  <parameter name="com_y__Pelvis_link2" value="0"/>
+  <parameter name="com_z__Pelvis_link2" value="0"/>
+  <link name="Pelvis_link2">
+      <inertial>
+         <origin xyz="$com_x__Pelvis_link2 $com_y__Pelvis_link2 $com_z__Pelvis_link2"/>
+         <mass value="$m__Pelvis_link2"/>
+         <inertia ixx="0.0167937478046" ixy="0.0" ixz="0.0" iyy="0.0188435137939" iyz="0.0"
+                  izz="0.0130953182366"/>
+      </inertial>
+      <visual>
+         <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+         <geometry>
+            <cylinder length="0.17784564" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__BackYaw_link" value="0.98"/>
+  <parameter name="com_x__BackYaw_link" value="0"/>
+  <parameter name="com_y__BackYaw_link" value="0"/>
+  <parameter name="com_z__BackYaw_link" value="0"/>
+  <link name="BackYaw_link">
+      <inertial>
+         <origin xyz="$com_x__BackYaw_link $com_y__BackYaw_link $com_z__BackYaw_link"/>
+         <mass value="$m__BackYaw_link"/>
+         <inertia ixx="0.0168406694011" ixy="0.0" ixz="0.0" iyy="0.0168406694011" iyz="0.0"
+                  izz="0.0284735554544"/>
+      </inertial>
+  </link>
+  <parameter name="m__BackPitch_link" value="0.98"/>
+  <parameter name="com_x__BackPitch_link" value="0"/>
+  <parameter name="com_y__BackPitch_link" value="0"/>
+  <parameter name="com_z__BackPitch_link" value="0"/>
+  <link name="BackPitch_link">
+      <inertial>
+         <origin xyz="$com_x__BackPitch_link $com_y__BackPitch_link $com_z__BackPitch_link"/>
+         <mass value="$m__BackPitch_link"/>
+         <inertia ixx="0.0391167022824" ixy="0.0" ixz="0.0" iyy="0.0213060832327" iyz="0.0"
+                  izz="0.0230184023975"/>
+      </inertial>
+  </link>
+  <parameter name="m__BackRoll_link" value="0.98"/>
+  <parameter name="com_x__BackRoll_link" value="0"/>
+  <parameter name="com_y__BackRoll_link" value="0"/>
+  <parameter name="com_z__BackRoll_link" value="0"/>
+  <link name="BackRoll_link">
+      <inertial>
+         <origin xyz="$com_x__BackRoll_link $com_y__BackRoll_link $com_z__BackRoll_link"/>
+         <mass value="$m__BackRoll_link"/>
+         <inertia ixx="0.0391167022824" ixy="0.0" ixz="0.0" iyy="0.0213060832327" iyz="0.0"
+                  izz="0.0230184023975"/>
+      </inertial>
+  </link>
+  <parameter name="m__Torso" value="15.347"/>
+  <parameter name="com_x__Torso" value="0"/>
+  <parameter name="com_y__Torso" value="0"/>
+  <parameter name="com_z__Torso" value="0"/>
+  <link name="Torso">
+      <inertial>
+         <origin xyz="$com_x__Torso $com_y__Torso $com_z__Torso"/>
+         <mass value="$m__Torso"/>
+         <inertia ixx="0.612575540743" ixy="0.0" ixz="0.0" iyy="0.333657611605" iyz="0.0"
+                  izz="0.360472879178"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0.0 0.0 0.23927308"/>
+         <geometry>
+            <cylinder length="0.47854616" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__RHipYaw_link" value="3.38522222222"/>
+  <parameter name="com_x__RHipYaw_link" value="0"/>
+  <parameter name="com_y__RHipYaw_link" value="0"/>
+  <parameter name="com_z__RHipYaw_link" value="0"/>
+  <link name="RHipYaw_link">
+      <inertial>
+         <origin xyz="$com_x__RHipYaw_link $com_y__RHipYaw_link $com_z__RHipYaw_link"/>
+         <mass value="$m__RHipYaw_link"/>
+         <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0"
+                  izz="0.00485710822221"/>
+      </inertial>
+  </link>
+  <parameter name="m__RHipPitch_link" value="3.38522222222"/>
+  <parameter name="com_x__RHipPitch_link" value="0"/>
+  <parameter name="com_y__RHipPitch_link" value="0"/>
+  <parameter name="com_z__RHipPitch_link" value="0"/>
+  <link name="RHipPitch_link">
+      <inertial>
+         <origin xyz="$com_x__RHipPitch_link $com_y__RHipPitch_link $com_z__RHipPitch_link"/>
+         <mass value="$m__RHipPitch_link"/>
+         <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0"
+                  izz="0.00485710822221"/>
+      </inertial>
+  </link>
+  <parameter name="m__RHipRoll_link" value="3.38522222222"/>
+  <parameter name="com_x__RHipRoll_link" value="0"/>
+  <parameter name="com_y__RHipRoll_link" value="0"/>
+  <parameter name="com_z__RHipRoll_link" value="0"/>
+  <link name="RHipRoll_link">
+      <inertial>
+         <origin xyz="$com_x__RHipRoll_link $com_y__RHipRoll_link $com_z__RHipRoll_link"/>
+         <mass value="$m__RHipRoll_link"/>
+         <inertia ixx="0.0670316913245" ixy="0.0" ixz="0.0" iyy="0.0670316913245" iyz="0.0"
+                  izz="0.00485710822221"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0.0 0.0 -0.23927308"/>
+         <geometry>
+            <cylinder length="0.43854616" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__RKneePitch_link" value="5.07783333333"/>
+  <parameter name="com_x__RKneePitch_link" value="0"/>
+  <parameter name="com_y__RKneePitch_link" value="0"/>
+  <parameter name="com_z__RKneePitch_link" value="0"/>
+  <link name="RKneePitch_link">
+      <inertial>
+         <origin xyz="$com_x__RKneePitch_link $com_y__RKneePitch_link $com_z__RKneePitch_link"/>
+         <mass value="$m__RKneePitch_link"/>
+         <inertia ixx="0.0839686075882" ixy="0.0" ixz="0.0" iyy="0.0839686075882" iyz="0.0"
+                  izz="0.00728566233332"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0 0 -0.21784564"/>
+         <geometry>
+            <cylinder length="0.39569128" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__RAnklePitch_link" value="1"/>
+  <parameter name="com_x__RAnklePitch_link" value="0"/>
+  <parameter name="com_y__RAnklePitch_link" value="0"/>
+  <parameter name="com_z__RAnklePitch_link" value="0"/>
+  <link name="RAnklePitch_link">
+      <inertial>
+         <origin xyz="$com_x__RAnklePitch_link $com_y__RAnklePitch_link $com_z__RAnklePitch_link"/>
+         <mass value="$m__RAnklePitch_link"/>
+         <inertia ixx="0.000313145101483" ixy="0.0" ixz="0.0" iyy="0.000313145101483" iyz="0.0"
+                  izz="0.0003125"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0 0 -0.021695283"/>
+         <geometry>
+            <cylinder length="0.043390566" radius="0.025"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+  </link>
+  <parameter name="m__RAnkle" value="1"/>
+  <parameter name="com_x__RAnkle" value="0"/>
+  <parameter name="com_y__RAnkle" value="0"/>
+  <parameter name="com_z__RAnkle" value="0"/>
+  <link name="RAnkle">
+      <inertial>
+         <origin xyz="$com_x__RAnkle $com_y__RAnkle $com_z__RAnkle"/>
+         <mass value="$m__RAnkle"/>
+         <inertia ixx="0.000313145101483" ixy="0.0" ixz="0.0" iyy="0.000313145101483" iyz="0.0"
+                  izz="0.0003125"/>
+      </inertial>
+  </link>
+  <parameter name="m__RFoot" value="2"/>
+  <parameter name="com_x__RFoot" value="0"/>
+  <parameter name="com_y__RFoot" value="0"/>
+  <parameter name="com_z__RFoot" value="0"/>
+  <link name="RFoot">
+      <inertial>
+         <origin xyz="$com_x__RFoot $com_y__RFoot $com_z__RFoot"/>
+         <mass value="$m__RFoot"/>
+         <inertia ixx="0.0006375" ixy="0.0" ixz="0.0" iyy="0.00509955043915" iyz="0.0"
+                  izz="0.00566205043915"/>
+      </inertial>
+      <visual>
+         <origin rpy="0 0 0" xyz="0.087138256 0 0.0075"/>
+         <geometry>
+            <box size="0.224276512 0.06 0.015"/>
+         </geometry>
+         <material name="LightGrey"/>
+      </visual>
+      <collision>
+         <origin rpy="0 0 0" xyz="-0.025 0.03 0"/>
+         <geometry>
+            <sphere radius="0"/>
+         </geometry>
+      </collision>
+      <collision>
+         <origin rpy="0 0 0" xyz="-0.025 -0.03 0"/>
+         <geometry>
+            <sphere radius="0"/>
+         </geometry>
+      </collision>
+      <collision>
+         <origin rpy="0 0 0" xyz="0.199276512 -0.03 0"/>
+         <geometry>
+            <sphere radius="0"/>
+         </geometry>
+      </collision>
+      <collision>
+         <origin rpy="0 0 0" xyz="0.199276512 0.03 0"/>
+         <geometry>
+            <sphere radius="0"/>
+         </geometry>
+      </collision>
+  </link>
+  <joint name="base_joint" type="fixed">
+      <child link="Back"/>
+      <parent link="base_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <joint name="BackYaw" type="revolute">
+      <parent link="Back"/>
+      <child link="BackYaw_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0.0"/>
+      <axis xyz="0 0 1"/>
+      <limit effort="110" lower="-0.78539816295" upper="0.78539816295" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="BackYaw_trans" type="SimpleTransmission">
+      <actuator name="BackYawTorque"/>
+      <joint name="BackYaw"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="BackPitch" type="revolute">
+      <parent link="BackYaw_link"/>
+      <child link="BackPitch_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="180" lower="-0." upper="0.43633231275" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="BackPitch_trans" type="SimpleTransmission">
+      <actuator name="BackPitchTorque"/>
+      <joint name="BackPitch"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="BackRoll" type="revolute">
+      <parent link="BackPitch_link"/>
+      <child link="BackRoll_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit effort="100" lower="-0.6981317004" upper="0.6981317004" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="BackRoll_trans" type="SimpleTransmission">
+      <actuator name="BackRollTorque"/>
+      <joint name="BackRoll"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="BackRol_Torso_joint" type="fixed">
+      <child link="Torso"/>
+      <parent link="BackRoll_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <joint name="Back_Pelvis_Joint" type="fixed">
+      <parent link="Back"/>
+      <child link="Pelvis_link1"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <joint name="Mid_Pelvis_Joint" type="fixed">
+      <parent link="Pelvis_link1"/>
+      <child link="Pelvis_link2"/>
+      <origin rpy="0 0 0" xyz="0 0 -0.152491948"/>
+  </joint>
+  <joint name="RHipYaw" type="revolute">
+      <parent link="Pelvis_link2"/>
+      <child link="RHipYaw_link"/>
+      <origin rpy="0 0 0" xyz="0 -0.10892282 0"/>
+      <axis xyz="0 0 1"/>
+      <limit effort="110" lower="-1.2217304757" upper="0.1745329251" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="RHipYaw_trans" type="SimpleTransmission">
+      <actuator name="RHipYawTorque"/>
+      <joint name="RHipYaw"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="RHipPitch" type="revolute">
+      <parent link="RHipYaw_link"/>
+      <child link="RHipPitch_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="260" lower="-1.745329251" upper="0.3490658502" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="RHipPitch_trans" type="SimpleTransmission">
+      <actuator name="RHipPitchTorque"/>
+      <joint name="RHipPitch"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="RHipRoll" type="revolute">
+      <parent link="RHipPitch_link"/>
+      <child link="RHipRoll_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit effort="180" lower="-0.3490658502" upper="0.3490658502" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="RHipRoll_trans" type="SimpleTransmission">
+      <actuator name="RHipRollTorque"/>
+      <joint name="RHipRoll"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="RKneePitch" type="revolute">
+      <parent link="RHipRoll_link"/>
+      <child link="RKneePitch_link"/>
+      <origin rpy="0 0 0" xyz="0 0 -0.47854616"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="220" lower="0.0" upper="2.35619448885" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="RKneePitch_trans" type="SimpleTransmission">
+      <actuator name="RKneePitchTorque"/>
+      <joint name="RKneePitch"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="RAnklePitch" type="revolute">
+      <parent link="RKneePitch_link"/>
+      <child link="RAnklePitch_link"/>
+      <origin rpy="0 0 0" xyz="0 0 -0.43569128"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="220" lower="-0.6981317004" upper="0.6981317004" velocity="3"/>
+      <dynamics damping="1" friction="10"/>
+  </joint>
+  <transmission name="RAnklePitch_trans" type="SimpleTransmission">
+      <actuator name="RAnklePitchTorque"/>
+      <joint name="RAnklePitch"/>
+      <mechanicalReduction>1</mechanicalReduction>
+  </transmission>
+  <joint name="RAnkle_joint" type="fixed">
+      <parent link="RAnklePitch_link"/>
+      <child link="RAnkle"/>
+      <origin xyz="0 0 0"/>
+  </joint>
+  <joint name="RFoot_joint" type="fixed">
+      <parent link="RAnklePitch_link"/>
+      <child link="RFoot"/>
+      <origin xyz="0 0 -0.04519"/>
+  </joint>
+</robot>
