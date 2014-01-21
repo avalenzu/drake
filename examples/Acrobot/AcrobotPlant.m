@@ -28,10 +28,18 @@ classdef AcrobotPlant < Manipulator
       obj.xG = Point(obj.getStateFrame,[pi;0;0;0]);
       obj.uG = Point(obj.getInputFrame,0);
       
-      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',6,'p',...
-        { 'b1','b2','lc1','lc2','Ic1','Ic2' }));
-%      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',10,'p',...
-%        { 'l1','l2','m1','m2','b1','b2','lc1','lc2','I1','I2' }));
+%      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',6,'p',...
+%        { 'b1','b2','lc1','lc2','Ic1','Ic2' }));     
+%      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',6,'p',...
+%        { 'b1','b2','m1','m2','Ic1','Ic2' }));    
+%      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',2,'p',...
+%        { 'b1','b2' }));
+     %obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',10,'p',...
+%       { 'l1','l2','m1','m2','b1','b2','lc1','lc2','Ic1','Ic2' }));
+%    obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',9,'p',...
+%      { 'l1','m1','m2','b1','b2','lc1','lc2','Ic1','Ic2' }));
+     obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',8,'p',...
+       { 'm1','m2','b1','b2','lc1','lc2','Ic1','Ic2' }));
 %      obj = setParamFrame(obj,CoordinateFrame('AcrobotParams',1,'p',...
 %        { 'lc2' }));
       obj = setParamLimits(obj,zeros(obj.getParamFrame.dim,1));
@@ -149,7 +157,61 @@ classdef AcrobotPlant < Manipulator
 
     end
 
-    
+      
+      function V = getPotentialEnergy(obj,q)
+        q1 = q(1); q2 = q(2);
+        x_1 = [sin(q1);-cos(q1)];
+        r_c1 = obj.lc1*x_1;
+        r_1 = obj.l1*x_1;
+        x_2 = [sin(q1+q2); -cos(q1+q2)];
+        r_c2 = r_1 + obj.lc2*x_2;
+        V = (obj.m1*r_c1 + obj.m2*r_c2)'*[0;obj.g];
+      end
+      
+      function T = getKineticEnergy(obj,q,qd)
+        H = manipulatorDynamics(obj,q,qd);
+        T = qd'*H*qd;
+      end
+      
+      function [Kb,h_minimal] = getBaseInertialParameters(obj)
+        q=msspoly('q',obj.num_q);
+        s=msspoly('s',obj.num_q);
+        c=msspoly('c',obj.num_q);
+        qt=TrigPoly(q,s,c);
+        qd=msspoly('qd',obj.num_q);
+        E = obj.getTotalEnergy(qt,qd); 
+        [a,b,h]=decomp(getmsspoly(E),[q;s;c;qd]);
+        coeff = msspoly(ones(size(b,1),1));
+        deg_zero_ind=-1;
+        for i=1:size(b,1)
+          % would use prod(a'.^b(i,:)) if msspoly implemented prod (bug 1712)
+          for k=find(b(i,:))
+            coeff(i) = coeff(i).*(a(k)^b(i,k));
+          end
+          if (deg(coeff(i))==0)
+            if (deg_zero_ind>0) error('should only get a single degree zero term'); end
+            deg_zero_ind = i;
+          end
+        end
+        
+        if (deg_zero_ind>0)
+          hb = h(:,deg_zero_ind)*double(coeff(deg_zero_ind));
+          h = h(:,[1:deg_zero_ind-1,deg_zero_ind+1:end]);
+          lp = coeff([1:deg_zero_ind-1,deg_zero_ind+1:end]);
+        else
+          hb = zeros(size(E,1));
+          lp = coeff;
+        end
+        h = h+0*qt(1); % There must be a better way to go from msspoly to TrigPoly . . .
+        [beta,independent_idx] = baseParameters(h);
+        Kb = beta*lp;
+        h_minimal = h(independent_idx);
+      end
+      
+      function E = getTotalEnergy(obj,q,qd)
+        E = obj.getPotentialEnergy(q) + obj.getKineticEnergy(q,qd);
+      end
+      
   end
   
 end
