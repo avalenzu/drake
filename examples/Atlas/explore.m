@@ -22,69 +22,78 @@ tsrbm = compile(tsrbm);
 nx = tsrbm.getOutputFrame().getFrameByNum(1).dim;
 nf = tsrbm.getOutputFrame().getFrameByNum(2).dim;
 %%
-v = tsrbm.constructVisualizer();
+% v = tsrbm.constructVisualizer();
+% v.debug = true;
 foot_pts = rbm.body(foot).getContactPoints();
 qsc = QuasiStaticConstraint(rbm);
 qsc = qsc.addContact(foot,foot_pts);
 qsc = qsc.setActive(true);
-qsc = qsc.setShrinkFactor(0.2);
+qsc = qsc.setShrinkFactor(0.7);
 kc_foot = WorldPositionConstraint(rbm,foot,foot_pts,[nan(2,4);zeros(1,4)],[nan(2,4);zeros(1,4)]);
 above_ground_kc = WorldCoMConstraint(rbm,[0;0;0],[0;Inf;Inf]);
 %%
 [joint_limits_min,joint_limits_max] = rbm.getJointLimits();
-joint_limits_min(4:6) = -pi/10;
-joint_limits_max(4:6) = pi/10;
+% joint_limits_min(4:6) = -pi/10;
+% joint_limits_max(4:6) = pi/10;
 ikoptions = IKoptions(rbm);
 ikoptions = ikoptions.setMex(true);
+cost = Point(rbm.getStateFrame(),1);
+cost.base_z = 0;
+cost.base_relative_pitch = 0;
+ikoptions = ikoptions.setQ(diag(cost(1:nq)));
 %%
 Kp = diag([5e3,5e3,1e4,1e4]);
 Kd = 1e-1*eye(nu);
 %%
 sys = tsrbm.pdcontrol(Kp,Kd);
 %%
-n = 10;
+n = 1000;
 t_data = zeros(1,n);
 q_data = zeros(nq,n);
-ft_data = zeros(6,n);
+ft_data = zeros(3,n);
 x_traj_data = cell(1,n);
 i = 1;
 while i < n
+  tic;
   fprintf('Iteration %d\n',i);
-  q_nom = rand(nq,1).*(joint_limits_max - joint_limits_min) + ...
-          joint_limits_min;q_nom(1:3) = [0,0,1]';
+  q_nom = Point(rbm.getStateFrame(), ...
+                [rand(nq,1).*(joint_limits_max - joint_limits_min) + joint_limits_min; ...
+                zeros(nq,1)]);
+  q_nom.base_x = 0;
+  q_nom.base_z = 1;
+  q_nom.base_relative_pitch = 0;
+%     v.draw(0,q_nom);
+  
   %[q,info] = inverseKin(rbm,q_nom,q_nom,qsc,kc_foot,above_ground_kc,ikoptions);
-  [q,info] = inverseKin(rbm,q_nom,q_nom,qsc,kc_foot,ikoptions);
+  [q,info] = inverseKin(rbm,q_nom(1:nq),q_nom(1:nq),qsc,kc_foot,ikoptions);
+  x0 = inFrame(Point(rbm.getStateFrame(),[q;zeros(size(q))]),tsrbm.getStateFrame());
+  xstar = x0;
   if info == 1
-    try
-      [xstar,ustar,success] = findFixedPoint(tsrbm,[q;zeros(nq,1)],zeros(nu,1));
-    catch ex
-      success = false;
-    end
+    success = true;
+%     try
+%       [xstar,ustar,success] = findFixedPoint(tsrbm,x0,zeros(nu,1));
+%     catch ex
+%       success = false;
+%     end
   else
     success = false;
   end
   if success
-    sys_sim = cascade(ConstantTrajectory(Point(sys.getInputFrame,xstar(tsrbm_ft.getActuatedJoints))),sys);
+    sys_sim = cascade(ConstantTrajectory(Point(sys.getInputFrame,xstar(tsrbm.getActuatedJoints))),sys);
     try
-      [x_traj,y_traj] = simulate(sys_sim,[0,1],[xstar]);
-      x_traj_vis = PPTrajectory(foh(x_traj.tt,x_traj.xx(1:2*nq,:)));
-      x_traj_vis = x_traj_vis.setOutputFrame(v.getInputFrame());
-      v.playback(x_traj_vis)
+      [x_traj,y_traj] = simulate(sys_sim,[0,5],[xstar]);
+%       x_traj_vis = PPTrajectory(foh(x_traj.tt,x_traj.xx));
+%       x_traj_vis = x_traj_vis.setOutputFrame(v.getInputFrame());
+%       v.playback(x_traj_vis)
     catch ex
       success = false;
     end
   end
   if success
     x_traj_data{i} = x_traj;
-    q_data(:,i) = mean(x_traj.xx(1:nq,:),2);
-    t_data(i) = mean(x_traj.tt);
-    ft_data(:,i) = mean(x_traj.xx(nx+(1:nf),:),2);
-    kinsol = doKinematics(rbm,q_data(:,i));
-    com = getCOM(rbm,kinsol);
-    v.draw(0,xstar);
-    i = i+1;
   else
     disp('Failed to find fixed point near this seed.');
   end
-  save('staticData','q_data','t_data','ft_data','i');
+  save('staticData','x_traj_data');
+  toc;
 end;
