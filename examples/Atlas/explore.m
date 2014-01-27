@@ -2,8 +2,8 @@ rng(3)
 S = warning('OFF','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
 warning('OFF','Drake:RigidBodyManipulator:UnsupportedJointLimits');
 warning('OFF','Drake:RigidBody:SimplifiedCollisionGeometry');
-rbm = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas.urdf',struct('floating',true));
-rbm_w_params = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas_param.urdf',struct('floating',true));
+rbm = PlanarRigidBodyManipulator('urdf/planar_quarter_atlas.urdf',struct('floating',true));
+rbm_w_params = PlanarRigidBodyManipulator('urdf/planar_quarter_atlas_param.urdf',struct('floating',true));
 warning(S);
 foot = length(rbm.body);
 foot_frame = RigidBodyFrame(foot,zeros(3,1),zeros(3,1),'foot_origin');
@@ -29,7 +29,7 @@ qsc = QuasiStaticConstraint(rbm);
 qsc = qsc.addContact(foot,foot_pts);
 qsc = qsc.setActive(true);
 qsc = qsc.setShrinkFactor(0.7);
-kc_foot = WorldPositionConstraint(rbm,foot,foot_pts,[nan(2,4);zeros(1,4)],[nan(2,4);zeros(1,4)]);
+kc_foot = WorldPositionConstraint(rbm,foot,foot_pts,[nan(2,size(foot_pts,2));zeros(1,size(foot_pts,2))],[nan(2,size(foot_pts,2));zeros(1,size(foot_pts,2))]);
 above_ground_kc = WorldCoMConstraint(rbm,[0;0;0],[0;Inf;Inf]);
 %%
 [joint_limits_min,joint_limits_max] = rbm.getJointLimits();
