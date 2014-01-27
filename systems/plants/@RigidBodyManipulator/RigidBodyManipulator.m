@@ -1594,6 +1594,65 @@ classdef RigidBodyManipulator < Manipulator
         parent.linkname=[parent.linkname,'+',body.linkname];
         
         % add inertia into parent
+        if isfield(body.param_bindings,'I') || isfield(parent.param_bindings,'I')
+            if isfield(body.param_bindings,'I')
+              body_I = body.param_bindings.I;
+            else
+              body_I = body.I;
+            end
+            if isfield(parent.param_bindings,'I')
+              parent_I = parent.param_bindings.I;
+            else
+              parent_I = parent.I;
+            end
+            parent.param_bindings.I = parent_I + body.Xtree'*body_I*body.Xtree;
+          end
+          if isfield(body.param_bindings,'com') || isfield(parent.param_bindings,'com')
+            if isfield(body.param_bindings,'mass')
+              body_mass = body.param_bindings.mass;
+            else
+              body_mass = body.mass;
+            end
+            if isfield(parent.param_bindings,'mass')
+              parent_mass = parent.param_bindings.mass;
+            else
+              parent_mass = parent.mass;
+            end
+            if isfield(body.param_bindings,'com')
+              body_com = body.param_bindings.com;
+            else
+              body_com = body.com;
+            end
+            if isfield(parent.param_bindings,'com')
+              parent_com = parent.param_bindings.com;
+            else
+              parent_com = parent.com;
+            end
+            try
+              parent.param_bindings = (parent_mass*parent_com + body_mass*body.Ttree(1:3,:)*[body_com;1])/(parent_mass+body_mass);
+            catch ex
+              if (~isfield(parent.param_bindings,'mass') && parent.mass == 0)
+                parent.param_bindings.com = body.Ttree(1:3,:)*[body_com;1];
+              elseif (~isfield(body.param_bindings,'mass') && body.mass == 0)
+              else
+                error('Drake:RigidBodyManipulator:removeFixedJoints:badParameterizedCom', ...
+                  'I cannot parameterize the com of the newly welded link with an msspoly');
+              end
+            end
+          end
+          if isfield(body.param_bindings,'mass') || isfield(parent.param_bindings,'mass')
+            if isfield(body.param_bindings,'mass')
+              body_mass = body.param_bindings.mass;
+            else
+              body_mass = body.mass;
+            end
+            if isfield(parent.param_bindings,'mass')
+              parent_mass = parent.param_bindings.mass;
+            else
+              parent_mass = parent.mass;
+            end
+            parent.param_bindings.mass = parent_mass + body_mass;
+          end
         if (any(any(body.I))) 
             %Check before running setInertial() that the body doesn't have added-mass
             %coefficients (I haven't written up the welding support for that yet - JSI)
