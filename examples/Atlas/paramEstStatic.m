@@ -27,7 +27,7 @@ s = msspoly('s',nq);
 c = msspoly('c',nq);
 q_trig = TrigPoly(q,s,c);
 ft = msspoly('ft',nf);
-p = msspoly('p',rbm_w_params.getNumParams());
+p = rbm.getParamFrame().poly;
 
 %% Set parameters to msspoly values
 rbm_w_params = rbm_w_params.setParams(p);
@@ -49,7 +49,7 @@ p_orig = double(rbm.getParams());
 lp_orig = full(msubs(lp,p,double(p_orig)));
 chi_orig = full(msubs(chi,p,double(p_orig)));
 
-p_guess = p_orig + 2e-1*(2*rand(np,1)-1).*p_orig;
+p_guess = p_orig + 5e-1*(2*rand(np,1)-1).*(p_orig+1);
 lp_guess = double(subs(lp,p,p_guess));
 chi_guess = double(subs(chi,p,p_guess));
 %% Populate regression matrices
