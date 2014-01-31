@@ -83,29 +83,31 @@ N_beta = null(full(beta)');
 lp_est = lp_guess + R_betaT*((beta*R_betaT)\(chi_est - beta*lp_guess));
 
 %% Display error
-chi_error = 100*abs((double(chi_est) - chi_orig)./chi_orig);
-chi_guess_error = 100*abs((double(chi_guess) - chi_orig)./chi_orig);
-lp_error = 100*abs((double(lp_est) - lp_orig)./lp_orig);
-lp_guess_error = 100*abs((double(lp_guess) - lp_orig)./lp_orig);
-% phat = rbm.lumpedToOriginalParams(p,p_guess,np,lp,lp_est,nlp);
-% p_error = 100*abs((double(phat) - p_orig)./p_orig);
-p_guess_error = 100*abs((double(p_guess) - p_orig)./p_orig);coords = getCoordinateNames(getParamFrame(rbm));
+chi_error = double(chi_est) - chi_orig;
+chi_guess_error = double(chi_guess) - chi_orig;
+lp_error = double(lp_est) - lp_orig;
+lp_guess_error = double(lp_guess) - lp_orig;
+phat = rbm.lumpedToOriginalParams(p,p_guess,np,lp,lp_est,nlp);
+p_error = double(phat) - p_orig;
+p_guess_error = double(p_guess) - p_orig;
+coords = getCoordinateNames(getParamFrame(rbm));
+%%
 fprintf('\nIdentifiable parameter estimation results:\n\n');
 fprintf('  Param  \tActual  \tGuess   \tEstimated\tError (guess)\tError (estimate)\n');
 fprintf('  -----  \t------  \t--------\t---------\t-------------\t----------------\n');
 for i=1:nchi
-  fprintf('%7d  \t%8.2f\t%8.2f\t%8.2f\t%8.2f%%\t%8.2f%%\n',i,chi_orig(i),chi_guess(i),chi_est(i),chi_guess_error(i),chi_error(i));
+  fprintf('%7d  \t%8.2f\t%8.2f\t%8.2f\t%8.2f\t%8.2f\n',i,chi_orig(i),chi_guess(i),chi_est(i),chi_guess_error(i),chi_error(i));
 end
   
 fprintf('\nMonomial estimation results:\n\n');
 fprintf('  Param  \tActual  \tGuess   \tEstimated\tError (guess)\tError (estimate)\n');
 fprintf('  -----  \t------  \t--------\t---------\t-------------\t----------------\n');
 for i=1:nlp
-  fprintf('%7d  \t%8.2f\t%8.2f\t%8.2f\t%8.2f%%\t%8.2f%%\n',i,lp_orig(i),lp_guess(i),lp_est(i),lp_guess_error(i),lp_error(i));
+  fprintf('%7d  \t%8.2f\t%8.2f\t%8.2f\t%8.2f\t%8.2f\n',i,lp_orig(i),lp_guess(i),lp_est(i),lp_guess_error(i),lp_error(i));
 end
-% fprintf('\nParameter estimation results:\n\n');
-% fprintf('  Param  \tActual  \tGuess   \tEstimated\tError (guess)\tError (estimate)\n');
-% fprintf('  -----  \t------  \t--------\t---------\t-------------\t----------------\n');
-% for i=1:length(coords)
-%   fprintf('%7s  \t%8.2f\t%8.2f\t%8.2f\t%8.2f%%\t%8.2f%%\n',coords{i},p_orig(i),p_guess(i),phat(i),p_guess_error(i),p_error(i));
-% end
+fprintf('\nParameter estimation results:\n\n');
+fprintf('  Param  \tActual  \tGuess   \tEstimated\tError (guess)\tError (estimate)\n');
+fprintf('  -----  \t------  \t--------\t---------\t-------------\t----------------\n');
+for i=1:length(coords)
+  fprintf('%7s  \t%8.2f\t%8.2f\t%8.2f\t%8.2f\t%8.2f\n',coords{i},p_orig(i),p_guess(i),phat(i),p_guess_error(i),p_error(i));
+end
