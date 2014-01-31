@@ -35,7 +35,7 @@ if (deg_zero_ind>0)
   coeff_mat = coeff_mat(:,[1:deg_zero_ind-1,deg_zero_ind+1:end]);
   lin_params = coeff([1:deg_zero_ind-1,deg_zero_ind+1:end]);
 else
-  offsets = zeros(size(expr,1));
+  offsets = zeros(size(expr));
   lin_params = coeff;
 end
 if isTrigPoly
