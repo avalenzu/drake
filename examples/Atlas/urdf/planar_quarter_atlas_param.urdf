@@ -84,13 +84,10 @@
          <material name="LightGrey"/>
       </visual>
   </link>
-  <parameter name="m__foot" value="4"/>
-  <parameter name="com_x__foot" value="0"/>
-  <parameter name="com_z__foot" value="-0.0226"/>
   <link name="foot">
       <inertial>
-         <origin xyz="$com_x__foot 0 $com_z__foot"/>
-         <mass value="$m__foot"/>
+         <origin xyz="0 0 -0.0226"/>
+         <mass value="4"/>
          <inertia ixx="0.0033" ixy="0.0" ixz="0.0" iyy="0.0078" iyz="0.0" izz="0.0063"/>
       </inertial>
       <visual>
