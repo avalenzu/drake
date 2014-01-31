@@ -37,7 +37,8 @@ rbm_w_params = rbm_w_params.compile();
 G_msspoly = G(rbm_w_params.featherstone,q_trig);
 
 %% Compute the identifiable parameters
-[chi, W, rho,lp,beta] = identifiableParameters(G_msspoly(2:3),p);
+rows_of_interest = 2:3;
+[chi, W, rho,lp,beta] = identifiableParameters(G_msspoly(rows_of_interest),p);
 
 %% Compute actual parameter values
 nlp = length(lp);
@@ -60,18 +61,21 @@ W_raw = full(msubs(getmsspoly(W_col),[q;s;c],[q_data;s_data;c_data])');
 W_data = reshape(W_raw',nchi,[])';
 rho_col = reshape(rho',[],1);
 rho_data = full(msubs(getmsspoly(rho_col),[q;s;c],[q_data;s_data;c_data]));
-Y_data = zeros(2,n);
+Y_data = zeros(size(W,1),n);
 for i = 1:n
   kinsol = doKinematics(rbm,q_data(:,i));
   [pos_foot,J_foot] = forwardKin(rbm,kinsol,rbm.findFrameId(foot_frame.name),[0;0;0],1);
-  J_foot([2,4,6],:) = [];J_foot = J_foot(:,2:3);
+  J_foot([2,4,6],:) = [];J_foot = J_foot(:,rows_of_interest);
   Y_data(:,i) = J_foot'*ft_data(:,i);
 end
-Y_data = reshape(Y_data,[],1);
 
 %% Estimate identifiable parameters
-idx_good = (Y_data - W_data*chi_orig).^2 < 200;
-chi_est = W_data(idx_good,:)\Y_data(idx_good);
+%idx_good = (Y_data - W_data*chi_orig).^2 < 200;
+%idx_good = 1:n;
+idx_good = ft_data(2,:) > 0;
+Y_data = reshape(Y_data(:,idx_good),[],1);
+rho_data = reshape(rho_data(:,idx_good),[],1);
+chi_est = W_data(reshape(repmat(idx_good,size(W,1),1),[],1),:)\(Y_data-rho_data);
 
 %% Estimate monomials
 R_betaT = orth(full(beta)');
