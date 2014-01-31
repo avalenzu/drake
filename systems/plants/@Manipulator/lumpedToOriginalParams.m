@@ -39,10 +39,30 @@ if ~isempty(irrelevant_params)
 %  p_map = 1:np;
 end
 
-[pmin,pmax] = getParamLimits(obj);
-assert(all(pmin>=0));  % otherwise I'll have to subtract it out from the coordinates
+% [pmin,pmax] = getParamLimits(obj);
+% assert(all(pmin>=0));  % otherwise I'll have to subtract it out from the coordinates
 %  not hard, just not implmented yet.
-qpopt = optimset('Display','iter');
+
+% Find negative elements of lp
+idx_neg = lp_est < 0;
+
+% Find mass parameters. These must be positive
+idx_mass = cellfun(@(x)~isempty(x),regexp(obj.getParamFrame().coordinates,'\<m__'));
+p_neg = decomp(lp(idx_neg),p(idx_mass));
+idx_p_neg = zeros(length(p_neg),1);
+for i=1:length(p_neg), 
+  for j=1:np, 
+    if spot_isequal(p_neg(i),p(j)), 
+      idx_p_neg(i) = j; 
+    end;
+  end;
+end;
+
+% Replace lp(idx_neg) with -lp(idx_neg). Now y(idx_neg) = log(-p(idx_neg))
+lp_est(idx_neg) = -lp_est(idx_neg);
+
+% Solve
+% qpopt = optimset('Display','iter');
 % [log_p_est,~,exitflag] = quadprog(eye(np),-log(p_orig),[],[],A,log(lp_est),log(pmin),log(pmax),log(p_orig),qpopt);
 
 R_AT = orth(full(A)');
@@ -50,10 +70,13 @@ N_A = null(full(A)');
 log_p_est = log(p_orig) + R_AT*((A*R_AT)\(log(lp_est) - A*log(p_orig)));
 
 % log_p_est = full(A\log(lp_est));
+phat_bar = real(exp(log_p_est));
+phat_bar(idx_p_neg) = -phat_bar(idx_p_neg);
+
 exitflag = 1;
 if (exitflag~=1)
   warning('quadprog exitflag = %d',exitflag);
 end
 
-phat = Point(getParamFrame(obj),exp(log_p_est));
+phat = Point(getParamFrame(obj),phat_bar);
 end
