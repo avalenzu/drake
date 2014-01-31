@@ -76,7 +76,7 @@ end
 % minor adjustment to make TaylorVar work better.
 %H = zeros(model.NB);
 if any(cellfun(@(obj) isa(obj,'msspoly'), IC)) || any(cellfun(@(obj) isa(obj,'msspoly'), S))
-  H=msspoly(zeros(model.NB)*q(1));
+  H=zeros(model.NB)*q(1);
 else
   H=zeros(model.NB)*q(1);
 end
@@ -111,6 +111,8 @@ function p = cleanIfNecessary(p)
       p = double(getmsspoly(p));
     else
       p = clean(p,tol);
+      % p(1)*0 is a hack to get us back to a TrigPoly if we started with one
+      p = p(1)*0 + mss_standardize_trig_power(getmsspoly(p),getCos(p),getSin(p));
     end
   elseif isa(p,'msspoly')
     if deg(p) == 0
