@@ -1,12 +1,12 @@
 %% Create manipulator
 S = warning('OFF','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
 warning('OFF','Drake:RigidBodyManipulator:UnsupportedJointLimits');
+warning('OFF','Drake:RigidBodyManipulator:UnsupportedContactPoints');
 warning('OFF','Drake:RigidBody:SimplifiedCollisionGeometry');
 % rbm = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas.urdf',struct('floating',true));
 % rbm_w_params = PlanarRigidBodyManipulator('urdf/simple_quarter_atlas_param.urdf',struct('floating',true));
 rbm = PlanarRigidBodyManipulator('urdf/planar_quarter_atlas_param.urdf',struct('floating',true));
 rbm_w_params = PlanarRigidBodyManipulator('urdf/planar_quarter_atlas_param.urdf',struct('floating',true));
-warning(S);
 foot = length(rbm.body);
 foot_frame = RigidBodyFrame(foot,zeros(3,1),zeros(3,1),'foot_origin');
 rbm = addFrame(rbm,foot_frame);
@@ -19,6 +19,7 @@ nq = rbm.getNumDOF();
 nu = rbm.getNumInputs();
 nx = tsrbm.getOutputFrame().dim; % NOT 2*nq
 nf = tsrbm.getOutputFrame().getFrameByNum(2).dim;
+warning(S);
 
 %% Construct msspoly variables
 q = msspoly('q',nq);
