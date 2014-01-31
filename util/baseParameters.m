@@ -41,7 +41,7 @@ elseif isa(W,'TrigPoly')
   vars = [];
   for i = 1:size(W,1)
     fprintf('i = %d\n',i);
-    vars = mss_unique([vars;decomp(getmsspoly(W(i,:)),[q;s;c])]);
+    vars = spot_unique([vars;decomp(getmsspoly(W(i,:)),[q;s;c])]);
   end
   if r ~= 1
     W = reshape(W',[],1)';
