@@ -127,7 +127,7 @@ classdef MultiCoordinateFrame < CoordinateFrame
       end
     end
     
-    function tf = findTransform(obj,target,options)
+    function [tf,options] = findTransform(obj,target,options)
       % There are two ways to get a transform from this multiframe to
       % another frame.  One is if a transform exists directly from the
       % multi-frame.  The other is if the required transforms exist for ALL
