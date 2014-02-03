@@ -138,6 +138,7 @@ classdef MultiCoordinateFrame < CoordinateFrame
 
       opt2 = options;
       opt2.throw_error_if_fail=false;
+      opt2.depth = 1;
       tf = findTransform@CoordinateFrame(obj,target,opt2);
       if isempty(tf) && isa(target,'MultiCoordinateFrame')
         % this could only happen if the target is also a multiframe
