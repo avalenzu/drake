@@ -32,7 +32,7 @@ elseif isa(W,'msspoly')
   r = 10*m;
   data = rand(length(vars),r);
   W_data = reshape(msubs(W',vars,data),m,r*r_orig)';
-  [beta, independent_idx] = getBaseParameters(W_data);
+  [beta, independent_idx] = baseParameters(W_data);
 elseif isa(W,'TrigPoly')
   q = getVar(W);
   s = getSin(W);
