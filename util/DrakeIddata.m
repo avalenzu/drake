@@ -15,6 +15,34 @@ classdef DrakeIddata
       obj.data = data;
     end
 
+    function matching_names = iddataChannelNamesByRegexp(obj,expr)
+      % matching_names = iddataChannelNamesByRegexp(data, expr) - Returns a
+      % cell array of strings containing the names of the channels in `data`
+      % that match the regular expression `expr`.
+      %
+      % @param data - iddata object
+      % @param expr - String containing a regular expression
+      % @retval matching_names - Cell array of channel names that match expr
+      %
+
+      matching_names = regexp(obj.data.OutputName,expr,'match','once');
+      matching_names = obj.data.OutputName(strcmp(matching_names,obj.data.OutputName));
+    end
+
+    function varargout = subsref(obj,S)
+      if iscell(S.subs{2})
+        name_cell = {};
+        for i = 1:length(S.subs{2})
+          name_cell = [name_cell; iddataChannelNamesByRegexp(obj,S.subs{2}{i})];
+        end
+        S.subs{2} = unique(name_cell,'stable');
+      elseif ischar(S.subs{2})
+        S.subs{2} = iddataChannelNamesByRegexp(obj,S.subs{2});
+      end
+      [varargout{1:nargout}] = subsref(obj.data,S);
+
+    end
+
     function varargout = abs(obj,varargin)
       [varargout{1:nargout}] = abs(obj.data,varargin{:});
     end
@@ -65,10 +93,6 @@ classdef DrakeIddata
 
     function varargout = setid(obj,varargin)
       [varargout{1:nargout}] = setid(obj.data,varargin{:});
-    end
-
-    function varargout = subsref(obj,varargin)
-      [varargout{1:nargout}] = subsref(obj.data,varargin{:});
     end
 
     function varargout = uset(obj,varargin)
