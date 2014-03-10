@@ -2,9 +2,12 @@ function data = indexIddataByTime(data,tspan)
   if iscell(data)
     for i=1:length(data)
       data{i} = indexIddataByTime(data{i},tspan);
+      if ~iscell(data{i})
+        data{i} = data(i);
+      end
     end
     data = data(cellfun(@(x)~isempty(x),data));
-    data = reshape([data{cellfun(@(x)~isempty(x),data)}], ...
+    data = reshape([data{:}], ...
                    length(data{1}),length(data));
   else
     typecheck(data,'iddata');
