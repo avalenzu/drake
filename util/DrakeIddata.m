@@ -10,9 +10,13 @@ classdef DrakeIddata
     data;
   end
   methods
-    function obj = DrakeIddata(data)
-      typecheck(data,'iddata');
-      obj.data = data;
+    function obj = DrakeIddata(varargin)
+      if nargin == 1
+        typecheck(varargin{1},'iddata');
+        obj.data = varargin{1};
+      else
+        obj.data = iddata(varargin{:});
+      end
     end
 
     function matching_names = iddataChannelNamesByRegexp(obj,expr)
@@ -30,19 +34,40 @@ classdef DrakeIddata
     end
 
     function varargout = subsref(obj,S)
-      if iscell(S.subs{2})
-        name_cell = {};
-        for i = 1:length(S.subs{2})
-          name_cell = [name_cell; iddataChannelNamesByRegexp(obj,S.subs{2}{i})];
+      for i = 1:length(S)
+        if iscell(S(i).subs)
+          if iscell(S(i).subs{2})
+            name_cell = {};
+            for i = 1:length(S(i).subs{2})
+              name_cell = [name_cell; iddataChannelNamesByRegexp(obj,S(i).subs{2}{i})];
+            end
+            S(i).subs{2} = unique(name_cell,'stable');
+          elseif ischar(S(i).subs{2})
+            S(i).subs{2} = iddataChannelNamesByRegexp(obj,S(i).subs{2});
+          end
         end
-        S.subs{2} = unique(name_cell,'stable');
-      elseif ischar(S.subs{2})
-        S.subs{2} = iddataChannelNamesByRegexp(obj,S.subs{2});
       end
       [varargout{1:nargout}] = subsref(obj.data,S);
 
     end
 
+    function ind = end(obj,k,n)
+      szd = size(obj.data);
+      if k <= n
+        ind = szd(k);
+      else
+        error('DrakeIddata:end','k must be less than or equal to n');
+      end
+    end
+
+    function data = merge(obj,varargin)
+      data_cell = [{obj.data},cellfun(@(x)x.data,varargin,'UniformOutput',false)];
+      data = DrakeIddata(merge(data_cell{:}));
+    end
+
+  end
+
+  methods % Pure passthroughs
     function varargout = abs(obj,varargin)
       [varargout{1:nargout}] = abs(obj.data,varargin{:});
     end
@@ -211,15 +236,6 @@ classdef DrakeIddata
       [varargout{1:nargout}] = detrend(obj.data,varargin{:});
     end
 
-    function ind = end(obj,k,n)
-      szd = size(obj.data);
-      if k <= n
-        ind = szd(k);
-      else
-        error('DrakeIddata:end','k must be less than or equal to n');
-      end
-    end
-
     function varargout = fieldnames(obj,varargin)
       [varargout{1:nargout}] = fieldnames(obj.data,varargin{:});
     end
@@ -234,10 +250,6 @@ classdef DrakeIddata
 
     function varargout = isnan(obj,varargin)
       [varargout{1:nargout}] = isnan(obj.data,varargin{:});
-    end
-
-    function varargout = merge(obj,varargin)
-      [varargout{1:nargout}] = merge(obj.data,varargin{:});
     end
 
     function varargout = realdata(obj,varargin)
