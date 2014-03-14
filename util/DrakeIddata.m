@@ -19,6 +19,41 @@ classdef DrakeIddata
       end
     end
 
+    function data = getIddata(obj)
+      data = obj.data;
+    end
+
+    function data_out = minus(data1,data2,output_name)
+      if size(data1,4) ~= size(data2,4)
+        error('minusIddata:NumExperiments', ...
+          'Arguments must have the same number of experiments');
+      elseif any(size(data1,1) ~= size(data2,1));
+        error('minusIddata:NumSamples', ...
+          'Arguments must contain the same number of samples for each experiment');
+      elseif iscell(data1.data.Ts) && any(cell2mat(data1.data.Ts) ~= cell2mat(data2.data.Ts));
+        error('minusIddata:SamplingTime', ...
+          'Arguments must have the same samplng time for each experiments');
+      elseif size(data1,2) ~= size(data2,2)
+        error('minusIddata:NumOutputs', ...
+          'Arguments must contain the same number of outputs');
+      end
+      n_experiments = size(data1,4);
+      data_cell = cell(n_experiments,1);
+      for i = 1:n_experiments
+        minus_data = data1(:,:,:,i).data.OutputData - data2(:,:,:,i).data.OutputData;
+        if iscell(data1.data.Ts) 
+          Ts = data1.data.Ts{i};
+        else
+          Ts = data1.data.Ts;
+        end
+        data_cell{i} = DrakeIddata(minus_data,[],Ts);
+      end
+      data_out = merge(data_cell{:});
+      if nargin >= 3
+        data_out = DrakeIddata(data_out.data.OutputData,[],data_out.Ts,'OutputName',cellStrCat(output_name,'_',num2cellStr(1:size(data_out,2))));
+      end
+    end
+
     function matching_names = iddataChannelNamesByRegexp(obj,expr)
       % matching_names = iddataChannelNamesByRegexp(data, expr) - Returns a
       % cell array of strings containing the names of the channels in `data`
@@ -33,22 +68,22 @@ classdef DrakeIddata
       matching_names = obj.data.OutputName(strcmp(matching_names,obj.data.OutputName));
     end
 
-    function varargout = subsref(obj,S)
+    function data = subsref(obj,S)
       for i = 1:length(S)
-        if iscell(S(i).subs)
+        if iscell(S(i).subs) && length(S(i).subs) >=2 
           if iscell(S(i).subs{2})
             name_cell = {};
-            for i = 1:length(S(i).subs{2})
-              name_cell = [name_cell; iddataChannelNamesByRegexp(obj,S(i).subs{2}{i})];
+            for j = 1:length(S(i).subs{2})
+              name_cell = [name_cell; iddataChannelNamesByRegexp(obj,S(i).subs{2}{j})];
             end
             S(i).subs{2} = unique(name_cell,'stable');
-          elseif ischar(S(i).subs{2})
+          elseif ischar(S(i).subs{2}) && ~strcmp(S(i).subs{2},':')
             S(i).subs{2} = iddataChannelNamesByRegexp(obj,S(i).subs{2});
           end
         end
       end
-      [varargout{1:nargout}] = subsref(obj.data,S);
-
+      data = subsref(obj.data,S);
+      if isa(data,'iddata'), data  = DrakeIddata(data); end;
     end
 
     function ind = end(obj,k,n)
@@ -63,6 +98,11 @@ classdef DrakeIddata
     function data = merge(obj,varargin)
       data_cell = [{obj.data},cellfun(@(x)x.data,varargin,'UniformOutput',false)];
       data = DrakeIddata(merge(data_cell{:}));
+    end
+
+    function data = horzcat(obj,varargin)
+      data_cell = [{obj.data},cellfun(@(x)x.data,varargin,'UniformOutput',false)];
+      data = DrakeIddata(horzcat(data_cell{:}));
     end
 
   end
@@ -204,10 +244,6 @@ classdef DrakeIddata
       [varargout{1:nargout}] = getTrend(obj.data,varargin{:});
     end
 
-    function varargout = horzcat(obj,varargin)
-      [varargout{1:nargout}] = horzcat(obj.data,varargin{:});
-    end
-
     function varargout = ifft(obj,varargin)
       [varargout{1:nargout}] = ifft(obj.data,varargin{:});
     end
@@ -311,5 +347,82 @@ classdef DrakeIddata
     function varargout = unwrap(obj,varargin)
       [varargout{1:nargout}] = unwrap(obj.data,varargin{:});
     end
+
+    %function out = Domain(obj)
+      %out = obj.data.Domain;
+    %end
+    
+    %function out = Name(obj)
+      %out = obj.data.Name;
+    %end
+    
+    %function out = OutputData(obj)
+      %out = obj.data.OutputData;
+    %end
+    
+    %function out = OutputName(obj)
+      %out = obj.data.OutputName;
+    %end
+    
+    %function out = OutputUnit(obj)
+      %out = obj.data.OutputUnit;
+    %end
+    
+    %function out = InputData(obj)
+      %out = obj.data.InputData;
+    %end
+    
+    %function out = InputName(obj)
+      %out = obj.data.InputName;
+    %end
+    
+    %function out = InputUnit(obj)
+      %out = obj.data.InputUnit;
+    %end
+    
+    %function out = Period(obj)
+      %out = obj.data.Period;
+    %end
+    
+    %function out = InterSample(obj)
+      %out = obj.data.InterSample;
+    %end
+    
+    %function out = Ts(obj)
+      %out = obj.data.Ts;
+    %end
+    
+    %function out = Tstart(obj)
+      %out = obj.data.Tstart;
+    %end
+    
+    %function out = SamplingInstants(obj)
+      %out = obj.data.SamplingInstants;
+    %end
+    
+    %function out = TimeUnit(obj)
+      %out = obj.data.TimeUnit;
+    %end
+    
+    %function out = ExperimentName(obj)
+      %out = obj.data.ExperimentName;
+    %end
+
+    %function out = Notes(obj)
+      %out = obj.data.Notes;
+    %end
+    
+    %function out = UserData(obj)
+      %out = obj.data.UserData;
+    %end
+    
+    %function out = Version(obj)
+      %out = obj.data.Version;
+    %end
+
+    %function out = Utility(obj)
+      %out = obj.data.Utility;
+    %end
+
   end
 end
