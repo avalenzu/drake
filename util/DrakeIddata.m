@@ -23,6 +23,38 @@ classdef DrakeIddata
       data = obj.data;
     end
 
+    function obj = setOutputData(obj,new_output_data,varargin)
+      for i = 1:length(varargin)
+        if ischar(varargin{i}) && ~strcmp(varargin{i},':')
+          varargin{i} = iddataChannelNamesByRegexp(obj,varargin{i});
+        end
+      end
+      S(1).type = '()';
+      S(1).subs = varargin;
+      S(2).type = '.';
+      S(2).subs = 'OutputData';
+      obj.data = subsasgn(obj.data,S,new_output_data);
+    end
+
+    function data_out = power(data_in,exponent,output_name)
+      n_experiments = size(data_in,4);
+      data_cell = cell(n_experiments,1);
+      for i = 1:n_experiments
+        power_data = data_in.data(:,:,:,i).OutputData.^exponent;
+        if iscell(data1.data.Ts) 
+          Ts = data1.data.Ts{i};
+        else
+          Ts = data1.data.Ts;
+        end
+        data_cell{i} = DrakeIddata(power_data,[],Ts);
+      end
+      data_out = merge(data_cell{:});
+      if nargin >= 3
+        data_out = DrakeIddata(data_out.data.OutputData,[],data_out.Ts,'OutputName',cellStrCat(output_name,'_',num2cellStr(1:size(data_out,2))));
+      end
+
+    end
+
     function data_out = minus(data1,data2,output_name)
       if size(data1,4) ~= size(data2,4)
         error('minusIddata:NumExperiments', ...
@@ -40,7 +72,7 @@ classdef DrakeIddata
       n_experiments = size(data1,4);
       data_cell = cell(n_experiments,1);
       for i = 1:n_experiments
-        minus_data = data1(:,:,:,i).data.OutputData - data2(:,:,:,i).data.OutputData;
+        minus_data = data1.data(:,:,:,i).OutputData - data2.data(:,:,:,i).OutputData;
         if iscell(data1.data.Ts) 
           Ts = data1.data.Ts{i};
         else
