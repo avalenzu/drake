@@ -1,4 +1,4 @@
-classdef FootStepConstraint < SingleTimeKinematicConstraint
+classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
   % Based on the constraint on the robot x,y and yaw, transcribe it to full body kinematic
   % constraint.
   % @param A,b,C,d are the constraints on the x,y and yaw of the foot. A is a m x 3
@@ -37,7 +37,7 @@ classdef FootStepConstraint < SingleTimeKinematicConstraint
   end
   
   methods
-    function obj = FootStepConstraint(robot,A,b,C,d,body,body_pt,z_offset,ground_normal,ground_pt,tspan)
+    function obj = FootStepRegionConstraint(robot,A,b,C,d,body,body_pt,z_offset,ground_normal,ground_pt,tspan)
       % @param A,b,C,d are the constraints on the x,y and yaw of the foot. A is a m x 3
       % matrix, b is m x 1 vector. C is a 3 x 3 positive definite matrix, d is a 3 x 1 vector. 
       % A[x;y;yaw] <= b is the half-space constraint on x,y and yaw.
@@ -55,65 +55,65 @@ classdef FootStepConstraint < SingleTimeKinematicConstraint
       % [-inf,inf]
       obj = obj@SingleTimeKinematicConstraint(robot,tspan);
       if(~isnumeric(A))
-        error('Drake:FootStepConstraint:A should be numeric');
+        error('Drake:FootStepRegionConstraint:A should be numeric');
       end
       A_size = size(A);
       obj.num_halfspace = A_size(1);
       if(A_size(2) ~= 3 || length(A_size) ~= 2)
-        error('Drake:FootStepConstraint: A should be a m x 3 matrix');
+        error('Drake:FootStepRegionConstraint: A should be a m x 3 matrix');
       end
       obj.A = A;
       if(~isnumeric(b))
-        error('Drake:FootStepConstraint: b should be numeric');
+        error('Drake:FootStepRegionConstraint: b should be numeric');
       end
       sizecheck(b,[obj.num_halfspace,1]);
       obj.b = b;
       if(~isnumeric(C) || any(eig(C))<epsilon)
-        error('Drake:FootStepConstraint: C should be a positive matrix');
+        error('Drake:FootStepRegionConstraint: C should be a positive matrix');
       end
       sizecheck(C,[3,3]);
       obj.C = C;
       obj.inv_C = inverse(obj.C);
       if(~isnumeric(d))
-        error('Drake:FootStepConstraint: d should be numeric');
+        error('Drake:FootStepRegionConstraint: d should be numeric');
       end
       sizecheck(d,[3,1]);
       obj.d = d;
       if(~isnumeric(body))
-        error('Drake:FootStepConstraint:body should be numeric');
+        error('Drake:FootStepRegionConstraint:body should be numeric');
       end
       sizecheck(body,[1,1]);
       obj.body = floor(body);
       obj.body_name = obj.robot.getBody(obj.body).linkname;
       if(~isnumeric(body_pt))
-        error('Drake:FootStepConstraint:body_pt should be numeric');
+        error('Drake:FootStepRegionConstraint:body_pt should be numeric');
       end
       sizecheck(body_pt,[3,1]);
       obj.body_pt = body_pt;
       if(~isnumeric(z_offset))
-        error('Drake:FootStepConstraint:z_offset should be numeric');
+        error('Drake:FootStepRegionConstraint:z_offset should be numeric');
       end
       sizecheck(z_offset,[1,1]);
       if(z_offset<0)
-        error('Drake:FootStepConstraint:z_offset should be non-negative');
+        error('Drake:FootStepRegionConstraint:z_offset should be non-negative');
       end
       obj.z_offset = z_offset;
       if(~isnumeric(ground_normal))
-        error('Drake:FootStepConstraint:ground_normal should be numeric');
+        error('Drake:FootStepRegionConstraint:ground_normal should be numeric');
       end
       sizecheck(ground_normal,[3,1]);
       norm_ground_normal = norm(ground_normal);
       if(norm_ground_normal<epsilon)
-        error('Drake:FootStepConstraint:ground_normal should be non-zero');
+        error('Drake:FootStepRegionConstraint:ground_normal should be non-zero');
       end
       obj.ground_normal = ground_normal/norm_ground_normal;
        if(~isnumeric(ground_pt))
-        error('Drake:FootStepConstraint:ground_pt should be numeric');
+        error('Drake:FootStepRegionConstraint:ground_pt should be numeric');
       end
       sizecheck(ground_pt,[3,1]);
       obj.ground_pt = ground_pt;
       obj = obj.setUseHalfSpaceConstraint(true);
-      obj.type = RigidBodyConstraint.FootStepConstraintType;
+      obj.type = RigidBodyConstraint.FootStepRegionConstraintType;
     end
     
     function obj = setUseHalfSpaceConstraint(obj,flag)
@@ -121,7 +121,7 @@ classdef FootStepConstraint < SingleTimeKinematicConstraint
       % halfspace A[x;y;yaw] <= b. False if the [x;y;yaw] is constrained by ellipsoidal
       % constraint ([x;y;yaw]-d)^T(C^-TC^-1)([x;y;yaw]-d) <= 1
       if(~islogical(flag))
-        error('Drake:FootStepConstraint:setUseHalfSpaceConstraint:flag should be boolean');
+        error('Drake:FootStepRegionConstraint:setUseHalfSpaceConstraint:flag should be boolean');
       end
       sizecheck(flag,[1,1]);
       obj.halfspace_constraint = flag;
@@ -154,13 +154,13 @@ classdef FootStepConstraint < SingleTimeKinematicConstraint
         else
           t_str = sprintf(' at time %5.2f',t);
         end
-        normal_align_name = sprintf('FootStepConstraint align normal vector%s',t_str);
-        dist_name = sprintf('FootStepConstraint contact distance%s',t_str);
+        normal_align_name = sprintf('FootStepRegionConstraint align normal vector%s',t_str);
+        dist_name = sprintf('FootStepRegionConstraint contact distance%s',t_str);
         if(obj.halfspace_constraint)
-          half_space_name = {sprintf('FootStepConstraint halfspace%s',t_str)};
+          half_space_name = {sprintf('FootStepRegionConstraint halfspace%s',t_str)};
           xyyaw_name = half_space_name(ones(obj.num_halfspace,1),:);
         else
-          xyyaw_name = {sprintf('FootStepConstraint ellipsoidal%s',t_str)};
+          xyyaw_name = {sprintf('FootStepRegionConstraint ellipsoidal%s',t_str)};
         end
         name_str = [{normal_align_name};{dist_name};xyyaw_name];
       else
