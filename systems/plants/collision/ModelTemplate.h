@@ -178,7 +178,7 @@ namespace DrakeCollision
               //std::cout << "Body A found" << std::endl;
               //END_DEBUG
               //for (typename std::map<int,Body<ElementT>>::iterator itB=itA; itB!=bodies.end(); ++itB) {
-              for (typename std::vector<int>::const_iterator itB=itA; itB!=bodies_idx.end(); ++itB) {
+              for (typename std::vector<int>::const_iterator itB=std::next(itA); itB!=bodies_idx.end(); ++itB) {
                 //for (auto itB=bodies.begin(); itB!=bodies.end(); ++itB) {
                 if (bodies.count(*itB) > 0) {
                   //DEBUG
