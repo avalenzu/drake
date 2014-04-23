@@ -53,6 +53,9 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       % @param ground_pt      -- A 3 x 1 vector. A point on the ground plane
       % @param tspan     -- A 1 x 2 vector. The time span of the constraint. Default is
       % [-inf,inf]
+      if(nargin<11)
+        tspan = [-inf,inf];
+      end
       obj = obj@SingleTimeKinematicConstraint(robot,tspan);
       if(~isnumeric(A))
         error('Drake:FootStepRegionConstraint:A should be numeric');
@@ -68,12 +71,12 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       end
       sizecheck(b,[obj.num_halfspace,1]);
       obj.b = b;
-      if(~isnumeric(C) || any(eig(C))<epsilon)
+      if(~isnumeric(C) || any(eig(C))<eps)
         error('Drake:FootStepRegionConstraint: C should be a positive matrix');
       end
       sizecheck(C,[3,3]);
       obj.C = C;
-      obj.inv_C = inverse(obj.C);
+      obj.inv_C = inv(obj.C);
       if(~isnumeric(d))
         error('Drake:FootStepRegionConstraint: d should be numeric');
       end
@@ -103,7 +106,7 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       end
       sizecheck(ground_normal,[3,1]);
       norm_ground_normal = norm(ground_normal);
-      if(norm_ground_normal<epsilon)
+      if(norm_ground_normal<eps)
         error('Drake:FootStepRegionConstraint:ground_normal should be non-zero');
       end
       obj.ground_normal = ground_normal/norm_ground_normal;
@@ -171,6 +174,30 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
     function joint_idx = kinematicsPathJoints(obj)
       [~,joint_path] = obj.robot.findKinematicPath(1,obj.body);
       joint_idx = vertcat(obj.robot.body(joint_path).dofnum)';
+    end
+    
+    function T = bodyT(obj,x,y,yaw)
+      % given x,y position of the body_pt in the world frame and the yaw angle, return the
+      % homogeneous transform of the body
+      [rotmat,A,b] = obj.bodyTransform(yaw);
+      T = [rotmat A*[x;y]+b;0 0 0 1];
+    end
+    
+    function [rotmat,A,b] = bodyTransform(obj,yaw)
+      % Given the x,y position of obj.body_pt and yaw angle of the foot. The world
+      % coordinate of a point P is P_w = A*[x;y]+b+rotmat*P_b, where P_b is the coordinate
+      % of P in the body frame.
+      % @retval rotmat   A 3 x 3 rotation matrix
+      % @retval A,b    A is a 3 x 2 matrix and b is a 3 x 1 vector. A*[x;y]+b is the world
+      % coordinate of 0_b, where O_b is the origin in the body frame.
+      axis = cross([0;0;1],obj.ground_normal);
+      theta = asin(norm(axis));
+      axis = axis/norm(axis);
+      rotmat1 = axis2rotmat([axis;theta]);
+      rotmat2 = axis2rotmat([0;0;1;yaw]);
+      rotmat = rotmat1*rotmat2;
+      A = [1 0;0 1;-obj.ground_normal(1:2)'/obj.ground_normal(3)];
+      b = [0;0;(obj.z_offset+obj.ground_normal'*obj.ground_pt)/obj.ground_normal(3)]-rotmat*obj.body_pt;
     end
   end
   
