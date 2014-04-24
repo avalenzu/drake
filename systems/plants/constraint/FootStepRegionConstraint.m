@@ -191,9 +191,14 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       % @retval A,b    A is a 3 x 2 matrix and b is a 3 x 1 vector. A*[x;y]+b is the world
       % coordinate of 0_b, where O_b is the origin in the body frame.
       axis = cross([0;0;1],obj.ground_normal);
-      theta = asin(norm(axis));
-      axis = axis/norm(axis);
-      rotmat1 = axis2rotmat([axis;theta]);
+      axis_norm = norm(axis);
+      if(axis_norm<1e-3)
+        rotmat1 = eye(3);
+      else
+        theta = asin(axis_norm);
+        axis = axis/axis_norm;
+        rotmat1 = axis2rotmat([axis;theta]);
+      end
       rotmat2 = axis2rotmat([0;0;1;yaw]);
       rotmat = rotmat1*rotmat2;
       A = [1 0;0 1;-obj.ground_normal(1:2)'/obj.ground_normal(3)];

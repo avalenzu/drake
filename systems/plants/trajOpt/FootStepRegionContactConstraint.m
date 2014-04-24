@@ -37,7 +37,8 @@ classdef FootStepRegionContactConstraint
         error('number of edges must be positive in the linearized friction cone');
       end
       obj.num_edges = num_edges;
-      theta = linspace(0,2*pi,num_edges);
+      theta = linspace(0,2*pi,num_edges+1);
+      theta = theta(1:end-1);
       obj.edges = [cos(theta);sin(theta);ones(1,num_edges)];
       body_pts_size = size(body_contact_pts);
       if(length(body_pts_size) ~= 2 || body_pts_size(1) ~= 3)
@@ -57,7 +58,7 @@ classdef FootStepRegionContactConstraint
     
     function pos = contactPosition(obj,x,y,yaw)
       T = obj.foot_step_region_cnstr.bodyT(x,y,yaw);
-      pos = T*[obj.body_contact_pos;ones(1,obj.num_contact_pts)];
+      pos = T*[obj.body_contact_pts;ones(1,obj.num_contact_pts)];
       pos = pos(1:3,:);
     end
     
