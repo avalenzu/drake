@@ -60,5 +60,6 @@ p_step = p_step.setVarBounds(zeros(3,1),zeros(3,1),p_step.H_idx(:,1));
 F_edge = robot_mass*9.81/(2*4*num_edges);
 F = repmat({[{F_edge*ones(num_edges,4)};{F_edge*ones(num_edges,4)}]},1,length(t));
 tau = 1e10;
+
 [com,comdot,comddot,foot_pos,Hdot,H,tau] = p_step.solve(F,tau);
 end
