@@ -287,26 +287,28 @@ classdef FixedFootYawCoMPlanningPosition
       obj.x_ub(xind) = ub;
     end
     
-    function obj = obj.addKinematicPolygon(obj,fsrc_idx1,fsrc_idx2,A,b)
-      % add polygonal constraint A*[x1;y1;x2;y2]<=b on the contact bodies corresponding to
-      % obj.fsrc_cnstr{fsrc_idx1} and obj.fsrc_cnstr{fsrc_idx2}. Where [x1;y1] is the
-      % coordinate of the contact body in obj.fsrc_cnstr{fsrc_idx1} and [x2;y2] is the
-      % coordinate of the contact body in obj.fsrc_cnstr{fsrc_idx2}
-      % @param fsrc_idx1,fsrc_idx2. Both are integers. The kinematic constraint is on the
-      % bodies in obj.fsrc_cnstr{fsrc_idx1} and obj.fsrc_cnstr{fsrc_idx2}
-      % @param A    A n x 4 matrix.
+    function obj = addKinematicPolygon(obj,fsrc_idx,A,b)
+      % add polygonal constraint A*[x1;y1;x2;y2;...;xN;yN]<=b on the contact bodies corresponding to
+      % obj.fsrc_cnstr{fsrc_idx(1)}, obj.fsrc_cnstr{fsrc_idx(2)},...obj.fsrc_cnstr{fsrc_idx(N)}.
+      % where [x1;y1] is the position of the body in obj.fsrc_cnstr{fsrc_idx(1)}, and so
+      % on for [xi;yi]
+      % @param fsrc_idx  An integer vector. The kinematic constraint is on the
+      % bodies in obj.fsrc_cnstr{fsrc_idx(1)} obj.fsrc_cnstr{fsrc_idx(2)} and obj.fsrc_cnstr{fsrc_idx(N)}
+      % @param A    A n x (2*length(fsrc_idx)) matrix.
       % @param b    A n x 1 vector
-      if(~isnumeric(fsrc_idx1) || numel(fsrc_idx1) ~= 1 || ~isnumeric(fsrc_idx2) || numel(fsrc_idx2) ~= 1)
+      if(~isnumeric(fsrc_idx))
         error('Drake:FixedFootYawCoMPlanningPosition:fsrc_idx1 and fsrc_idx2 should be numeric scalar');
       end
+      num_fsrc = numel(fsrc_idx);
+      sizecheck(fsrc_idx,[1,num_fsrc]);
       if(~isnumeric(A) || ~isnumeric(b))
         error('Drake:FixedFootYawCoMPlanningPosition:A and b should be numeric');
       end
       num_cnstr = numel(b);
-      sizecheck(A,[num_cnstr,4]);
+      sizecheck(A,[num_cnstr,2*num_fsrc]);
       sizecheck(b,[num_cnstr,1]);
-      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,4)),[],1);
-      jA = reshape(bsxfun(@times,[obj.fsrc_body_pos_idx(:,fsrc_idx1)' obj.fsrc_body_pos_idx(:,fsrc_idx2)'],ones(num_cnstr,1)),[],1);
+      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,2*num_fsrc)),[],1);
+      jA = reshape(bsxfun(@times,reshape(obj.fsrc_body_pos_idx(:,fsrc_idx),1,[]),ones(num_cnstr,1)),[],1);
       obj.A_kin = [obj.A_kin;sparse(iA,jA,A(:),num_cnstr,obj.num_vars)];
       obj.b_kin = [obj.b_kin;b];
     end
