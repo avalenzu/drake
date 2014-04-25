@@ -1,90 +1,53 @@
 classdef FixedFootYawCoMPlanningPosition
   % 'P-step' of the alternative planning for CoM trajectory and force trajectory. This is
-  % a SOCP problem for linearized friction cone.
-  % @properties robot_mass  The mass of the robot
-  % @properties t_not     The time knot for planning
-  % @properties g         The gravitational acceleration
-  % @properties nT        The length of obj.t_knot
-  % @properties com_idx   A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at time
-  % t_knot(i) in the decision variable x
-  % @properties comdot_idx   A 3 x obj.nT matrix. x(comdot_idx(:,i)) is the CoM velocity at time
-  % t_knot(i) in the decision variable x
-  % @properties comddot_idx   A 3 x obj.nT matrix. x(comddot_idx(:,i)) is the CoM acceleration at time
-  % t_knot(i) in the decision variable x
-  % @properties H_idx         A 3 x obj.nT matrix. x(H_idx(:,i)) is the centroidal angular
-  % momentum at time t_knot(i)
-  % @properties Hdot_idx      A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of
-  % centroidal angular momentum at time t_knot(i)
-  % @properties epsilon_idx   A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of
-  % the PD law Hdot[i] = lambda*H[i]+epsilon[i]
-  % @properties tau_idx      An integer scalar. x(tau_idx) is the index of tau, which is
-  % the dummy variable used to bound the PD residue: sum_n epsilon[n]'*epsilon[n] <= tau
-  % @properties fscr_cnstr    a 1 X obj.nT cell. fscr_cnstr{i} is a cell containing all
-  % the FootStepContactRegionConstraint that is active at time t_knot(i)
-  % @properties contact_body_pos_idx  A 1 x obj.nT cell. x(contact_body_pos_idx{i}(:,j)) is the xy position
-  % of the contact body being active in obj.fscr_cnstr{i}{j} at time t_knot(i) 
-  % @properties x_lb    A obj.num_vars x 1 double vector. The lower bound for the decision
-  % variable x
-  % @properties x_ub    A obj.num_vars x 1 double vector. The upper bound for the decision
-  % variable x
-  % @properties Q_cost  A obj.num_vars x obj.num_vars sparse PSD matrix. The Hessian of
-  % the quadratic cost
-  % @properties A_iris,b_iris  A_iris * x <= b_iris is the union of all half space
-  % constraint on the foot location from iris
-  % @properties A_com,A_com_bnd   A_com * x = A_com_bnd is the constraint on the euler
-  % integration of CoM
-  % @properties A_H,A_H_bnd      A_H * x = A_H_bnd is the constraint on the euler
-  % integraton of angular momentum
-  % @properties A_angular_PD,A_angular_PD_bnd   A_angular_PD * x = A_angular_PD_bnd is the
-  % constraint Hdot[n] = lambda*H[n]+epsilon[n]
-  % @properties yaw    A cell array. yaw{i}(j) is the yaw angle for obj.fsrc_cnstr{i}{j}
+  % a SOCP problem for linearized friction cone.            
   properties(SetAccess = protected)
-    robot_mass
-    t_knot
-    g
-    nT
-    com_idx;
-    comdot_idx;
-    comddot_idx;
-    contact_body_pos_idx;
-    H_idx;
-    Hdot_idx
-    epsilon_idx
-    tau_idx
-    num_vars
-    x_names
-    fsrc_cnstr
-    x_lb
-    x_ub
-    Q_cost
-    A_iris
-    b_iris
-    A_com
-    A_com_bnd
-    A_H
-    A_H_bnd
-    A_angular_PD
-    A_angular_PD_bnd
-    yaw
+    robot_mass % The mass of the robot
+    t_knot % The time knot for planning
+    g % The gravitational acceleration
+    nT % The length of obj.t_knot
+    com_idx; % A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at time t_knot(i) in the decision variable x
+    comdot_idx; % A 3 x obj.nT matrix. x(comdot_idx(:,i)) is the CoM velocity at time t_knot(i) in the decision variable x
+    comddot_idx; % A 3 x obj.nT matrix. x(comddot_idx(:,i)) is the CoM acceleration at time t_knot(i) in the decision variable x
+    H_idx; %A 3 x obj.nT matrix. x(H_idx(:,i)) is the centroidal angular momentum at time t_knot(i)
+    Hdot_idx % A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of centroidal angular momentum at time t_knot(i)
+    epsilon_idx % A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of the PD law Hdot[i] = lambda*H[i]+epsilon[i]
+    tau_idx % An integer scalar. x(tau_idx) is the index of tau, which is the dummy variable used to bound the PD residue: sum_n epsilon[n]'*epsilon[n] <= tau  
+    num_vars % The total number of decision variables in the SOCP 
+    x_names % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
+    x_lb % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
+    x_ub % A obj.num_vars x 1 double vector. The upper bound for the decision variable x
+    Q_cost % A obj.num_vars x obj.num_vars sparse PSD matrix. The Hessian of the quadratic cost
+    A_iris,b_iris % A_iris * x <= b_iris is the union of all half space constraint on the foot location from iris
+    A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
+    A_H,A_H_bnd % A_H * x = A_H_bnd is the constraint on the euler integraton of angular momentum
+    A_angular_PD,A_angular_PD_bnd % A_angular_PD * x = A_angular_PD_bnd is the constraint Hdot[n] = lambda*H[n]+epsilon[n]
+    fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
+    fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
+    
+    time_fsrc_cnstr % a 1 X obj.nT cell. fscr_cnstr{i} is a cell containing all the FootStepContactRegionConstraint that is active at time t_knot(i)
+    time_contact_body_pos_idx; %  A 1 x obj.nT cell. x(time_contact_body_pos_idx{i}(:,j)) is the xy position of the contact body being active in obj.fscr_cnstr{i}{j} at time t_knot(i) 
+    time_yaw %  A cell array. yaw{i}(j) is the yaw angle for obj.time_fsrc_cnstr{i}{j}
+    A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
   end
   
   properties(Access = protected)
-    A_force % A cell array. A_force{i}{j} is a 3 x obj.fsrc_cnstr.num_edges matrix. A_force{i}{j}*w is the force on the linearized friction cone where w is the force weight.
-    A_xy,b_xy,rotmat  % A_xy,b_xy,rotmat are all cell arrays. [A_xy{i}{j},b_xy{i}{j},rotmat{i}{j}] = obj.fsrc_cnstr{i}{j}.bodyTransform(obj.yaw{i}(j))
+    A_force % A cell array. A_force{i}{j} is a 3 x obj.time_fsrc_cnstr.num_edges matrix. A_force{i}{j}*w is the force on the linearized friction cone where w is the force weight.
+    A_xy,b_xy,rotmat  % A_xy,b_xy,rotmat are all cell arrays. [A_xy{i}{j},b_xy{i}{j},rotmat{i}{j}] = obj.time_fsrc_cnstr{i}{j}.bodyTransform(obj.time_yaw{i}(j))
   end
   
   methods
     function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,varargin)
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,Q_Hdot,Q_H,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
-      % @properties robot_mass    The mass of the robot
-      % @properties t             The time knot for planning
-      % @properties lambda        A 3 x 3 Hurwitz matrix. It tries to drive the angular
+      % @param robot_mass    The mass of the robot
+      % @param t             The time knot for planning
+      % @param lambda        A 3 x 3 Hurwitz matrix. It tries to drive the angular
       % momentum stays at 0 by putting the constraint Hdot[n] = lambda*H[n]+epsilon[n]
-      % @properties Q_comddot     A 3 x 3 PSD matrix. The cost is sum_n
+      % @param Q_comddot     A 3 x 3 PSD matrix. The cost is sum_n
       % comddot[n]'*Q_comddot*comddot[n]+epsilon[n]'*epsilon[n]
-      % @properties foot_step_region_contact_cnstr    A FootStepRegionContactConstraint
-      % @properties yaw           A double scalar. The yaw angle of the foot
+      % @param foot_step_region_contact_cnstr    A FootStepRegionContactConstraint
+      % @param yaw           A double scalar. The yaw angle of the foot
       if(~isnumeric(robot_mass))
         error('Drake:FixedFootYawCoMPlanningPosition:robot mass should be numeric');
       end
@@ -154,9 +117,12 @@ classdef FixedFootYawCoMPlanningPosition
       obj.x_names = [obj.x_names;{'tau'}];
       obj.num_vars = obj.num_vars+1;
       
-      obj.fsrc_cnstr = cell(1,obj.nT);
-      obj.contact_body_pos_idx = cell(1,obj.nT);
-      obj.yaw = cell(1,obj.nT);
+      num_fsrc_cnstr = length(varargin)/2;
+      obj.fsrc_cnstr = cell(1,num_fsrc_cnstr);
+      obj.fsrc_body_pos_idx = zeros(2,num_fsrc_cnstr);
+      obj.time_fsrc_cnstr = cell(1,obj.nT);
+      obj.time_contact_body_pos_idx = cell(1,obj.nT);
+      obj.time_yaw = cell(1,obj.nT);
       obj.A_force = cell(1,obj.nT);
       obj.A_xy = cell(1,obj.nT);
       obj.b_xy = cell(1,obj.nT);
@@ -166,15 +132,17 @@ classdef FixedFootYawCoMPlanningPosition
       Aval_iris = [];
       obj.b_iris = [];
       num_halfspace_iris = 0;
-      for i = 1:(nargin-4)/2
+      for i = 1:num_fsrc_cnstr
         if(~isa(varargin{2*i-1},'FootStepRegionContactConstraint'))
           error('Drake:FixedFootYawCoMPlanningPosition:The input should be a FootStepRegionContactConstraint');
         end
         if(~isnumeric(varargin{2*i}))
           error('Drake:FixedFootYawCoMPlanningPosition:The input yaw angle should be a double');
         end
+        obj.fsrc_cnstr{i} = varargin{2*i-1};
         sizecheck(varargin{2*i},[1,1]);
         fsrc_pos_idx = obj.num_vars+(1:2)';
+        obj.fsrc_body_pos_idx(:,i) = fsrc_pos_idx;
         is_fsrc_active = false;
         A_iris_i = varargin{2*i-1}.foot_step_region_cnstr.A;
         b_iris_i = varargin{2*i-1}.foot_step_region_cnstr.b;
@@ -190,9 +158,9 @@ classdef FixedFootYawCoMPlanningPosition
           sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)}];
         for j = 1:obj.nT
           if(varargin{2*i-1}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
-            obj.fsrc_cnstr{j} = [obj.fsrc_cnstr{j} varargin(2*i-1)];
-            obj.contact_body_pos_idx{j} = [obj.contact_body_pos_idx{j} fsrc_pos_idx];
-            obj.yaw{j} = [obj.yaw{j} varargin{2*i}];
+            obj.time_fsrc_cnstr{j} = [obj.time_fsrc_cnstr{j} varargin(2*i-1)];
+            obj.time_contact_body_pos_idx{j} = [obj.time_contact_body_pos_idx{j} fsrc_pos_idx];
+            obj.time_yaw{j} = [obj.time_yaw{j} varargin{2*i}];
             obj.A_force{j} = [obj.A_force{j} {varargin{2*i-1}.force(varargin{2*i})}];
             [rotmat_ij,A_xy_ij,b_xy_ij] = varargin{2*i-1}.foot_step_region_cnstr.bodyTransform(varargin{2*i});
             obj.rotmat{j} = [obj.rotmat{j},{rotmat_ij}];
@@ -239,12 +207,17 @@ classdef FixedFootYawCoMPlanningPosition
       % bounds on decision variables x
       obj.x_lb = -inf(obj.num_vars,1);
       obj.x_ub = inf(obj.num_vars,1);
+      
+      % The kinematic constraint on the contact bodies will be set through function
+      % addKinematicPolygon
+      obj.A_kin = [];
+      obj.b_kin = [];
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,tau] = solve(obj,F,tau)
-      % @properties F     A cell array. F{i}{j} is the force parameters for
-      % obj.fsrc_cnstr{i}{j}
-      % @properties tau   A scalar. The upper bound for sum_n
+      % @param F     A cell array. F{i}{j} is the force parameters for
+      % obj.time_fsrc_cnstr{i}{j}
+      % @param tau   A scalar. The upper bound for sum_n
       % epsilon[n]'*epsilon[n]
       % @retval tau   A scalar. The updated value for sum_n epsilon[n]'*epsilon[n]
       if(~iscell(F) || length(F) ~= obj.nT)
@@ -256,22 +229,22 @@ classdef FixedFootYawCoMPlanningPosition
         F_i = zeros(3,1);
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3);
         for j = 1:length(obj.A_force{i})
-          num_contact_pts_ij = obj.fsrc_cnstr{i}{j}.num_contact_pts;
-          sizecheck(F{i}{j},[obj.fsrc_cnstr{i}{j}.num_edges,num_contact_pts_ij]);
+          num_contact_pts_ij = obj.time_fsrc_cnstr{i}{j}.num_contact_pts;
+          sizecheck(F{i}{j},[obj.time_fsrc_cnstr{i}{j}.num_edges,num_contact_pts_ij]);
           F_ij = obj.A_force{i}{j}*F{i}{j}; % F_ij(:,k) is the contact force at the k'th corner of the foot.
           F_i = F_i+sum(F_ij,2);
-          A_angular((i-1)*3+(1:3),obj.contact_body_pos_idx{i}(:,j)) = ...
+          A_angular((i-1)*3+(1:3),obj.time_contact_body_pos_idx{i}(:,j)) = ...
             [sum(cross(F_ij,bsxfun(@times,obj.A_xy{i}{j}(:,1),ones(1,num_contact_pts_ij))),2) sum(cross(F_ij,bsxfun(@times,obj.A_xy{i}{j}(:,2),ones(1,num_contact_pts_ij))),2)];
-          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy{i}{j},ones(1,num_contact_pts_ij))+obj.rotmat{i}{j}*obj.fsrc_cnstr{i}{j}.body_contact_pts),2);
+          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy{i}{j},ones(1,num_contact_pts_ij))+obj.rotmat{i}{j}*obj.time_fsrc_cnstr{i}{j}.body_contact_pts),2);
         end
         A_angular((i-1)*3+(1:3),obj.com_idx(:,i)) = -[0 -F_i(3) F_i(2);F_i(3) 0 -F_i(1);-F_i(2) F_i(1) 0];
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
         obj.x_lb(obj.comddot_idx(:,i)) = F_i/obj.robot_mass;
         obj.x_ub(obj.comddot_idx(:,i)) = F_i/obj.robot_mass;
       end
-      model.A = sparse([obj.A_iris;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular]);
-      model.rhs = [obj.b_iris;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd];
-      model.sense = [repmat('<',size(obj.A_iris,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT,1)];
+      model.A = sparse([obj.A_iris;obj.A_kin;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular]);
+      model.rhs = [obj.b_iris;obj.b_kin;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd];
+      model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);
       obj.x_lb(obj.tau_idx) = tau;
@@ -292,14 +265,14 @@ classdef FixedFootYawCoMPlanningPosition
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         tau = sum(sum(epsilon.*epsilon));
         for i = 1:obj.nT
-          foot_pos{i} = reshape(result.x(obj.contact_body_pos_idx{i}(:)),2,[]);
+          foot_pos{i} = reshape(result.x(obj.time_contact_body_pos_idx{i}(:)),2,[]);
         end
       end
     end
     
     function obj = setVarBounds(obj,lb,ub,xind)
-      % @properties lb,ub    The lower and uppper bound of the variables
-      % @properties xind     The indices of the variables whose bounds are going to be set
+      % @param lb,ub    The lower and uppper bound of the variables
+      % @param xind     The indices of the variables whose bounds are going to be set
       lb = lb(:);
       ub = ub(:);
       xind = xind(:);
@@ -312,6 +285,30 @@ classdef FixedFootYawCoMPlanningPosition
       end
       obj.x_lb(xind) = lb;
       obj.x_ub(xind) = ub;
+    end
+    
+    function obj = obj.addKinematicPolygon(obj,fsrc_idx1,fsrc_idx2,A,b)
+      % add polygonal constraint A*[x1;y1;x2;y2]<=b on the contact bodies corresponding to
+      % obj.fsrc_cnstr{fsrc_idx1} and obj.fsrc_cnstr{fsrc_idx2}. Where [x1;y1] is the
+      % coordinate of the contact body in obj.fsrc_cnstr{fsrc_idx1} and [x2;y2] is the
+      % coordinate of the contact body in obj.fsrc_cnstr{fsrc_idx2}
+      % @param fsrc_idx1,fsrc_idx2. Both are integers. The kinematic constraint is on the
+      % bodies in obj.fsrc_cnstr{fsrc_idx1} and obj.fsrc_cnstr{fsrc_idx2}
+      % @param A    A n x 4 matrix.
+      % @param b    A n x 1 vector
+      if(~isnumeric(fsrc_idx1) || numel(fsrc_idx1) ~= 1 || ~isnumeric(fsrc_idx2) || numel(fsrc_idx2) ~= 1)
+        error('Drake:FixedFootYawCoMPlanningPosition:fsrc_idx1 and fsrc_idx2 should be numeric scalar');
+      end
+      if(~isnumeric(A) || ~isnumeric(b))
+        error('Drake:FixedFootYawCoMPlanningPosition:A and b should be numeric');
+      end
+      num_cnstr = numel(b);
+      sizecheck(A,[num_cnstr,4]);
+      sizecheck(b,[num_cnstr,1]);
+      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,4)),[],1);
+      jA = reshape(bsxfun(@times,[obj.fsrc_body_pos_idx(:,fsrc_idx1)' obj.fsrc_body_pos_idx(:,fsrc_idx2)'],ones(num_cnstr,1)),[],1);
+      obj.A_kin = [obj.A_kin;sparse(iA,jA,A(:),num_cnstr,obj.num_vars)];
+      obj.b_kin = [obj.b_kin;b];
     end
   end
 end
