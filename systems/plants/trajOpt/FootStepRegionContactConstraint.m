@@ -1,24 +1,15 @@
 classdef FootStepRegionContactConstraint
   % This constraint wraps the iris result on the feasible foot regions, together with the
-  % linearized friction cone information
+  % linearized friction cone information, the body contact
   % points and contact force paramters
-  % @properties foot_step_region_cnstr   -- A FootStepRegionConstraint
-  % @properties mu            -- The friction coefficient
-  % @properties num_edges     -- The number of edges sampled in each cone
-  % @properties edges   -- A 3 x num_edges matrix. edges(:,i) is the coordinate of the i'th edge in
-  % the linearized friction cone, in the body frame, where the normal force is along the z
-  % direction.
-  % @properties num_contact_pts   The number of contact points on the body
-  % @properties body_contact_pts   A 3 x num_contact_pts matrix. body_contact_pts(:,i) is
-  % the coordinate of i'th contact point in the body frame.
   properties(SetAccess = protected)
-    foot_step_region_cnstr
-    mu
-    num_edges
-    edges
-    num_contact_pts
-    body_contact_pts
-    num_force_weight
+    foot_step_region_cnstr % A FootStepRegionConstraint
+    mu % The friction coefficient
+    num_edges % The number of edges sampled in each cone
+    edges % A 3 x num_edges matrix. edges(:,i) is the coordinate of the i'th edge in the linearized friction cone, in the body frame, where the normal force is along the z direction.
+    num_contact_pts % The number of contact points on the body
+    body_contact_pts % A 3 x num_contact_pts matrix. body_contact_pts(:,i) is the coordinate of i'th contact point in the body frame.
+    num_force_weight % total number of force weights, num_edges*num_contact_pts
   end  
   
   methods
@@ -51,12 +42,14 @@ classdef FootStepRegionContactConstraint
     
     function A = force(obj,yaw)
       % The force in the world frame is A*w where w is the force weight;
-      % @properties yaw   The yaw angle
+      % @param yaw   The yaw angle
       R = obj.foot_step_region_cnstr.bodyTransform(yaw);
       A = R*obj.edges;
     end
     
     function pos = contactPosition(obj,x,y,yaw)
+      % Given the xy position and yaw angle of the body, return the position of the
+      % contact points in the world frame.
       T = obj.foot_step_region_cnstr.bodyT(x,y,yaw);
       pos = T*[obj.body_contact_pts;ones(1,obj.num_contact_pts)];
       pos = pos(1:3,:);
