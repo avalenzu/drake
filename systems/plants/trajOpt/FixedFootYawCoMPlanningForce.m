@@ -119,6 +119,7 @@ classdef FixedFootYawCoMPlanningForce
         for j = 1:obj.nT
           if(varargin{2*i-1}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
             obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:varargin{2*i-1}.num_force_weight),varargin{2*i-1}.num_edges,varargin{2*i-1}.num_contact_pts)}];
+            obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
             is_fsrc_active = true;
           end
         end
