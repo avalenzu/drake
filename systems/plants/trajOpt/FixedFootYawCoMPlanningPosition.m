@@ -22,18 +22,17 @@ classdef FixedFootYawCoMPlanningPosition
     A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
     A_H,A_H_bnd % A_H * x = A_H_bnd is the constraint on the euler integraton of angular momentum
     A_angular_PD,A_angular_PD_bnd % A_angular_PD * x = A_angular_PD_bnd is the constraint Hdot[n] = lambda*H[n]+epsilon[n]
+    num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
-    
-    time_fsrc_cnstr % a 1 X obj.nT cell. fscr_cnstr{i} is a cell containing all the FootStepContactRegionConstraint that is active at time t_knot(i)
-    time_contact_body_pos_idx; %  A 1 x obj.nT cell. x(time_contact_body_pos_idx{i}(:,j)) is the xy position of the contact body being active in obj.fscr_cnstr{i}{j} at time t_knot(i) 
-    time_yaw %  A cell array. yaw{i}(j) is the yaw angle for obj.time_fsrc_cnstr{i}{j}
+    F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
   end
   
   properties(Access = protected)
-    A_force % A cell array. A_force{i}{j} is a 3 x obj.time_fsrc_cnstr.num_edges matrix. A_force{i}{j}*w is the force on the linearized friction cone where w is the force weight.
-    A_xy,b_xy,rotmat  % A_xy,b_xy,rotmat are all cell arrays. [A_xy{i}{j},b_xy{i}{j},rotmat{i}{j}] = obj.time_fsrc_cnstr{i}{j}.bodyTransform(obj.time_yaw{i}(j))
+    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
+    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
   end
   
   methods
@@ -117,22 +116,21 @@ classdef FixedFootYawCoMPlanningPosition
       obj.x_names = [obj.x_names;{'tau'}];
       obj.num_vars = obj.num_vars+1;
       
-      num_fsrc_cnstr = length(varargin)/2;
-      obj.fsrc_cnstr = cell(1,num_fsrc_cnstr);
-      obj.fsrc_body_pos_idx = zeros(2,num_fsrc_cnstr);
-      obj.time_fsrc_cnstr = cell(1,obj.nT);
-      obj.time_contact_body_pos_idx = cell(1,obj.nT);
-      obj.time_yaw = cell(1,obj.nT);
-      obj.A_force = cell(1,obj.nT);
-      obj.A_xy = cell(1,obj.nT);
-      obj.b_xy = cell(1,obj.nT);
-      obj.rotmat = cell(1,obj.nT);
+      obj.num_fsrc_cnstr = length(varargin)/2;
+      obj.fsrc_cnstr = cell(1,obj.num_fsrc_cnstr);
+      obj.fsrc_body_pos_idx = zeros(2,obj.num_fsrc_cnstr);
+      obj.F2fsrc_map = cell(1,obj.nT);
+      obj.yaw = zeros(1,obj.num_fsrc_cnstr);
+      obj.A_force = cell(1,obj.num_fsrc_cnstr);
+      obj.A_xy = zeros(3,2,obj.num_fsrc_cnstr);
+      obj.b_xy = zeros(3,1,obj.num_fsrc_cnstr);
+      obj.rotmat = zeros(3,3,obj.num_fsrc_cnstr);
       iA_iris = [];
       jA_iris = [];
       Aval_iris = [];
       obj.b_iris = [];
       num_halfspace_iris = 0;
-      for i = 1:num_fsrc_cnstr
+      for i = 1:obj.num_fsrc_cnstr
         if(~isa(varargin{2*i-1},'FootStepRegionContactConstraint'))
           error('Drake:FixedFootYawCoMPlanningPosition:The input should be a FootStepRegionContactConstraint');
         end
@@ -143,6 +141,9 @@ classdef FixedFootYawCoMPlanningPosition
         sizecheck(varargin{2*i},[1,1]);
         fsrc_pos_idx = obj.num_vars+(1:2)';
         obj.fsrc_body_pos_idx(:,i) = fsrc_pos_idx;
+        obj.yaw(i) = varargin{2*i};
+        obj.A_force{i} = varargin{2*i-1}.force(varargin{2*i});
+        [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = varargin{2*i-1}.foot_step_region_cnstr.bodyTransform(varargin{2*i});
         is_fsrc_active = false;
         A_iris_i = varargin{2*i-1}.foot_step_region_cnstr.A;
         b_iris_i = varargin{2*i-1}.foot_step_region_cnstr.b;
@@ -158,14 +159,7 @@ classdef FixedFootYawCoMPlanningPosition
           sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)}];
         for j = 1:obj.nT
           if(varargin{2*i-1}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
-            obj.time_fsrc_cnstr{j} = [obj.time_fsrc_cnstr{j} varargin(2*i-1)];
-            obj.time_contact_body_pos_idx{j} = [obj.time_contact_body_pos_idx{j} fsrc_pos_idx];
-            obj.time_yaw{j} = [obj.time_yaw{j} varargin{2*i}];
-            obj.A_force{j} = [obj.A_force{j} {varargin{2*i-1}.force(varargin{2*i})}];
-            [rotmat_ij,A_xy_ij,b_xy_ij] = varargin{2*i-1}.foot_step_region_cnstr.bodyTransform(varargin{2*i});
-            obj.rotmat{j} = [obj.rotmat{j},{rotmat_ij}];
-            obj.A_xy{j} = [obj.A_xy{j},{A_xy_ij}];
-            obj.b_xy{j} = [obj.b_xy{j},{b_xy_ij}];
+            obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
             is_fsrc_active = true;
           end
         end
@@ -216,7 +210,7 @@ classdef FixedFootYawCoMPlanningPosition
     
     function [com,comdot,comddot,foot_pos,Hdot,H,tau] = solve(obj,F,tau)
       % @param F     A cell array. F{i}{j} is the force parameters for
-      % obj.time_fsrc_cnstr{i}{j}
+      % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
       % @param tau   A scalar. The upper bound for sum_n
       % epsilon[n]'*epsilon[n]
       % @retval tau   A scalar. The updated value for sum_n epsilon[n]'*epsilon[n]
@@ -228,14 +222,15 @@ classdef FixedFootYawCoMPlanningPosition
       for i = 1:obj.nT
         F_i = zeros(3,1);
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3);
-        for j = 1:length(obj.A_force{i})
-          num_contact_pts_ij = obj.time_fsrc_cnstr{i}{j}.num_contact_pts;
-          sizecheck(F{i}{j},[obj.time_fsrc_cnstr{i}{j}.num_edges,num_contact_pts_ij]);
-          F_ij = obj.A_force{i}{j}*F{i}{j}; % F_ij(:,k) is the contact force at the k'th corner of the foot.
+        for j = 1:length(obj.F2fsrc_map{i})
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          num_contact_pts_ij = obj.fsrc_cnstr{fsrc_idx}.num_contact_pts;
+          sizecheck(F{i}{j},[obj.fsrc_cnstr{fsrc_idx}.num_edges,num_contact_pts_ij]);
+          F_ij = obj.A_force{fsrc_idx}*F{i}{j}; % F_ij(:,k) is the contact force at the k'th corner of the foot.
           F_i = F_i+sum(F_ij,2);
-          A_angular((i-1)*3+(1:3),obj.time_contact_body_pos_idx{i}(:,j)) = ...
-            [sum(cross(F_ij,bsxfun(@times,obj.A_xy{i}{j}(:,1),ones(1,num_contact_pts_ij))),2) sum(cross(F_ij,bsxfun(@times,obj.A_xy{i}{j}(:,2),ones(1,num_contact_pts_ij))),2)];
-          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy{i}{j},ones(1,num_contact_pts_ij))+obj.rotmat{i}{j}*obj.time_fsrc_cnstr{i}{j}.body_contact_pts),2);
+          A_angular((i-1)*3+(1:3),obj.fsrc_body_pos_idx(:,fsrc_idx)) = ...
+            [sum(cross(F_ij,bsxfun(@times,obj.A_xy(:,1,fsrc_idx),ones(1,num_contact_pts_ij))),2) sum(cross(F_ij,bsxfun(@times,obj.A_xy(:,2,fsrc_idx),ones(1,num_contact_pts_ij))),2)];
+          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy(:,:,fsrc_idx),ones(1,num_contact_pts_ij))+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.body_contact_pts),2);
         end
         A_angular((i-1)*3+(1:3),obj.com_idx(:,i)) = -[0 -F_i(3) F_i(2);F_i(3) 0 -F_i(1);-F_i(2) F_i(1) 0];
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
@@ -261,12 +256,10 @@ classdef FixedFootYawCoMPlanningPosition
         comddot = reshape(result.x(obj.comddot_idx(:)),3,obj.nT);
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
         H = reshape(result.x(obj.H_idx(:)),3,obj.nT);
-        foot_pos = cell(1,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         tau = sum(sum(epsilon.*epsilon));
-        for i = 1:obj.nT
-          foot_pos{i} = reshape(result.x(obj.time_contact_body_pos_idx{i}(:)),2,[]);
-        end
+        foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
+        
       end
     end
     
