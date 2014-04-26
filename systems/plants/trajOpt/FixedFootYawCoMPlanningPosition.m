@@ -7,8 +7,8 @@ classdef FixedFootYawCoMPlanningPosition
     g % The gravitational acceleration
     nT % The length of obj.t_knot
     com_idx; % A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at time t_knot(i) in the decision variable x
-    comdot_idx; % A 3 x obj.nT matrix. x(comdot_idx(:,i)) is the CoM velocity at time t_knot(i) in the decision variable x
-    comddot_idx; % A 3 x obj.nT matrix. x(comddot_idx(:,i)) is the CoM acceleration at time t_knot(i) in the decision variable x
+    comp_idx; % A 3 x obj.nT matrix. x(comp_idx(:,i)) is the CoM velocity (before time scaling) at time t_knot(i) in the decision variable x
+    compp_idx; % A 3 x obj.nT matrix. x(compp_idx(:,i)) is the CoM acceleration (before time scaling) at time t_knot(i) in the decision variable x
     H_idx; %A 3 x obj.nT matrix. x(H_idx(:,i)) is the centroidal angular momentum at time t_knot(i)
     Hdot_idx % A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of centroidal angular momentum at time t_knot(i)
     epsilon_idx % A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of the PD law Hdot[i] = lambda*H[i]+epsilon[i]
@@ -40,7 +40,9 @@ classdef FixedFootYawCoMPlanningPosition
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,Q_Hdot,Q_H,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
       % @param robot_mass    The mass of the robot
-      % @param t             The time knot for planning
+      % @param t             The time knot for planning. This indicates which
+      % FootStepRegionContactConstraint is active at a given time knot. The actual time is
+      % determined by the scaling function.
       % @param lambda        A 3 x 3 Hurwitz matrix. It tries to drive the angular
       % momentum stays at 0 by putting the constraint Hdot[n] = lambda*H[n]+epsilon[n]
       % @param Q_comddot     A 3 x 3 PSD matrix. The cost is sum_n
@@ -82,13 +84,13 @@ classdef FixedFootYawCoMPlanningPosition
         obj.x_names((i-1)*3+(1:3)) = {sprintf('com_x[%d]',i);sprintf('com_y[%d]',i);sprintf('com_z[%d]',i)};
       end
       obj.num_vars = obj.num_vars+3*obj.nT;
-      obj.comdot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
+      obj.comp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
       for i = 1:obj.nT
         obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comdot_x[%d]',i);sprintf('comdot_y[%d]',i);sprintf('comdot_z[%d]',i)};
       end
       obj.num_vars = obj.num_vars+3*obj.nT;
-      obj.comddot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
+      obj.compp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
       for i = 1:obj.nT
         obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comddot_x[%d]',i);sprintf('comddot_y[%d]',i);sprintf('comddot_z[%d]',i)};
@@ -169,21 +171,21 @@ classdef FixedFootYawCoMPlanningPosition
         obj.num_vars = obj.num_vars+2;
       end
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
-      dt = reshape(diff(obj.t_knot),1,[]);
+      delta_s = 1/(obj.nT-1);
       % linear constraint that com[n]-com[n-1] = comdot[n]*dt and comdot[n]-comdot[n-1] =
       % comddot[n]*dt
       iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
-      jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comdot_idx(:,2:end),[],1)];
-      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),dt),[],1)];
+      jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comp_idx(:,2:end),[],1)];
+      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
       iAcom = [iAcom;3*(obj.nT-1)+iAcom];
-      jAcom = [jAcom;reshape(obj.comdot_idx(:,2:end),[],1);reshape(obj.comdot_idx(:,1:end-1),[],1); reshape(obj.comddot_idx(:,2:end),[],1)];
+      jAcom = [jAcom;reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1); reshape(obj.compp_idx(:,2:end),[],1)];
       Aval_com = [Aval_com;Aval_com];
       obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(6*(obj.nT-1),1);
       % linear constraint that H[n]-H[n-1] = Hdot[n]*dt
       iA_H = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jA_H = [reshape(obj.H_idx(:,2:end),[],1);reshape(obj.H_idx(:,1:end-1),[],1); reshape(obj.Hdot_idx(:,2:end),[],1)];
-      Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),dt),[],1)];
+      Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
       obj.A_H = sparse(iA_H,jA_H,Aval_H,3*(obj.nT-1),obj.num_vars);
       obj.A_H_bnd = zeros(3*(obj.nT-1),1);
       % linear constraint that Hdot[n] = lambda*H[n]+epsilon[n]
@@ -194,8 +196,8 @@ classdef FixedFootYawCoMPlanningPosition
       obj.A_angular_PD_bnd = zeros(3*obj.nT,1);
       
       % cost sum comddot[n]'*comddot[n]+epsilon[n]'*epsilon[n]
-      iQcost = [reshape(repmat(obj.comddot_idx,3,1),[],1);obj.epsilon_idx(:)];
-      jQcost = [reshape(bsxfun(@times,obj.comddot_idx(:)',ones(3,1)),[],1);obj.epsilon_idx(:)];
+      iQcost = [reshape(repmat(obj.compp_idx,3,1),[],1);obj.epsilon_idx(:)];
+      jQcost = [reshape(bsxfun(@times,obj.compp_idx(:)',ones(3,1)),[],1);obj.epsilon_idx(:)];
       Qval_cost = [reshape(repmat(Q_comddot,1,obj.nT),[],1);ones(3*obj.nT,1)];
       obj.Q_cost = sparse(iQcost,jQcost,Qval_cost,obj.num_vars,obj.num_vars);
       % bounds on decision variables x
@@ -208,17 +210,35 @@ classdef FixedFootYawCoMPlanningPosition
       obj.b_kin = [];
     end
     
-    function [com,comdot,comddot,foot_pos,Hdot,H,tau] = solve(obj,F,tau)
+    function [com,comp,compp,foot_pos,Hdot,Hbar,tau] = solve(obj,F,sdotsquare,tau)
       % @param F     A cell array. F{i}{j} is the force parameters for
       % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
       % @param tau   A scalar. The upper bound for sum_n
       % epsilon[n]'*epsilon[n]
+      % @param sdotsquare  A 1 x obj.nT vector. sdotsquare(i) is the square of the time
+      % scaling function at time obj.t_knot(i)
       % @retval tau   A scalar. The updated value for sum_n epsilon[n]'*epsilon[n]
+      % @retval com   A 3 x obj.nT matrix. com(:,i) is the position of the robot at the
+      % i'th knot point
+      % @retval comp  A 3 x obj.nT matrix. comp(:,i) is the first derivative of com w.r.t
+      % scaling function s at i'th knot point
+      % @retval compp  A 3 x obj.nT matrix. compp(:,i) is the second derivative of com
+      % w.r.t scaling function s at i'th knot point
+      % @retval foot_pos   A 2 x obj.num_fsrc_cnstr matrix. foot_pos(:,i) is the xy
+      % position of the contact body in obj.fsrc_cnstr{i}
       if(~iscell(F) || length(F) ~= obj.nT)
         error('Drake:FixedFootYawCoMPlanningPosition:F should be a cell of length obj.nT');
       end
+      sizecheck(sdotsquare,[1,obj.nT]);
+      if(any(sdotsquare<=0))
+        error('Drake:FixedFootYawCoMPlanningPosition:sdotsquare should all be positive');e
+      end
+      sdotsquare_diff = diff(sdotsquare);
+      sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
       A_angular = zeros(3*obj.nT,obj.num_vars);
       A_angular_bnd = zeros(3*obj.nT,1);
+      A_compp = zeros(3*obj.nT,obj.num_vars);
+      A_compp_bnd = zeros(3*obj.nT,1);
       for i = 1:obj.nT
         F_i = zeros(3,1);
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3);
@@ -234,12 +254,13 @@ classdef FixedFootYawCoMPlanningPosition
         end
         A_angular((i-1)*3+(1:3),obj.com_idx(:,i)) = -[0 -F_i(3) F_i(2);F_i(3) 0 -F_i(1);-F_i(2) F_i(1) 0];
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
-        obj.x_lb(obj.comddot_idx(:,i)) = F_i/obj.robot_mass;
-        obj.x_ub(obj.comddot_idx(:,i)) = F_i/obj.robot_mass;
+        A_compp_bnd((i-1)*3+(1:3)) = F_i;
+        A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = obj.robot_mass*sdotsquare(i)*eye(3);
+        A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
       end
-      model.A = sparse([obj.A_iris;obj.A_kin;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular]);
-      model.rhs = [obj.b_iris;obj.b_kin;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd];
-      model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT,1)];
+      model.A = sparse([obj.A_iris;obj.A_kin;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular;A_compp]);
+      model.rhs = [obj.b_iris;obj.b_kin;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd;A_compp_bnd];
+      model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT+3*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);
       obj.x_lb(obj.tau_idx) = tau;
@@ -252,10 +273,10 @@ classdef FixedFootYawCoMPlanningPosition
       result = gurobi(model,params);
       if(strcmp(result.status,'OPTIMAL'))
         com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
-        comdot = reshape(result.x(obj.comdot_idx(:)),3,obj.nT);
-        comddot = reshape(result.x(obj.comddot_idx(:)),3,obj.nT);
+        comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
+        compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
-        H = reshape(result.x(obj.H_idx(:)),3,obj.nT);
+        Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         tau = sum(sum(epsilon.*epsilon));
         foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
