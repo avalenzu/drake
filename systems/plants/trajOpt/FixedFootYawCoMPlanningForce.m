@@ -24,6 +24,8 @@ classdef FixedFootYawCoMPlanningForce
     
     F2fsrc_map % A cell array. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
+    
+    A_com
   end
   
   properties(Access = protected)
