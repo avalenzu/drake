@@ -7,8 +7,8 @@ classdef FixedFootYawCoMPlanningPosition
     g % The gravitational acceleration
     nT % The length of obj.t_knot
     com_idx; % A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at time t_knot(i) in the decision variable x
-    comp_idx; % A 3 x obj.nT matrix. x(comp_idx(:,i)) is the CoM velocity (before time scaling) at time t_knot(i) in the decision variable x
-    compp_idx; % A 3 x obj.nT matrix. x(compp_idx(:,i)) is the CoM acceleration (before time scaling) at time t_knot(i) in the decision variable x
+    comp_idx; % A 3 x obj.nT matrix. x(comp_idx(:,i)) is the first derivative of CoM w.r.t time scaling function s a i'th knot point
+    compp_idx; % A 3 x obj.nT matrix. x(compp_idx(:,i)) is the second derivative of CoM w.r.t time scaling function s a i'th knot point
     H_idx; %A 3 x obj.nT matrix. x(H_idx(:,i)) is the centroidal angular momentum at time t_knot(i)
     Hdot_idx % A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of centroidal angular momentum at time t_knot(i)
     epsilon_idx % A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of the PD law Hdot[i] = lambda*H[i]+epsilon[i]
@@ -28,6 +28,7 @@ classdef FixedFootYawCoMPlanningPosition
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
+    lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
   end
   
   properties(Access = protected)
@@ -208,6 +209,8 @@ classdef FixedFootYawCoMPlanningPosition
       % addKinematicPolygon
       obj.A_kin = [];
       obj.b_kin = [];
+      obj.lb_comdot = -inf(3,obj.nT);
+      obj.ub_comdot = inf(3,obj.nT);
     end
     
     function [com,comp,compp,foot_pos,Hdot,Hbar,tau] = solve(obj,F,sdotsquare,tau)
@@ -265,6 +268,8 @@ classdef FixedFootYawCoMPlanningPosition
       model.obj = zeros(1,obj.num_vars);
       obj.x_lb(obj.tau_idx) = tau;
       obj.x_ub(obj.tau_idx) = tau;
+      obj.x_lb(obj.comp_idx(:)) = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      obj.x_ub(obj.comp_idx(:)) = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
       model.cones.index = [obj.tau_idx obj.epsilon_idx(:)'];
@@ -299,6 +304,26 @@ classdef FixedFootYawCoMPlanningPosition
       end
       obj.x_lb(xind) = lb;
       obj.x_ub(xind) = ub;
+    end
+    
+    function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
+      % set the lower and upper bounds for CoM velocities at the knots with indices
+      % knot_ind
+      % @param knot_idx   A 1 x m integer vector. The indices of the knots whose CoM
+      % velocities will be bounded
+      % @param lb     A 3 x m double vector. lb(:,i) is the lower bound of the CoM
+      % velocity at the knot with index knot_idx(i)
+      % @param ub     A 3 x m double vector. ub(:,i) is the upper bound of the CoM
+      % velocity at the knot with index knot_idx(i)
+      num_idx = numel(knot_idx);
+      if(~isnumeric(knot_idx) || ~isnumeric(lb) || ~isnumeric(ub))
+        error('Drake:FixedFootYawCoMPlanningPosition: input should be numeric');
+      end
+      sizecheck(knot_idx,[1,num_idx]);
+      sizecheck(lb,[3,num_idx]);
+      sizecheck(ub,[3,num_idx]);
+      obj.lb_comdot(:,knot_idx) = lb;
+      obj.ub_comdot(:,knot_idx) = ub;
     end
     
     function obj = addKinematicPolygon(obj,fsrc_idx,A,b)
