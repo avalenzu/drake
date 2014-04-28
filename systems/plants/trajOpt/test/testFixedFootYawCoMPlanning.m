@@ -60,6 +60,7 @@ planning.p_step = planning.p_step.setVarBounds(com0,com0,planning.p_step.com_idx
 planning.p_step = planning.p_step.setVarBounds(com1,com1,planning.p_step.com_idx(:,end));
 planning.p_step = planning.p_step.setCoMVelocityBounds([1,nT],-ones(3,2),ones(3,2));
 planning.p_step = planning.p_step.setVarBounds(zeros(3,1),zeros(3,1),planning.p_step.H_idx(:,1));
+planning.f_step = planning.f_step.setVarBounds(zeros(3,1),zeros(3,1),planning.f_step.H_idx(:,1));
 F_edge = robot_mass*9.81/(2*4*num_edges);
 F = repmat({[{F_edge*ones(num_edges,4)};{F_edge*ones(num_edges,4)}]},1,length(t));
 sigma = 1e10;
@@ -72,7 +73,7 @@ comp = diff(com,1,2)*(nT-1);
 comp = [zeros(3,1) comp];
 compp = diff(comp,1,2)*(nT-1);
 compp = [zeros(3,1) compp];
-foot_pos = [0.1 0.1;-0.2 0.2];
+foot_pos = [-0.1 0.15;-0.03 -0.03];
 
 planning.solve(com,comp,compp,foot_pos,sigma);
 

@@ -50,11 +50,12 @@ classdef FixedFootYawCoMPlanningForce
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningForce(robot_mass,t,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningForce(robot_mass,t,g,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
       % @param robot_mass  The mass of the robot
       % @param t   The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
       % determined by the scaling function.
+      % @param g             The gravitational acceleration
       % @param lambda        A 3 x 3 Hurwitz matrix. It tries to drive the angular
       % momentum stays at 0 by putting the constraint Hdot[n] = lambda*H[n]+epsilon[n]
       % @param c_margin  A positive scalar. The weight of the force margin in the
@@ -70,7 +71,7 @@ classdef FixedFootYawCoMPlanningForce
       obj.robot_mass = robot_mass;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
-      obj.g = 9.81;
+      obj.g = g;
       obj.lambda = lambda;
       obj.dt_max = dt_max;
       delta_s = 1/(obj.nT-1);
@@ -267,6 +268,8 @@ classdef FixedFootYawCoMPlanningForce
       model.sense = [repmat('<',obj.num_force_weight+obj.nT-1,1);repmat('=',3*obj.nT+3*obj.nT+3*(obj.nT-1)+3*obj.nT+2*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = obj.f_cost;
+      obj.x_lb(obj.sigma_idx) = sqrt(sigma);
+      obj.x_ub(obj.sigma_idx) = sqrt(sigma);
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
       model.cones(1) = struct('index',[obj.sigma_idx obj.epsilon_idx(:)']);
@@ -289,52 +292,27 @@ classdef FixedFootYawCoMPlanningForce
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-        sigma = sum(sum(epsilon.*epsilon));
-        checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+        sigma = sum(epsilon(:).^2);
       else
         error('F-step is infeasible');
       end
     end
     
-    function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
-      delta_s = 1/(obj.nT-1);
-      valuecheck(diff(com,1,2)-comp(:,2:end)*delta_s,0,1e-4);
-      valuecheck(diff(comp,1,2)-compp(:,2:end)*delta_s,0,1e-4);
-      if(any(sdotsquare<0))
-        error('sdotsquare cannot be negative');
+    function obj = setVarBounds(obj,lb,ub,xind)
+      % @param lb,ub    The lower and uppper bound of the variables
+      % @param xind     The indices of the variables whose bounds are going to be set
+      lb = lb(:);
+      ub = ub(:);
+      xind = xind(:);
+      num_x = length(xind);
+      if(num_x ~= length(lb) || num_x ~= length(ub))
+        error('Drake:FixedFootYawCoMPlanningPosition: bound sizes do not match');
       end
-      if(any(sdotsquare>obj.sdot_max^2))
-        error('sdot is larger than sdot_max');
+      if(any(lb>ub))
+        error('Drake:FixedFootYawCoMPlanningPosition: lower bound should be no larger than the upper bound');
       end
-      % check the wrench
-      sdot_diff = diff(sdotsquare);
-      sdot_diff = [sdot_diff sdot_diff(end)];
-      foot_contact_pts_pos = cell(1,obj.num_fsrc_cnstr);
-      for i = 1:obj.num_fsrc_cnstr
-        foot_contact_pts_pos{i} = bsxfun(@times,obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i),...
-          ones(1,obj.fsrc_cnstr{i}.num_contact_pts))+obj.rotmat(:,:,i)*obj.fsrc_cnstr{i}.body_contact_pts;
-      end
-      for i = 1:obj.nT
-        F_i = zeros(3,1);
-        tau_i = zeros(3,1);
-        for j = 1:length(obj.F_idx{i})
-          fsrc_idx = obj.F2fsrc_map{i}(j);
-          F_ij = obj.A_force{fsrc_idx}*F{i}{j};
-          F_i = F_i+sum(F_ij,2);
-          foot_contact_pts_CoM = foot_contact_pts_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts));
-          tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
-        end
-        F_i(3) = F_i(3)-obj.robot_mass*obj.g;
-        mcomddot = obj.robot_mass*(compp(:,i)*sdotsquare(i)+comp(:,i)/(2*delta_s)*sdot_diff(i));
-        valuecheck(F_i,mcomddot,1e-4);
-        valuecheck(tau_i,Hdot(:,i),1e-4);
-        valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s,1e-4);
-        valuecheck(Hdot,obj.lambda*Hbar+epsilon,1e-4);
-        sdot = sqrt(sdotsquare);
-        if(any(2*delta_s*ones(1,obj.nT-1)./sum([sdot(1:end-1);sdot(2:end)],1)>obj.dt_max+1e-6))
-          error('dt is above dt_max');
-        end
-      end
+      obj.x_lb(xind) = lb;
+      obj.x_ub(xind) = ub;
     end
   end
 end
