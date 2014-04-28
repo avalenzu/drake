@@ -52,22 +52,28 @@ t = linspace(tspan(1),tspan(2),nT);
 lfoot_yaw = 0;
 rfoot_yaw = 0;
 Q_comddot = 0*eye(3);
-p_step = FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,lfoot_fsrc_cnstr,lfoot_yaw,rfoot_fsrc_cnstr,rfoot_yaw);
-p_step = p_step.setVarBounds(com0,com0,p_step.com_idx(:,1));
-p_step = p_step.setVarBounds(com1,com1,p_step.com_idx(:,end));
-p_step = p_step.setCoMVelocityBounds([1,nT],-ones(3,2),ones(3,2));
-p_step = p_step.setVarBounds(zeros(3,1),zeros(3,1),p_step.H_idx(:,1));
-F_edge = robot_mass*9.81/(2*4*num_edges);
-F = repmat({[{F_edge*ones(num_edges,4)};{F_edge*ones(num_edges,4)}]},1,length(t));
-tau = 1e10;
-r2l_xy_polygon = RelativeFootPositionPolygon([0.2 0.5 0.5 0.2;-0.1 -0.1 0.1 0.1]);
-[A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
-p_step = p_step.addKinematicPolygon([1 2],A_polygon,b_polygon);
-[com,comp,compp,foot_pos,Hdot,Hbar,tau] = p_step.solve(F,ones(1,nT),tau);
-
 c_margin = 0.1;
 dt_max = 0.2;
 sdot_max = 10;
-f_step = FixedFootYawCoMPlanningForce(robot_mass,t,lambda,c_margin,dt_max,sdot_max,lfoot_fsrc_cnstr,lfoot_yaw,rfoot_fsrc_cnstr,rfoot_yaw);
-[F,sdotsquare,Hdot,Hbar,tau] = f_step.solve(com,comp,compp,foot_pos,tau);
+planning = FixedFootYawCoMPlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,lfoot_fsrc_cnstr,lfoot_yaw,rfoot_fsrc_cnstr,rfoot_yaw);
+planning.p_step = planning.p_step.setVarBounds(com0,com0,planning.p_step.com_idx(:,1));
+planning.p_step = planning.p_step.setVarBounds(com1,com1,planning.p_step.com_idx(:,end));
+planning.p_step = planning.p_step.setCoMVelocityBounds([1,nT],-ones(3,2),ones(3,2));
+planning.p_step = planning.p_step.setVarBounds(zeros(3,1),zeros(3,1),planning.p_step.H_idx(:,1));
+F_edge = robot_mass*9.81/(2*4*num_edges);
+F = repmat({[{F_edge*ones(num_edges,4)};{F_edge*ones(num_edges,4)}]},1,length(t));
+sigma = 1e10;
+r2l_xy_polygon = RelativeFootPositionPolygon([0.2 0.5 0.5 0.2;-0.1 -0.1 0.1 0.1]);
+[A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
+planning.p_step = planning.p_step.addKinematicPolygon([1 2],A_polygon,b_polygon);
+d_com = (com1-com0)/(nT-1);
+com = bsxfun(@times,com0,ones(1,nT))+bsxfun(@times,d_com,(0:nT-1));
+comp = diff(com,1,2)*(nT-1);
+comp = [zeros(3,1) comp];
+compp = diff(comp,1,2)*(nT-1);
+compp = [zeros(3,1) compp];
+foot_pos = [0.1 0.1;-0.2 0.2];
+
+planning.solve(com,comp,compp,foot_pos,sigma);
+
 end
