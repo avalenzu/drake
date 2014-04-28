@@ -88,13 +88,13 @@ classdef FixedFootYawCoMPlanningPosition
       obj.comp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comdot_x[%d]',i);sprintf('comdot_y[%d]',i);sprintf('comdot_z[%d]',i)};
+        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comp_x[%d]',i);sprintf('comp_y[%d]',i);sprintf('comp_z[%d]',i)};
       end
       obj.num_vars = obj.num_vars+3*obj.nT;
       obj.compp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comddot_x[%d]',i);sprintf('comddot_y[%d]',i);sprintf('comddot_z[%d]',i)};
+        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('compp_x[%d]',i);sprintf('compp_y[%d]',i);sprintf('compp_z[%d]',i)};
       end
       obj.num_vars = obj.num_vars+3*obj.nT;
       obj.H_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
@@ -183,7 +183,7 @@ classdef FixedFootYawCoMPlanningPosition
       Aval_com = [Aval_com;Aval_com];
       obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(6*(obj.nT-1),1);
-      % linear constraint that H[n]-H[n-1] = Hdot[n]*dt
+      % linear constraint that H[n]-H[n-1] = Hdot[n]*delta_s
       iA_H = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jA_H = [reshape(obj.H_idx(:,2:end),[],1);reshape(obj.H_idx(:,1:end-1),[],1); reshape(obj.Hdot_idx(:,2:end),[],1)];
       Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
