@@ -37,13 +37,14 @@ classdef FixedFootYawCoMPlanningPosition
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
       % @param robot_mass    The mass of the robot
       % @param t             The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
       % determined by the scaling function.
+      % @param g             The gravitational acceleration
       % @param lambda        A 3 x 3 Hurwitz matrix. It tries to drive the angular
       % momentum stays at 0 by putting the constraint Hdot[n] = lambda*H[n]+epsilon[n]
       % @param Q_comddot     A 3 x 3 PSD matrix. The cost is sum_n
@@ -55,7 +56,7 @@ classdef FixedFootYawCoMPlanningPosition
       obj.robot_mass = robot_mass;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
-      obj.g = 9.81;
+      obj.g = g;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.yaw = yaw;
@@ -226,8 +227,8 @@ classdef FixedFootYawCoMPlanningPosition
       model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT+3*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);
-      obj.x_lb(obj.sigma_idx) = sigma;
-      obj.x_ub(obj.sigma_idx) = sigma;
+      obj.x_lb(obj.sigma_idx) = sqrt(sigma);
+      obj.x_ub(obj.sigma_idx) = sqrt(sigma);
       obj.x_lb(obj.comp_idx(:)) = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       obj.x_ub(obj.comp_idx(:)) = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       model.lb = obj.x_lb;
@@ -243,7 +244,7 @@ classdef FixedFootYawCoMPlanningPosition
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-        sigma = sum(sum(epsilon.*epsilon));
+        sigma = sum(epsilon(:).^2);
         foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
       else
         error('P-step is infeasible');
