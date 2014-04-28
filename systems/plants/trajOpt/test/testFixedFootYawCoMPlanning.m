@@ -66,6 +66,8 @@ p_step = p_step.addKinematicPolygon([1 2],A_polygon,b_polygon);
 [com,comp,compp,foot_pos,Hdot,Hbar,tau] = p_step.solve(F,ones(1,nT),tau);
 
 c_margin = 0.1;
-f_step = FixedFootYawCoMPlanningForce(robot_mass,t,lambda,c_margin,lfoot_fsrc_cnstr,lfoot_yaw,rfoot_fsrc_cnstr,rfoot_yaw);
+dt_max = 0.2;
+sdot_max = 10;
+f_step = FixedFootYawCoMPlanningForce(robot_mass,t,lambda,c_margin,dt_max,sdot_max,lfoot_fsrc_cnstr,lfoot_yaw,rfoot_fsrc_cnstr,rfoot_yaw);
 [F,sdotsquare,Hdot,Hbar,tau] = f_step.solve(com,comp,compp,foot_pos,tau);
 end

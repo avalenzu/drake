@@ -12,7 +12,7 @@ classdef FixedFootYawCoMPlanningPosition
     H_idx; %A 3 x obj.nT matrix. x(H_idx(:,i)) is the centroidal angular momentum at time t_knot(i)
     Hdot_idx % A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of centroidal angular momentum at time t_knot(i)
     epsilon_idx % A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of the PD law Hdot[i] = lambda*H[i]+epsilon[i]
-    tau_idx % An integer scalar. x(tau_idx) is the index of tau, which is the dummy variable used to bound the PD residue: sum_n epsilon[n]'*epsilon[n] <= tau  
+    sigma_idx % An integer scalar. x(sigma_idx) is the index of sigma, which is the dummy variable used to bound the PD residue: sum_n epsilon[n]'*epsilon[n] <= sigma  
     num_vars % The total number of decision variables in the SOCP 
     x_names % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
     x_lb % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
@@ -115,8 +115,8 @@ classdef FixedFootYawCoMPlanningPosition
         obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = repmat({sprintf('epsilon[%d]',i)},3,1);
       end
       obj.num_vars = obj.num_vars+3*obj.nT;
-      obj.tau_idx = obj.num_vars+1;
-      obj.x_names = [obj.x_names;{'tau'}];
+      obj.sigma_idx = obj.num_vars+1;
+      obj.x_names = [obj.x_names;{'sigma'}];
       obj.num_vars = obj.num_vars+1;
       
       obj.num_fsrc_cnstr = length(varargin)/2;
@@ -213,14 +213,14 @@ classdef FixedFootYawCoMPlanningPosition
       obj.ub_comdot = inf(3,obj.nT);
     end
     
-    function [com,comp,compp,foot_pos,Hdot,Hbar,tau] = solve(obj,F,sdotsquare,tau)
+    function [com,comp,compp,foot_pos,Hdot,Hbar,sigma] = solve(obj,F,sdotsquare,sigma)
       % @param F     A cell array. F{i}{j} is the force parameters for
       % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
-      % @param tau   A scalar. The upper bound for sum_n
+      % @param sigma   A scalar. The upper bound for sum_n
       % epsilon[n]'*epsilon[n]
       % @param sdotsquare  A 1 x obj.nT vector. sdotsquare(i) is the square of the time
       % scaling function at time obj.t_knot(i)
-      % @retval tau   A scalar. The updated value for sum_n epsilon[n]'*epsilon[n]
+      % @retval sigma   A scalar. The updated value for sum_n epsilon[n]'*epsilon[n]
       % @retval com   A 3 x obj.nT matrix. com(:,i) is the position of the robot at the
       % i'th knot point
       % @retval comp  A 3 x obj.nT matrix. comp(:,i) is the first derivative of com w.r.t
@@ -266,13 +266,13 @@ classdef FixedFootYawCoMPlanningPosition
       model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT+3*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);
-      obj.x_lb(obj.tau_idx) = tau;
-      obj.x_ub(obj.tau_idx) = tau;
+      obj.x_lb(obj.sigma_idx) = sigma;
+      obj.x_ub(obj.sigma_idx) = sigma;
       obj.x_lb(obj.comp_idx(:)) = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       obj.x_ub(obj.comp_idx(:)) = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
-      model.cones.index = [obj.tau_idx obj.epsilon_idx(:)'];
+      model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
       params = struct();
 
       result = gurobi(model,params);
@@ -283,7 +283,7 @@ classdef FixedFootYawCoMPlanningPosition
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-        tau = sum(sum(epsilon.*epsilon));
+        sigma = sum(sum(epsilon.*epsilon));
         foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
         
       end
