@@ -3,6 +3,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
   % drake
   
   properties(SetAccess = protected)
+    x_name % A cell array of strings. x_name{i} is the name of the i'th decidion variable
     cin_name % A cell array of strings. cin_name{i} is the name of i'th nonlinear inequality constraint
     ceq_name % A cell array of strings. ceq_name{i} is the name of i'th nonlinear equality constraint
     Ain_name % A cell array of strings. Ain_name{i} is the name of i'th linear inequality constraint
@@ -28,9 +29,23 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
   end
   
   methods
-    function obj = NonlinearProgramWConstraintObjects(num_vars)
+    function obj = NonlinearProgramWConstraintObjects(num_vars,var_name)
       % @param num_vars     -- The number of decision variables
+      % @param var_name     -- A cell of strings. var_name{i} is the name of i'th decision
+      % variables. The default value is {'x1';'x2';...}
       obj = obj@NonlinearProgram(num_vars,0,0);
+      if(nargin<2)
+        var_name = cell(num_vars,1);
+        for i = 1:num_vars
+          var_name{i} = sprintf('x%d',i);
+        end
+      else
+        if(~iscellstr(var_name))
+          error('Drake:NonlinearProgramWConstraintObjects:var_name should be a cell string');
+        end
+        sizecheck(var_name,[num_vars,1]);
+      end
+      obj.x_name = var_name;
       obj.nlcon = {};
       obj.lcon = {};
       obj.bbcon = {};
@@ -295,10 +310,22 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       G = [G(1,:);G(1+obj.nlcon_ineq_idx,:);G(1+obj.nlcon_eq_idx,:)];
     end
     
-    function obj = addDecisionVariable(obj,num_new_vars)
+    function obj = addDecisionVariable(obj,num_new_vars,var_names)
       % appending new decision variables to the end of the current decision variables
       % @param num_new_vars      -- An integer. The newly added decision variable is an
       % num_new_vars x 1 double vector.
+      % @param var_names    -- A cell of strings. var_names{i} is the name of the
+      % i'th new decision variable
+      if(nargin<3)
+        var_names = cell(num_new_vars,1);
+        for i = 1:num_new_vars
+          var_names{i} = sprintf('x%d',obj.num_vars+i);
+        end
+      else
+        if(~iscellstr(var_names))
+          error('Drake:NonlinearProgramWConstraintObjects:addDecisionVariable:var_names should be a cell of strings');
+        end
+      end
       obj.num_vars = obj.num_vars+num_new_vars;
       obj.x_lb = [obj.x_lb;-inf(num_new_vars,1)];
       obj.x_ub = [obj.x_ub;inf(num_new_vars,1)];
@@ -308,6 +335,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       if(~isempty(obj.Ain))
         obj.Ain = [obj.Ain zeros(length(obj.bin),num_new_vars)];
       end
+      obj.x_name = [obj.x_name;var_names];
     end
     
     function obj = replaceCost(obj,cost,cost_idx,xind)
