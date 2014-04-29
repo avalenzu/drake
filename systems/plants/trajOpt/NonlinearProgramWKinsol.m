@@ -2,8 +2,8 @@ classdef NonlinearProgramWKinsol < NonlinearProgramWConstraintObjects
   % This class will be used for ik, trajectory optimization, etc. It uses 'kinsol' for
   % evaluating nonlinear constraints
   properties(SetAccess = protected)
-    robot
-    x_name
+    robot % A RigidBodyManipulator or a TimeSteppingRigidBodyManipulator object
+    
   end
   properties(Access=protected)
     nq
@@ -20,16 +20,17 @@ classdef NonlinearProgramWKinsol < NonlinearProgramWConstraintObjects
       if(~isa(robot,'RigidBodyManipulator') && ~isa(robot,'TimeSteppingRigidBodyManipulator'))
         error('Drake:NonlinearProgramWKinsol:robot should be a RigidBodyManipulator or a TimeSteppingRigidBodyManipulator');
       end
-      obj = obj@NonlinearProgramWConstraintObjects(robot.getNumDOF*nT);
-      obj.robot = robot;
-      obj.nq = robot.getNumDOF;
-      obj.nT = nT;
-      obj.x_name = cell(obj.nq*obj.nT,1);
-      for i = 1:obj.nT
-        for j = 1:obj.nq
-          obj.x_name{(i-1)*obj.nq+j} = sprintf('q%d[%d]',j,i);
+      r_nq = robot.getNumDOF;
+      var_name = cell(r_nq*nT,1);
+      for i = 1:nT
+        for j = 1:r_nq
+          var_name{(i-1)*r_nq+j} = sprintf('q%d[%d]',j,i);
         end
       end
+      obj = obj@NonlinearProgramWConstraintObjects(robot.getNumDOF*nT,var_name);
+      obj.robot = robot;
+      obj.nq = r_nq;
+      obj.nT = nT;
       obj.t_kinsol = false(1,obj.nT);
       obj.cost_kinsol_idx = {};
       obj.cost_nonkinsol_idx = {};
@@ -229,24 +230,5 @@ classdef NonlinearProgramWKinsol < NonlinearProgramWConstraintObjects
       end      
     end
     
-    function obj = addDecisionVariable(obj,num_new_vars,var_names)
-      % appending new decision variables to the end of the current decision variables
-      % @param num_new_vars      -- An integer. The newly added decision variable is an
-      % num_new_vars x 1 double vector.
-      % @param var_names         -- A cell of strings. var_names{i} is the name of the
-      % i'th new decision variable
-      if(nargin<3)
-        var_names = cell(num_new_vars,1);
-        for i = 1:num_new_vars
-          var_names{i} = sprintf('x%d',obj.num_vars+i);
-        end
-      else
-        if(~iscellstr(var_names))
-          error('Drake:NonlinearProgramWKinsol:addDecisionVariable:var_names should be a cell of strings');
-        end
-      end
-      obj = addDecisionVariable@NonlinearProgramWConstraintObjects(obj,num_new_vars);
-      obj.x_name = [obj.x_name;var_names];
-    end
   end
 end
