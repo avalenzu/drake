@@ -118,14 +118,18 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
     end
     
-    function solve(obj,com,comp,compp,foot_pos,sigma)
+    function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,com,comp,compp,foot_pos,sigma)
+      max_iter = 5;
+      sigma_sol = zeros(1,2*max_iter);
       iter = 0;
-      while(iter<5)
-        [F,sdotsquare,Hdot,Hbar,sigma,epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
-        checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
-        [com,comp,compp,foot_pos,Hdot,Hbar,sigma,epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
-        checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+      while(iter<=max_iter)
         iter = iter+1;
+        [F,sdotsquare,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+%         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+        sigma = sigma_sol(2*iter-1);
+        [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
+%         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+        sigma = sigma_sol(2*iter);
       end
     end
     
@@ -160,10 +164,10 @@ classdef FixedFootYawCoMPlanning
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
         mcomddot = obj.robot_mass*(compp(:,i)*sdotsquare(i)+comp(:,i)/(2*delta_s)*sdot_diff(i));
         valuecheck(F_i,mcomddot,1e-6);
-        valuecheck(tau_i,Hdot(:,i),1e-6);
+        valuecheck(tau_i,Hdot(:,i),1e-3);
       end
-      valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s,1e-4);
-      valuecheck(Hdot,obj.lambda*Hbar+epsilon,1e-4);
+      valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s,1e-3);
+      valuecheck(Hdot,obj.lambda*Hbar+epsilon,1e-3);
       sdot = sqrt(sdotsquare);
       if(any(2*delta_s*ones(1,obj.nT-1)./sum([sdot(1:end-1);sdot(2:end)],1)>obj.f_step.dt_max+1e-6))
         error('dt is above dt_max');
