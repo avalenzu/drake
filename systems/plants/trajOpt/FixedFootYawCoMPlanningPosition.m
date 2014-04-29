@@ -199,6 +199,7 @@ classdef FixedFootYawCoMPlanningPosition
       end
       sdotsquare_diff = diff(sdotsquare);
       sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
+      % A_angular*x=A_angular_bnd enforce the constraint Hdot-(contact_pt_pos-com)xF=0
       A_angular = zeros(3*obj.nT,obj.num_vars);
       A_angular_bnd = zeros(3*obj.nT,1);
       A_compp = zeros(3*obj.nT,obj.num_vars);
@@ -224,6 +225,11 @@ classdef FixedFootYawCoMPlanningPosition
       end
       model.A = sparse([obj.A_iris;obj.A_kin;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular;A_compp]);
       model.rhs = [obj.b_iris;obj.b_kin;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd;A_compp_bnd];
+      % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
+      % or -1
+      max_row_entry = max(abs(model.A),[],2);
+      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+      model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT+3*obj.nT,1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);

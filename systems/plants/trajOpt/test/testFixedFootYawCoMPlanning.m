@@ -75,6 +75,6 @@ compp = diff(comp,1,2)*(nT-1);
 compp = [zeros(3,1) compp];
 foot_pos = [-0.1 0.15;-0.03 -0.03];
 
-planning.solve(com,comp,compp,foot_pos,sigma);
+[com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,F_sol] = planning.solve(com,comp,compp,foot_pos,sigma);
 
 end
