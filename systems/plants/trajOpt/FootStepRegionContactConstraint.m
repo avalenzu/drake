@@ -40,11 +40,19 @@ classdef FootStepRegionContactConstraint
       obj.num_force_weight = obj.num_edges*obj.num_contact_pts;
     end
     
-    function A = force(obj,yaw)
+    function [A,dA] = force(obj,yaw)
       % The force in the world frame is A*w where w is the force weight;
       % @param yaw   The yaw angle
-      R = obj.foot_step_region_cnstr.bodyTransform(yaw);
-      A = R*obj.edges;
+      % @retval A   A matrix. A*w is the force
+      % @retval dA  A matrix. gradient of A w.r.t yaw
+      if(nargin <2)
+        R = obj.foot_step_region_cnstr.bodyTransform(yaw);
+        A = R*obj.edges;
+      else
+        [R,~,~,dR] = obj.foot_step_region_cnstr.bodyTransform(yaw);
+        A = R*obj.edges;
+        dA = dR*obj.edges;
+      end
     end
     
     function pos = contactPosition(obj,x,y,yaw)

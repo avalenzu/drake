@@ -145,6 +145,12 @@ classdef FixedFootYawCoMPlanningForce
       for i = 1:obj.num_fsrc_cnstr
         for j = 1:obj.nT        
           obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
+          obj.x_names = [obj.x_names;cell(obj.fsrc_cnstr{i}.num_force_weight,1)];
+          for k = 1:obj.fsrc_cnstr{i}.num_contact_pts
+            for l = 1:obj.fsrc_cnstr{i}.num_edges
+              obj.x_names{obj.num_vars+(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
+            end
+          end
           obj.num_vars = obj.num_vars+obj.fsrc_cnstr{i}.num_force_weight;
           obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
         end
