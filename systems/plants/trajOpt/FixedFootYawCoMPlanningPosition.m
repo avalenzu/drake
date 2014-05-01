@@ -132,8 +132,8 @@ classdef FixedFootYawCoMPlanningPosition
       end
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
       delta_s = 1/(obj.nT-1);
-      % linear constraint that com[n]-com[n-1] = comdot[n]*dt and comdot[n]-comdot[n-1] =
-      % comddot[n]*dt
+      % linear constraint that com[n]-com[n-1] = comp[n]*delta_s and comp[n]-comp[n-1] =
+      % compp[n]*delta_s
       iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comp_idx(:,2:end),[],1)];
       Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];

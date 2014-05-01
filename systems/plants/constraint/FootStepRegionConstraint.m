@@ -183,13 +183,16 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       T = [rotmat A*[x;y]+b;0 0 0 1];
     end
     
-    function [rotmat,A,b] = bodyTransform(obj,yaw)
+    function [rotmat,A,b,drotmat,dA,db] = bodyTransform(obj,yaw)
       % Given the x,y position of obj.body_pt and yaw angle of the foot. The world
       % coordinate of a point P is P_w = A*[x;y]+b+rotmat*P_b, where P_b is the coordinate
       % of P in the body frame.
       % @retval rotmat   A 3 x 3 rotation matrix
       % @retval A,b    A is a 3 x 2 matrix and b is a 3 x 1 vector. A*[x;y]+b is the world
       % coordinate of 0_b, where O_b is the origin in the body frame.
+      % @retval drotmat  A 3 x 3 matrix. gradient of rotmat w.r.t yaw
+      % @retval dA      A 3 x 2 matrix. gradient of A w.r.t yaw
+      % @retval db      A 3 x 1 matrix. gradient of b w.r.t yaw
       axis = cross([0;0;1],obj.ground_normal);
       axis_norm = norm(axis);
       if(axis_norm<1e-3)
@@ -200,9 +203,13 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
         rotmat1 = axis2rotmat([axis;theta]);
       end
       rotmat2 = axis2rotmat([0;0;1;yaw]);
+      drotmat2 = [-sin(yaw) -cos(yaw) 0;cos(yaw) -sin(yaw) 0;0 0 0];
       rotmat = rotmat1*rotmat2;
+      drotmat = rotmat1*drotmat2;
       A = [1 0;0 1;-obj.ground_normal(1:2)'/obj.ground_normal(3)];
+      dA = zeros(3,2);
       b = [0;0;(obj.z_offset+obj.ground_normal'*obj.ground_pt)/obj.ground_normal(3)]-rotmat*obj.body_pt;
+      db = -drotmat*obj.body_pt;
     end
   end
   
