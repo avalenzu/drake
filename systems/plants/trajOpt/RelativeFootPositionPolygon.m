@@ -1,4 +1,4 @@
-classdef RelativeFootPositionPolygon
+classdef RelativeFootPositionPolygon < NonlinearConstraint
   % For a contact bodyB, specify the polygonal admissible region of the xy position of
   % bodyB in the bodyA's coordinate.
   properties(SetAccess = protected)
@@ -20,6 +20,8 @@ classdef RelativeFootPositionPolygon
       end
       sizecheck(vertices,[2,nan]);
       conv_idx = convhull(vertices(1,:),vertices(2,:));
+      num_edges = length(conv_idx)-1;
+      obj = obj@NonlinearConstraint(-inf(num_edges,1),zeros(num_edges,1),5);
       obj.num_vertices = length(conv_idx)-1;
       obj.vertices = vertices(:,conv_idx);
       edge = diff(obj.vertices,1,2);
@@ -29,6 +31,20 @@ classdef RelativeFootPositionPolygon
       obj.A_body = -normal';
       obj.b_body = -sum(normal.*obj.vertices(:,1:end-1),1)';
       obj.vertices = obj.vertices(:,1:end-1);
+    end
+    
+    function [c,dc] = eval(obj,x)
+      % @param x  A 5 x 1 vector. x = [xA;yA;yawA;xB;yB]
+      posA = x(1:2);
+      yawA = x(3);
+      posB = x(4:5);
+      rotmat = [cos(yawA) -sin(yawA);sin(yawA) cos(yawA)];
+      drotmatdyaw = [-sin(yawA) -cos(yawA);cos(yawA) -sin(yawA)];
+      A = obj.A_body*rotmat';
+      dAdyaw = obj.A_body*drotmatdyaw';
+      c = [-A A]*[posA;posB]-obj.b_body;
+      dcdyaw = [-dAdyaw dAdyaw]*[posA;posB];
+      dc = [-A dcdyaw A];
     end
     
     function [A,b] = halfspace(obj,yaw)

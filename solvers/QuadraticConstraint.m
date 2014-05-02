@@ -1,10 +1,8 @@
 classdef QuadraticConstraint < NonlinearConstraint
   % lb <= (x-a)'Q(x-a) <= ub
-  % @param Q    -- A square matrix of size nx x nx
-  % @param a    -- A double vector of size nx x 1
   properties(SetAccess = protected)
-    Q
-    a
+    Q % A square matrix of size nx x nx
+    a % A double vector of size nx x 1
   end
   
   methods
