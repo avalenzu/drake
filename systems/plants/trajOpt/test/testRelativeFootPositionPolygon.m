@@ -15,4 +15,5 @@ val = A*[bsxfun(@times,posA,ones(1,num_posB));posB]-bsxfun(@times,b,ones(1,num_p
 if(any(any(val>1e-10)))
   error('Incorrect RelativeFootPositionPolygon');
 end
+rfpp.checkGradient(1e-3,randn(5,1));
 end

@@ -21,9 +21,6 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
     F2fsrc_map % A cell array. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
   end
   
-  properties(Access = protected)
-    
-  end
   
   methods
     function obj = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,varargin)
@@ -135,6 +132,7 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       sdot_names = cell(obj.nT,1);
       H_names = cell(3*obj.nT,1);
       Hdot_names = cell(3*obj.nT,1);
+      margin_names = cell(obj.nT,1);
       for i = 1:obj.nT
         com_names((i-1)*3+(1:3)) = {sprintf('com_x[%d]',i);sprintf('com_y[%d]',i);sprintf('com_z[%d]',i)};
         comp_names((i-1)*3+(1:3)) = {sprintf('comp_x[%d]',i);sprintf('comp_y[%d]',i);sprintf('comp_z[%d]',i)};
@@ -142,6 +140,7 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
         sdot_names{i} = sprintf('sdot[%d]',i);
         H_names((i-1)*3+(1:3)) = {sprintf('H_x[%d]',i);sprintf('H_y[%d]',i);sprintf('H_z[%d]',i)};
         Hdot_names((i-1)*3+(1:3)) = {sprintf('Hdot_x[%d]',i);sprintf('Hdot_y[%d]',i);sprintf('Hdot_z[%d]',i)};
+        margin_names{i} = sprintf('force_margin[%d]',i);
       end
       obj.com_idx = obj.num_vars+reshape(1:3*obj.nT,3,obj.nT);
       obj = obj.addDecisionVariable(3*obj.nT,com_names);
@@ -155,6 +154,8 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       obj = obj.addDecisionVariable(3*obj.nT,H_names);
       obj.Hdot_idx = obj.num_vars + reshape(1:3*obj.nT,3,obj.nT);
       obj = obj.addDecisionVariable(3*obj.nT,Hdot_names);
+      obj.margin_idx = obj.num_vars+(1:obj.nT);
+      obj = obj.addDecisionVariable(obj.nT,margin_names);
       
       delta_s = 1/(obj.nT-1);
       % linear constraint com[n]-com[n-1] = comp[n]*delta_s; comp[n]-comp[n-1] =
@@ -189,6 +190,18 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       Aval_dtmax = ones(2*(obj.nT-1),1);
       obj = obj.addLinearConstraint(LinearConstraint(-inf(obj.nT-1,1),dt_max*ones(obj.nT-1,1),sparse(iA_dtmax,jA_dtmax,Aval_dtmax,obj.nT-1,obj.num_vars)));
       
+      % Add the constraint for force margin
+      for i = 1:obj.nT
+        for j = 1:length(obj.F2fsrc_map{i})
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          num_F_ij = obj.fsrc_cnstr{fsrc_idx}.num_force_weight;
+          iA_margin = [(1:num_F_ij)';(1:num_F_ij)'];
+          jA_margin = [obj.margin_idx(i)*ones(num_F_ij,1);obj.F_idx{i}{j}(:)];
+          Aval_margin = [ones(num_F_ij,1);-ones(num_F_ij,1)];
+          obj = obj.addLinearConstraint(LinearConstraint(-inf(num_F_ij,1),zeros(num_F_ij,1),sparse(iA_margin,jA_margin,Aval_margin,num_F_ij,obj.num_vars)));
+        end
+      end
+      
       % Add the nonlinear constraints on the wrench
       sdot1_idx = [obj.sdot_idx(1:end-1) obj.sdot_idx(end-1)];
       sdot2_idx = [obj.sdot_idx(2:end) obj.sdot_idx(end)];
@@ -202,6 +215,14 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
         obj = obj.addNonlinearConstraint(wrench_cnstr,...
           [obj.com_idx(:,i);obj.comp_idx(:,i);obj.compp_idx(:,i);sdot1_idx(i);sdot2_idx(i);obj.Hdot_idx(:,i);reshape(obj.fsrc_body_pos_idx(:,fsrc_idx),[],1);(obj.yaw_idx(:,fsrc_idx))';Fi_idx]);
       end
+      
+      % Add cost function
+      compp_cost = QuadraticSumConstraint(-inf,inf,Q_comddot,zeros(3,obj.nT));
+      obj = obj.addCost(compp_cost,obj.compp_idx(:));
+      margin_cost = LinearConstraint(-inf,inf,-c_margin*ones(1,obj.nT));
+      obj = obj.addCost(margin_cost,obj.margin_idx(:));
+      angular_PD_cost = QuadraticSumConstraint(-inf,inf,[eye(3) -lambda';-lambda lambda'*lambda],zeros(6,obj.nT));
+      obj = obj.addCost(angular_PD_cost,reshape([obj.Hdot_idx;obj.H_idx],[],1));
     end
   end
 end

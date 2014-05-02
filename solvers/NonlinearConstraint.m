@@ -2,25 +2,14 @@ classdef NonlinearConstraint < Constraint
   % Nonlinear constraint. Support computing the non-zero entries in the first order
   % gradient. The default sparsity pattern is the the gradient matrix being dense. Use
   % 'setSparsityStructure' to set the sparsity pattern.
-  % @param num_cnstr      -- An int scalar. The number of constraints
-  % @param xdim           -- An int scalar. The decision variable is an xdim x 1 double
-  % vector
-  % @param iCfun          -- An int vector. The row index of non-zero entries of the
-  % gradient matrix
-  % @param jCvar          -- An int vector. The column index of the non-zero entries of
-  % the gradient matrix
-  % @param nnz            -- An int scalar. The maximal number of non-zero entries in the
-  % gradient matrix
-  % @param ceq_idx        -- The row index of the equality constraint
-  % @param cin_idx        -- The row index of the inequality constraint
   properties(SetAccess = protected)
-    num_cnstr
-    xdim
-    iCfun
-    jCvar
-    nnz
-    ceq_idx
-    cin_idx
+    num_cnstr % An int scalar. The number of constraints
+    xdim % An int scalar. The decision variable is an xdim x 1 double
+    iCfun % An int vector. The row index of non-zero entries of the gradient matrix
+    jCvar % An int vector. The column index of the non-zero entries of the gradient matrix
+    nnz % An int scalar. The maximal number of non-zero entries in the gradient matrix
+    ceq_idx % The row index of the equality constraint
+    cin_idx % The row index of the inequality constraint
   end
   
   methods
