@@ -101,12 +101,21 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       end
     end
     
-    function obj = addNonlinearConstraint(obj,cnstr,xind)
+    function obj = addNonlinearConstraint(obj,cnstr,xind,cnstr_name)
       % add a NonlinearConstraint to the object, change the constraint evalation of the
       % program. 
       % @param cnstr     -- A NonlinearConstraint object
       % @param xind      -- Optional argument. The x(xind) is the decision variables used
       % in evaluating the cnstr. Default value is (1:obj.num_vars)
+      % @param cnstr_name  -- An optional argument. A cell of strings. cnstr_name{i} is
+      % the name of the i'th constraint. If not given, the cnstr.name will be used instead
+      if(nargin<4)
+        cnstr_name = cnstr.name;
+      else
+        if(~iscellstr(cnstr_name))
+          error('Drake:NonlinearProgramWConstraintObjects:cnstr_name should be a cell of strings');
+        end
+      end
       if(nargin<3)
         xind = {(1:obj.num_vars)'};
       end
@@ -116,7 +125,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       xind_vec = cell2mat(xind);
       
       if(~isa(cnstr,'NonlinearConstraint'))
-        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addNonlinearConstraint expects a NonlinearConstraint object');
+        error('Drake:NonlinearProgramWConstraintObjects:UnsupportedConstraint','addNonlinearConstraint expects a NonlinearConstraint object');
       end
       if length(xind_vec) ~= cnstr.xdim
         error('Drake:NonlinearProgramWConstraint:InvalidArgument','the length of xind must match the x-dimension of the constraint');
@@ -148,11 +157,20 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
     
     
     
-    function obj = addLinearConstraint(obj,cnstr,xind)
+    function obj = addLinearConstraint(obj,cnstr,xind,cnstr_name)
       % add a LinearConstraint to the program
       % @param cnstr     -- A LinearConstraint object
       % @param xind      -- Optional argument. x(xind) is the decision variables used in
       % evaluating the constraint. Default value is (1:obj.num_vars)
+      % @param cnstr_name  -- An optional argument. A cell of strings. cnstr_name{i} is
+      % the name of the i'th constraint. If not given, the cnstr.name will be used instead
+      if(nargin<4)
+        cnstr_name = cnstr.name;
+      else
+        if(~iscellstr(cnstr_name))
+          error('Drake:NonlinearProgramWConstraintObjects:cnstr_name should be a cell of strings');
+        end
+      end
       if(nargin<3)
         xind = (1:obj.num_vars)';
       end
@@ -180,8 +198,8 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
         obj = obj.addLinearInequalityConstraints([cnstr_Ain(bin_ub_inf_idx,:);-cnstr_Ain(bin_lb_inf_idx,:)],...
           [cnstr_bin_ub(bin_ub_inf_idx);-cnstr_bin_lb(bin_lb_inf_idx)]);
       end
-      obj.Ain_name = [obj.Ain_name;cnstr.name(cnstr.cin_idx)];
-      obj.Aeq_name = [obj.Aeq_name;cnstr.name(cnstr.ceq_idx)];
+      obj.Ain_name = [obj.Ain_name;cnstr_name(cnstr.cin_idx)];
+      obj.Aeq_name = [obj.Aeq_name;cnstr_name(cnstr.ceq_idx)];
       obj = obj.addLinearEqualityConstraints(cnstr_Aeq,cnstr_beq);
     end
     

@@ -26,6 +26,7 @@ classdef FixedFootYawCoMPlanningPosition
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
     lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
@@ -37,7 +38,7 @@ classdef FixedFootYawCoMPlanningPosition
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
       % @param robot_mass    The mass of the robot
@@ -64,6 +65,7 @@ classdef FixedFootYawCoMPlanningPosition
       obj.b_xy = b_xy;
       obj.rotmat = rotmat;
       obj.F2fsrc_map = F2fsrc_map;
+      obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.A_force = A_force;
       obj.num_vars = 0;
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);

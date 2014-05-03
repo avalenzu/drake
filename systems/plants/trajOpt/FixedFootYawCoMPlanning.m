@@ -3,6 +3,7 @@ classdef FixedFootYawCoMPlanning
   % and output a dynamically feasible CoM trajectory of the robot and the corresponding
   % contact forces.
   properties
+    seed_step  % A FixedFootYawCoMPlanningSeed object
     f_step  % A FixedFootYawCoMPlanningForce object
     p_step  % A FixedFootYawCoMPlanningPosition object
   end
@@ -11,6 +12,7 @@ classdef FixedFootYawCoMPlanning
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
     A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
@@ -21,15 +23,14 @@ classdef FixedFootYawCoMPlanning
   end
   
   methods
-    function obj = FixedFootYawCoMPlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,varargin)
-      % obj =
-      % FixedFootYawCoMPlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,...
-      %   foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
+    function obj = FixedFootYawCoMPlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr,yaw)
       % @properties robot_mass    The mass of the robot
       % @param t             The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
       % determined by the scaling function.
-      % @properties foot_step_region_contact_cnstr    A FootStepRegionContactConstraint
+      % @properties fsrc_cnstr    A cell of FootStepRegionContactConstraint
+      % @properties yaw      A double vector. yaw(i) is the yaw angle of the body in
+      % fsrc_cnstr{i}
       if(~isnumeric(robot_mass))
         error('Drake:FixedFootYawCoMPlanning:robot mass should be numeric');
       end
@@ -81,28 +82,28 @@ classdef FixedFootYawCoMPlanning
         error('Drake:FixedFootYawCoMPlanning:Q_comddot should be a positive semi-definite matrix');
       end
       
-      obj.num_fsrc_cnstr = length(varargin)/2;
-      obj.fsrc_cnstr = cell(1,obj.num_fsrc_cnstr);
+      obj.num_fsrc_cnstr = length(fsrc_cnstr);
+      obj.fsrc_cnstr = fsrc_cnstr;
       obj.F2fsrc_map = cell(1,obj.nT);
-      obj.yaw = zeros(1,obj.num_fsrc_cnstr);
+      obj.fsrc_knot_active_idx = cell(1,obj.num_fsrc_cnstr);
+      sizecheck(yaw,[1,obj.num_fsrc_cnstr]);
+      obj.yaw = yaw;
       obj.A_force = cell(1,obj.num_fsrc_cnstr);
       obj.A_xy = zeros(3,2,obj.num_fsrc_cnstr);
       obj.b_xy = zeros(3,1,obj.num_fsrc_cnstr);
       obj.rotmat = zeros(3,3,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
-        if(~isa(varargin{2*i-1},'FootStepRegionContactConstraint'))
+        if(~isa(obj.fsrc_cnstr{i},'FootStepRegionContactConstraint'))
           error('Drake:FixedFootYawCoMPlanningPosition:The input should be a FootStepRegionContactConstraint');
         end
-        if(~isnumeric(varargin{2*i}))
+        if(~isnumeric(obj.yaw(i)))
           error('Drake:FixedFootYawCoMPlanningPosition:The input yaw angle should be a double');
         end
-        obj.fsrc_cnstr{i} = varargin{2*i-1};
-        sizecheck(varargin{2*i},[1,1]);
-        obj.yaw(i) = varargin{2*i};
-        obj.A_force{i} = varargin{2*i-1}.force(varargin{2*i});
-        [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = varargin{2*i-1}.foot_step_region_cnstr.bodyTransform(varargin{2*i});
+        obj.A_force{i} = obj.fsrc_cnstr{i}.force(yaw(i));
+        [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = obj.fsrc_cnstr{i}.foot_step_region_cnstr.bodyTransform(obj.yaw(i));
         for j = 1:obj.nT
-          if(varargin{2*i-1}.foot_step_region_cnstr.isTimeValid(t_knot(j)))
+          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(t_knot(j)))
+            obj.fsrc_knot_active_idx{i} = [obj.fsrc_knot_active_idx{i} j];
             obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
             is_fsrc_active = true;
           end
@@ -113,12 +114,18 @@ classdef FixedFootYawCoMPlanning
       end
       
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,...
-        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.seed_step = FixedFootYawPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,Q_comddot,...
+        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
     end
     
-    function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,com,comp,compp,foot_pos,sigma)
+    function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,sdot0,H0)
+      % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
+      % function s at i'th knot. This is used as a initial guess
+      [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
+      [Hbar,Hdot,sigma] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
       max_iter = 5;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;

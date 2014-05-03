@@ -28,6 +28,7 @@ classdef FixedFootYawCoMPlanningForce
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     
     F2fsrc_map % A cell array. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     
     A_newton % A 3*obj.nT x obj.num_vars matrix. force(:) = A_newton*x, where force(:,i) is the total force at i'th knot point
@@ -50,7 +51,7 @@ classdef FixedFootYawCoMPlanningForce
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningForce(robot_mass,t,g,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningForce(robot_mass,t,g,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % @param robot_mass  The mass of the robot
       % @param t   The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
@@ -65,6 +66,7 @@ classdef FixedFootYawCoMPlanningForce
       % @param sdot_max  A positive scalar. The upper bound for the derivitive of time scaling funtion s
       % w.r.t time.
       % @param fsrc_cnstr  A cell array. All the FootStepRegionContactConstraint object
+      % @param fsrc_knot_active_idx   A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
@@ -81,6 +83,7 @@ classdef FixedFootYawCoMPlanningForce
       obj.sdot_max = sdot_max;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
+      obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.yaw = yaw;
       obj.A_xy = A_xy;
       obj.b_xy = b_xy;
@@ -143,16 +146,18 @@ classdef FixedFootYawCoMPlanningForce
       obj.F_idx = cell(1,obj.nT);
       obj.num_force_weight = 0;
       for i = 1:obj.num_fsrc_cnstr
-        for j = 1:obj.nT        
-          obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
-          obj.x_names = [obj.x_names;cell(obj.fsrc_cnstr{i}.num_force_weight,1)];
-          for k = 1:obj.fsrc_cnstr{i}.num_contact_pts
-            for l = 1:obj.fsrc_cnstr{i}.num_edges
-              obj.x_names{obj.num_vars+(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
+        for j = 1:obj.nT    
+          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
+            obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
+            obj.x_names = [obj.x_names;cell(obj.fsrc_cnstr{i}.num_force_weight,1)];
+            for k = 1:obj.fsrc_cnstr{i}.num_contact_pts
+              for l = 1:obj.fsrc_cnstr{i}.num_edges
+                obj.x_names{obj.num_vars+(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
+              end
             end
+            obj.num_vars = obj.num_vars+obj.fsrc_cnstr{i}.num_force_weight;
+            obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
           end
-          obj.num_vars = obj.num_vars+obj.fsrc_cnstr{i}.num_force_weight;
-          obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
         end
       end
       obj.x_lb = -inf(obj.num_vars,1);
