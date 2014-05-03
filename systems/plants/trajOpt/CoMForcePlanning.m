@@ -19,13 +19,12 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
     yaw_idx % A 1 x num_fsrc_cnstr vector. x(obj.yaw_idx(i)) is the yaw angle of the contact body in obj.fsrc_cnstr{i}
     F2fsrc_map % A cell array. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
   end
   
   
   methods
-    function obj = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,varargin)
-      % obj =
-      % CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,foot_step_region_contact_cnstr1,foot_step_region_contact_cnstr2,...)
+    function obj = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr)
       % @properties robot_mass    The mass of the robot
       % @param t             The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
@@ -38,7 +37,7 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       % two consecutive knot points
       % @param sdot_max  A positive scalar. The upper bound for the derivitive of time scaling funtion s
       % w.r.t time.
-      % @param foot_step_region_contact_cnstr     A FootStepRegionContactConstraint object
+      % @param fsrc_cnstr     A cell of FootStepRegionContactConstraint object
       obj = obj@NonlinearProgramWConstraintObjects(0);
       if(~isnumeric(robot_mass))
         error('Drake:CoMForcePlanning:robot mass should be numeric');
@@ -89,22 +88,23 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       if(any(eig(Q_comddot)<0))
         error('Drake:CoMForcePlanning:Q_comddot should be a positive semi-definite matrix');
       end
-      obj.num_fsrc_cnstr = length(varargin);
-      obj.fsrc_cnstr = cell(1,obj.num_fsrc_cnstr);
+      obj.num_fsrc_cnstr = length(fsrc_cnstr);
+      obj.fsrc_cnstr = fsrc_cnstr;
       body_pos_names = cell(2*obj.num_fsrc_cnstr,1);
       yaw_names = cell(obj.num_fsrc_cnstr,1);
       obj.F2fsrc_map = cell(1,obj.nT);
       obj.F_idx = cell(1,obj.nT);
+      obj.fsrc_knot_active_idx = cell(1,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
-        if(~isa(varargin{i},'FootStepRegionContactConstraint'))
+        if(~isa(obj.fsrc_cnstr{i},'FootStepRegionContactConstraint'))
           error('Drake:CoMForcePlanning: the input should be a FootStepRegionContactConstraint');
         end
-        obj.fsrc_cnstr{i} = varargin{i};
         body_pos_names(2*(i-1)+(1:2)) = {sprintf('fsrc[%d]_pos_x',i);sprintf('fsrc[%d]_pos_y',i)};
         yaw_names{i} = sprintf('fsrc[%d]_yaw',i);
         is_fsrc_active = false;
         for j = 1:obj.nT
           if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
+            obj.fsrc_knot_active_idx{i} = [obj.fsrc_knot_active_idx{i} j];
             obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
             obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
             F_names = cell(obj.fsrc_cnstr{i}.num_force_weight,1);
@@ -224,5 +224,18 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       angular_PD_cost = QuadraticSumConstraint(-inf,inf,[eye(3) -lambda';-lambda lambda'*lambda],zeros(6,obj.nT));
       obj = obj.addCost(angular_PD_cost,reshape([obj.Hdot_idx;obj.H_idx],[],1));
     end
+    
+    function obj = addCoMFootDistanceConstraint(obj,fsrc_idx,dist_lb,dist_ub)
+      % add a CoMFootDistanceConstraint to the object
+      % @param fsrc_idx    An integer. The distance is imposed on obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr
+      % @param dist_lb   A scalar. The lower bound of the distance
+      % @param dist_ub   A scalar. The upper bound of the distance
+      cfd_cnstr = CoMFootDistanceConstraint(obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr,dist_lb,dist_ub);
+      for i = 1:length(obj.fsrc_knot_active_idx{fsrc_idx})
+        obj = obj.addNonlinearConstraint(cfd_cnstr,[obj.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.fsrc_body_pos_idx(:,fsrc_idx);obj.yaw_idx(:,fsrc_idx)]);
+      end
+    end
+    
+    
   end
 end

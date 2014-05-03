@@ -59,18 +59,27 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       obj.Aeq_name = {};
     end
     
-    function obj = addNonlinearConstraint(obj,cnstr,xind)
+    function obj = addNonlinearConstraint(obj,cnstr,xind,cnstr_name)
       % add a NonlinearConstraint to the object, change the constraint evalation of the
       % program. 
       % @param cnstr     -- A NonlinearConstraint object
       % @param xind      -- Optional argument. The x(xind) is the decision variables used
       % in evaluating the cnstr. Default value is (1:obj.num_vars)
+      % @param cnstr_name  -- An optional argument. A cell of strings. cnstr_name{i} is
+      % the name of the i'th constraint. If not given, the cnstr.name will be used instead
+      if(nargin<4)
+        cnstr_name = cnstr.name;
+      else
+        if(~iscellstr(cnstr_name))
+          error('Drake:NonlinearProgramWConstraintObjects:cnstr_name should be a cell of strings');
+        end
+      end
       if(nargin<3)
         xind = (1:obj.num_vars)';
       end
       xind = xind(:);
       if(~isa(cnstr,'NonlinearConstraint'))
-        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addNonlinearConstraint expects a NonlinearConstraint object');
+        error('Drake:NonlinearProgramWConstraintObjects:UnsupportedConstraint','addNonlinearConstraint expects a NonlinearConstraint object');
       end
       obj.nlcon = [obj.nlcon,{cnstr}];
       
@@ -88,8 +97,8 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       obj.jCinvar = [obj.jCinvar;xind(cnstr.jCvar(Gin_idx))];
       obj.iCeqfun = [obj.iCeqfun;obj.num_ceq+inv_ceq_idx(cnstr.iCfun(Geq_idx))];
       obj.jCeqvar = [obj.jCeqvar;xind(cnstr.jCvar(Geq_idx))];
-      obj.cin_name = [obj.cin_name;cnstr.name(cnstr.cin_idx)];
-      obj.ceq_name = [obj.ceq_name;cnstr.name(cnstr.ceq_idx)];
+      obj.cin_name = [obj.cin_name;cnstr_name(cnstr.cin_idx)];
+      obj.ceq_name = [obj.ceq_name;cnstr_name(cnstr.ceq_idx)];
       obj.num_cin = obj.num_cin + length(cnstr.cin_idx);
       obj.num_ceq = obj.num_ceq + length(cnstr.ceq_idx);
       obj.num_nlcon = obj.num_nlcon + cnstr.num_cnstr;
@@ -98,11 +107,20 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
     
     
     
-    function obj = addLinearConstraint(obj,cnstr,xind)
+    function obj = addLinearConstraint(obj,cnstr,xind,cnstr_name)
       % add a LinearConstraint to the program
       % @param cnstr     -- A LinearConstraint object
       % @param xind      -- Optional argument. x(xind) is the decision variables used in
       % evaluating the constraint. Default value is (1:obj.num_vars)
+      % @param cnstr_name  -- An optional argument. A cell of strings. cnstr_name{i} is
+      % the name of the i'th constraint. If not given, the cnstr.name will be used instead
+      if(nargin<4)
+        cnstr_name = cnstr.name;
+      else
+        if(~iscellstr(cnstr_name))
+          error('Drake:NonlinearProgramWConstraintObjects:cnstr_name should be a cell of strings');
+        end
+      end
       if(nargin<3)
         xind = (1:obj.num_vars)';
       end
@@ -124,8 +142,8 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
         obj = obj.addLinearInequalityConstraints([cnstr_Ain(bin_ub_inf_idx,:);-cnstr_Ain(bin_lb_inf_idx,:)],...
           [cnstr_bin_ub(bin_ub_inf_idx);-cnstr_bin_lb(bin_lb_inf_idx)]);
       end
-      obj.Ain_name = [obj.Ain_name;cnstr.name(cnstr.cin_idx)];
-      obj.Aeq_name = [obj.Aeq_name;cnstr.name(cnstr.ceq_idx)];
+      obj.Ain_name = [obj.Ain_name;cnstr_name(cnstr.cin_idx)];
+      obj.Aeq_name = [obj.Aeq_name;cnstr_name(cnstr.ceq_idx)];
       obj = obj.addLinearEqualityConstraints(cnstr_Aeq,cnstr_beq);
     end
     
