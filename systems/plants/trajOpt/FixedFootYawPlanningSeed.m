@@ -218,7 +218,7 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       end
     end
     
-    function [Hbar,Hdot,sigma] = angularMomentum(obj,com,foot_pos,F,H0)
+    function [Hbar,Hdot,sigma,epsilon] = angularMomentum(obj,com,foot_pos,F,H0)
       % Compute the angular momentum given the com trajectory, foot_pos, force and initial
       % angular momentum
       % @param com    A 3 x obj.nT matrix. The CoM position
