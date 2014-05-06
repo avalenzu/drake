@@ -1,4 +1,4 @@
-classdef FixedFootYawCoMPlanningForce
+classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
   % 'F-step' of the alternative planning for CoM trajectory. Fix the contact location and
   % CoM trajectory, bust search for the contact force. This is a SOCP problem
   properties(SetAccess = protected)
@@ -16,10 +16,6 @@ classdef FixedFootYawCoMPlanningForce
     tau_idx % A 1 x obj.nT vector. x(tau_idx(i)) is the dummy variable satisfies 4*sdotsquare[i]>=tau[i]^2;
     sdotsquareplus_idx % A 1 x obj.nT vector. x(sdotsquareplus_idx(i)) = sdotsquare[i]+1. This dummy variable is used in the upper bound of dt
     sdotsquareminus_idx % A 1 x obj.nT vector. x(sdotsquareminus_idx(i)) = sdotsquare[i]-1. This dummy variable is used in the upper bound of dt
-    num_vars % The total number of decision variables in the SOCP 
-    x_names % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
-    x_lb % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
-    x_ub % A obj.num_vars x 1 double vector. The upper bound for the decision variable x
     Q_cost % A obj.num_vars x obj.num_vars sparse PSD matrix. The Hessian of the quadratic cost
     f_cost % A obj.num_vars x 1 vector. The linear componenet of the cost
     A_H,A_H_bnd % A_H * x = A_H_bnd is the constraint on the euler integraton of angular momentum
@@ -70,6 +66,7 @@ classdef FixedFootYawCoMPlanningForce
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
+      obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
@@ -90,58 +87,65 @@ classdef FixedFootYawCoMPlanningForce
       obj.rotmat = rotmat;
       obj.F2fsrc_map = F2fsrc_map;
       obj.A_force = A_force;
-      obj.num_vars = 0;
       obj.H_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = cell(obj.num_vars,1);
+      H_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('H_x[%d]',i);sprintf('H_y[%d]',i);sprintf('H_z[%d]',i)};
+        H_names((i-1)*3+(1:3)) = {sprintf('H_x[%d]',i);sprintf('H_y[%d]',i);sprintf('H_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,H_names);
+      
       obj.Hdot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      Hdot_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('Hdot_x[%d]',i);sprintf('Hdot_y[%d]',i);sprintf('Hdot_z[%d]',i)};
+        Hdot_names((i-1)*3+(1:3)) = {sprintf('Hdot_x[%d]',i);sprintf('Hdot_y[%d]',i);sprintf('Hdot_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,Hdot_names);
+      
       obj.epsilon_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      epsilon_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = repmat({sprintf('epsilon[%d]',i)},3,1);
+        epsilon_names((i-1)*3+(1:3)) = repmat({sprintf('epsilon[%d]',i)},3,1);
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,epsilon_names);
+      
       obj.sigma_idx = obj.num_vars+1;
-      obj.x_names = [obj.x_names;{'sigma'}];
-      obj.num_vars = obj.num_vars+1;
+      sigma_names = {'sigma'};
+      obj = obj.addDecisionVariable(1,sigma_names);
+      
       obj.sdotsquare_idx = obj.num_vars+(1:obj.nT);
-      obj.x_names = [obj.x_names;cell(obj.nT,1)];
+      sdotsquare_names = cell(obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names{obj.num_vars+i} = sprintf('sdotsquare[%d]',i);
+        sdotsquare_names{i} = sprintf('sdotsquare[%d]',i);
       end
-      obj.num_vars = obj.num_vars+obj.nT;
+      obj = obj.addDecisionVariable(obj.nT,sdotsquare_names);
+      
       obj.margin_idx = obj.num_vars+(1:obj.nT);
-      obj.x_names = [obj.x_names;cell(obj.nT,1)];
+      margin_names = cell(obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names{obj.num_vars+i} = sprintf('force_margin[%d]',i);
+        margin_names{i} = sprintf('force_margin[%d]',i);
       end
-      obj.num_vars = obj.num_vars+obj.nT;
+      obj = obj.addDecisionVariable(obj.nT,margin_names);
+      
       obj.tau_idx = obj.num_vars+(1:obj.nT);
-      obj.x_names = [obj.x_names;cell(obj.nT,1)];
+      tau_names = cell(obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names{obj.num_vars+i} = sprintf('tau[%d]',i);
+        tau_names{i} = sprintf('tau[%d]',i);
       end
-      obj.num_vars = obj.num_vars+obj.nT;
+      obj = obj.addDecisionVariable(obj.nT,tau_names);
+      
       obj.sdotsquareplus_idx = obj.num_vars+(1:obj.nT);
-      obj.x_names = [obj.x_names;cell(obj.nT,1)];
+      sdotsquareplus_names = cell(obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names{obj.num_vars+i} = sprintf('sdotsquareplus[%d]',i);
+        sdotsquareplus_names{i} = sprintf('sdotsquareplus[%d]',i);
       end
-      obj.num_vars = obj.num_vars+obj.nT;
+      obj = obj.addDecisionVariable(obj.nT,sdotsquareplus_names);
+      
       obj.sdotsquareminus_idx = obj.num_vars+(1:obj.nT);
-      obj.x_names = [obj.x_names;cell(obj.nT,1)];
+      sdotsquareminus_names = cell(obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names{obj.num_vars+i} = sprintf('sdotsquareminus[%d]',i);
+        sdotsquareminus_names{i} = sprintf('sdotsquareminus[%d]',i);
       end
-      obj.num_vars = obj.num_vars+obj.nT;
+      obj = obj.addDecisionVariable(obj.nT,sdotsquareminus_names);
       
       obj.F_idx = cell(1,obj.nT);
       obj.num_force_weight = 0;
@@ -149,22 +153,16 @@ classdef FixedFootYawCoMPlanningForce
         for j = 1:obj.nT    
           if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
             obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
-            obj.x_names = [obj.x_names;cell(obj.fsrc_cnstr{i}.num_force_weight,1)];
+            F_names = cell(obj.fsrc_cnstr{i}.num_force_weight,1);
             for k = 1:obj.fsrc_cnstr{i}.num_contact_pts
               for l = 1:obj.fsrc_cnstr{i}.num_edges
-                obj.x_names{obj.num_vars+(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
+                F_names{(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
               end
             end
-            obj.num_vars = obj.num_vars+obj.fsrc_cnstr{i}.num_force_weight;
+            obj = obj.addDecisionVariable(obj.fsrc_cnstr{i}.num_force_weight,F_names);
+            obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(obj.fsrc_cnstr{i}.num_force_weight,1),inf(obj.fsrc_cnstr{i}.num_force_weight,1)),obj.F_idx{j}{end}(:));
             obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
           end
-        end
-      end
-      obj.x_lb = -inf(obj.num_vars,1);
-      obj.x_ub = inf(obj.num_vars,1);
-      for i = 1:obj.nT
-        for j = 1:length(obj.F_idx{i})
-          obj.x_lb(obj.F_idx{i}{j}(:)) = 0;
         end
       end
       
@@ -174,13 +172,16 @@ classdef FixedFootYawCoMPlanningForce
       Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
       obj.A_H = sparse(iA_H,jA_H,Aval_H,3*(obj.nT-1),obj.num_vars);
       obj.A_H_bnd = zeros(3*(obj.nT-1),1);
+      A_H_names =repmat({'dHds=Hdot*ds'},3*(obj.nT-1),1);
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_H_bnd,obj.A_H_bnd,obj.A_H),(1:obj.num_vars),A_H_names);
       % linear constraint that Hdot[n] = lambda*H[n]+epsilon[n]
       iA_angular_PD = [(1:3*obj.nT)';reshape(repmat(reshape((1:3*obj.nT),3,obj.nT),3,1),[],1);(1:3*obj.nT)'];
       jA_angular_PD = [obj.Hdot_idx(:);reshape(bsxfun(@times,obj.H_idx(:)',ones(3,1)),[],1);obj.epsilon_idx(:)];
       Aval_angular_PD = [ones(3*obj.nT,1);reshape(repmat(-obj.lambda,1,obj.nT),[],1);-ones(3*obj.nT,1)];
       obj.A_angular_PD = sparse(iA_angular_PD,jA_angular_PD,Aval_angular_PD,3*obj.nT,obj.num_vars);
       obj.A_angular_PD_bnd = zeros(3*obj.nT,1);
-      
+      A_angular_PD_names = repmat({'PD law of Hdot'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_angular_PD_bnd,obj.A_angular_PD_bnd,obj.A_angular_PD),(1:obj.num_vars),A_angular_PD_names);
       % compute the summation of force, and the constraint that force_margin<= min_i
       % (F_i), where F_i are all force weights at i'th knot
       obj.A_newton = zeros(3*obj.nT,obj.num_vars);
@@ -197,7 +198,8 @@ classdef FixedFootYawCoMPlanningForce
           force_weight_count = force_weight_count+num_force_weight_ij;
         end
       end
-      
+      A_margin_names = repmat({'force margin'},obj.num_force_weight,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(obj.num_force_weight,1),zeros(obj.num_force_weight,1),obj.A_margin),(1:obj.num_vars),A_margin_names);
       % add the constraint that would enforce the time interval between two consecutive
       % knot points to be upper bounded.
       iAdt = [(1:obj.nT-1)';(1:obj.nT-1)'];
@@ -205,15 +207,19 @@ classdef FixedFootYawCoMPlanningForce
       Aval_dt = -ones(2*(obj.nT-1),1);
       obj.A_dt = sparse(iAdt,jAdt,Aval_dt,obj.nT-1,obj.num_vars);
       obj.A_dt_bnd = -delta_s*4/obj.dt_max*ones(obj.nT-1,1);
+      A_dt_names = repmat({'tau_i+tau_i+1'},obj.nT-1,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(obj.nT-1,1),obj.A_dt_bnd,obj.A_dt),(1:obj.num_vars),A_dt_names);
       iAsdotsquare = [(1:obj.nT)';(1:obj.nT)';obj.nT+(1:obj.nT)';obj.nT+(1:obj.nT)'];
       jAsdotsquare = [obj.sdotsquare_idx';obj.sdotsquareplus_idx';obj.sdotsquare_idx';obj.sdotsquareminus_idx'];
       Aval_sdotsquare = [ones(obj.nT,1);-ones(obj.nT,1);ones(obj.nT,1);-ones(obj.nT,1)];
       obj.A_sdotsquare = sparse(iAsdotsquare,jAsdotsquare,Aval_sdotsquare,2*obj.nT,obj.num_vars);
       obj.A_sdotsquare_bnd = [-ones(obj.nT,1);ones(obj.nT,1)];
+      A_sdotsquare_names = [repmat({'sdotsquare_plus'},obj.nT,1);repmat({'sdotsquare_minus'},obj.nT,1)];
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_sdotsquare_bnd,obj.A_sdotsquare_bnd,obj.A_sdotsquare),(1:obj.num_vars),A_sdotsquare_names);
       obj.cone_dt_idx = [obj.sdotsquareplus_idx' obj.tau_idx' obj.sdotsquareminus_idx'];
       
-      obj.x_lb(obj.sdotsquare_idx(:)) = 0;
-      obj.x_ub(obj.sdotsquare_idx(:)) = obj.sdot_max^2;
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(obj.nT,1),obj.sdot_max^2*ones(obj.nT,1)),obj.sdotsquare_idx(:));
+      
       obj.Q_cost = sparse(obj.epsilon_idx(:),obj.epsilon_idx(:),ones(3*obj.nT,1),obj.num_vars,obj.num_vars);
       obj.f_cost = zeros(obj.num_vars,1);
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
@@ -273,10 +279,17 @@ classdef FixedFootYawCoMPlanningForce
         end
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = -eye(3);
       end
+      A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
+      A_comddot_names = repmat({'newton law'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_comddot_bnd,A_comddot_bnd,A_comddot),(1:obj.num_vars),A_comddot_names);
       
-      model.A = sparse([obj.A_margin;obj.A_dt;A_comddot;A_angular;obj.A_H;obj.A_angular_PD;obj.A_sdotsquare]);
-      model.rhs = [obj.A_margin_bnd;obj.A_dt_bnd;A_comddot_bnd;A_angular_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;obj.A_sdotsquare_bnd];
-      model.sense = [repmat('<',obj.num_force_weight+obj.nT-1,1);repmat('=',3*obj.nT+3*obj.nT+3*(obj.nT-1)+3*obj.nT+2*obj.nT,1)];
+      model.A = sparse([obj.Ain;obj.Aeq]);
+      model.rhs = [obj.bin;obj.beq];
+      max_row_entry = max(abs(model.A),[],2);
+      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+      model.rhs = model.rhs./max_row_entry;
+      model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = obj.Q_cost;
       model.obj = obj.f_cost;
       obj.x_lb(obj.sigma_idx) = sqrt(sigma);
@@ -288,10 +301,10 @@ classdef FixedFootYawCoMPlanningForce
         model.cones(1+i) = struct('index',obj.cone_dt_idx(i,:));
       end
       
-      params = struct('OutputFlag',false);
+      params = struct('OutputFlag',false,'BarHomogeneous',1,'Threads',4);
       
       result = gurobi(model,params);
-      if(strcmp(result.status,'OPTIMAL'))
+      if(strcmp(result.status,'OPTIMAL') || strcmp(result.status,'SUBOPTIMAL'))
         F = cell(1,obj.nT);
         for i = 1:obj.nT
           for j = 1:length(obj.F_idx{i})
@@ -309,21 +322,5 @@ classdef FixedFootYawCoMPlanningForce
       end
     end
     
-    function obj = setVarBounds(obj,lb,ub,xind)
-      % @param lb,ub    The lower and uppper bound of the variables
-      % @param xind     The indices of the variables whose bounds are going to be set
-      lb = lb(:);
-      ub = ub(:);
-      xind = xind(:);
-      num_x = length(xind);
-      if(num_x ~= length(lb) || num_x ~= length(ub))
-        error('Drake:FixedFootYawCoMPlanningPosition: bound sizes do not match');
-      end
-      if(any(lb>ub))
-        error('Drake:FixedFootYawCoMPlanningPosition: lower bound should be no larger than the upper bound');
-      end
-      obj.x_lb(xind) = lb;
-      obj.x_ub(xind) = ub;
-    end
   end
 end

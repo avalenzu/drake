@@ -30,20 +30,22 @@ robot_mass = robot.getMass();
 kinsol_star = robot.doKinematics(qstar,false,false);
 com_star = robot.getCOM(kinsol_star);
 com0 = com_star;
-com1 = com0+[0.1;0;0.1];
+
 lfoot_pos_star = robot.forwardKin(kinsol_star,l_foot,l_foot_pt,1);
 rfoot_pos_star = robot.forwardKin(kinsol_star,r_foot,r_foot_pt,1);
 
 % test F step of the bilinear alternation
 step_time = 0.4;
 stand_time = 0.6;
-num_steps = 5;
+num_steps = 3;
 [lfoot_fsrc_cnstr,rfoot_fsrc_cnstr,tspan] = generateFSRC(robot,num_steps,step_time,stand_time,l_foot,r_foot,l_foot_pt,r_foot_pt,lfoot_pos_star(3),rfoot_pos_star(3),l_foot_contact_pts,r_foot_contact_pts);
+com1 = com0+[num_steps*0.5;0;0.05];
 lambda = [-1 0 0;1 -1 0;2 3 -1];
 t = tspan(1):0.05:tspan(2);
 nT = length(t);
 lfoot_yaw = 0;
 rfoot_yaw = 0;
+yaw = [lfoot_yaw*ones(num_steps,1);rfoot_yaw*ones(num_steps,1)];
 Q_comddot = 0.1*eye(3);
 c_margin = 0.1;
 dt_max = 0.2;
@@ -53,26 +55,24 @@ planning.p_step = planning.p_step.setVarBounds(com0,com0,planning.p_step.com_idx
 planning.p_step = planning.p_step.setVarBounds(com1,com1,planning.p_step.com_idx(:,end));
 planning.p_step = planning.p_step.setCoMVelocityBounds([1,nT],-ones(3,2),ones(3,2));
 planning.p_step = planning.p_step.setVarBounds(zeros(3,1),zeros(3,1),planning.p_step.H_idx(:,1));
-planning.f_step = planning.f_step.setVarBounds(zeros(3,1),zeros(3,1),planning.f_step.H_idx(:,1));
+planning.f_step = planning.f_step.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(3,1),zeros(3,1)),planning.f_step.H_idx(:,1));
+planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning.seed_step.com_idx(:,1));
+planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.seed_step.com_idx(:,end));
+
 r2l_xy_polygon = RelativeFootPositionPolygon([0.2 0.5 0.5 0.2;-0.1 -0.1 0.1 0.1]);
 [A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
 planning.p_step = planning.p_step.addKinematicPolygon([1 2],A_polygon,b_polygon);
-d_com = (com1-com0)/(nT-1);
-com = bsxfun(@times,com0,ones(1,nT))+bsxfun(@times,d_com,(0:nT-1));
-comp = diff(com,1,2)*(nT-1);
-comp = [zeros(3,1) comp];
-compp = diff(comp,1,2)*(nT-1);
-compp = [zeros(3,1) compp];
-foot_pos = [-0.1 0.15;-0.03 -0.03];
+
 sdot0 = ones(1,nT);
 planning_nlp = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr]);
 planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning_nlp.com_idx(:,1));
 planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning_nlp.com_idx(:,end));
+planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(yaw,yaw),planning_nlp.yaw_idx);
 
-planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning.seed_step.com_idx(:,1));
-planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.seed_step.com_idx(:,end));
+
 [com,comp,compp,foot_pos,F,sdotsquare] = planning.seed_step.solve(sdot0);
 [Hbar,Hdot,sigma] = planning.seed_step.angularMomentum(com,foot_pos,F,zeros(3,1));
+% planning_nlp.solve(com,comp,compp,foot_pos,yaw,F,sqrt(sdotsquare),Hdot,Hbar);
 [com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,F_sol] = planning.solve(sdot0,zeros(3,1));
 
 end

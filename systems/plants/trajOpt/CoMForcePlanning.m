@@ -223,6 +223,10 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       obj = obj.addCost(margin_cost,obj.margin_idx(:));
       angular_PD_cost = QuadraticSumConstraint(-inf,inf,[eye(3) -lambda';-lambda lambda'*lambda],zeros(6,obj.nT));
       obj = obj.addCost(angular_PD_cost,reshape([obj.Hdot_idx;obj.H_idx],[],1));
+      
+      % set snopt parameters
+      obj = obj.setSolverOptions('snopt','IterationsLimit',1e6);
+      obj = obj.setSolverOptions('snopt','MajorIterationsLimit',1e4);
     end
     
     function obj = addCoMFootDistanceConstraint(obj,fsrc_idx,dist_lb,dist_ub)
@@ -236,6 +240,29 @@ classdef CoMForcePlanning < NonlinearProgramWConstraintObjects
       end
     end
     
+    function [com,comp,compp,foot_pos,yaw,F,sdot,Hdot,Hbar,objective,info] = solve(obj,com,comp,compp,foot_pos,yaw,F,sdot,Hdot,Hbar)
+      x = zeros(obj.num_vars,1);
+      x(obj.com_idx(:)) = com(:);
+      x(obj.comp_idx(:)) = comp(:);
+      x(obj.compp_idx(:)) = compp(:);
+      x(obj.fsrc_body_pos_idx(:)) = foot_pos(:);
+      x(obj.yaw_idx(:)) = yaw(:);
+      margin = inf(1,obj.nT);
+      for i = 1:obj.nT
+        for j = 1:length(obj.F2fsrc_map{i})
+          x(obj.F_idx{i}{j}(:)) = F{i}{j}(:);
+          margin(i) = min([margin(i);F{i}{j}(:)]);
+        end
+      end
+      x(obj.sdot_idx(:)) = sdot(:);
+      x(obj.margin_idx(:)) = margin;
+      x(obj.Hdot_idx(:)) = Hdot(:);
+      x(obj.H_idx(:)) = Hbar(:);
+      [x_sol,objective,info] = solve@NonlinearProgramWConstraintObjects(obj,x);
+      if(info<10)
+        com = reshape(x(obj.com_idx(:)),3,obj.nT);
+      end
+    end
     
   end
 end

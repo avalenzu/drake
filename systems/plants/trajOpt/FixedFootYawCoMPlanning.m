@@ -125,7 +125,7 @@ classdef FixedFootYawCoMPlanning
       % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
       % function s at i'th knot. This is used as a initial guess
       [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
-      [Hbar,Hdot,sigma] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
+      [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
       max_iter = 5;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
