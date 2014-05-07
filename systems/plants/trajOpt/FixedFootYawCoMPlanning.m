@@ -131,10 +131,10 @@ classdef FixedFootYawCoMPlanning
       iter = 0;
       while(iter<=max_iter)
         iter = iter+1;
-        [F,sdotsquare,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+        [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter-1);
-        [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
+        [F,sdotsquare,Hdot,Hbar,sigma_sol(2*iter),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
