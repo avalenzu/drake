@@ -34,6 +34,7 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
     dt_max %  A positive scalar. The upperbound for the time interval between any two consecutive knot points
     sdot_max % A positive scalar. The upper bound for the derivitive of time scaling funtion s w.r.t time.
     com_cone_idx % A n x 4 matrix. com_cone_idx(i,:) is the index of the i'th cone for the distance between CoM and contact body
+    
   end
   
   properties(Access = protected)
@@ -186,8 +187,14 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
         A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = -obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
       end
       obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp));
+      comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
       model.A = sparse([obj.Ain;obj.Aeq]);
       model.rhs = [obj.bin;obj.beq];
+      max_row_entry = max(abs(model.A),[],2);
+      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+      model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = sparse(obj.iQ_cost,obj.jQ_cost,obj.Qval_cost,obj.num_vars,obj.num_vars);
       model.obj = obj.f_cost;
@@ -198,7 +205,7 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
           model.cones(i).index = obj.com_cone_idx(i,:);
         end
       end
-      params = struct('OutputFlag',false);
+      params = struct('OutputFlag',false,'BarHomogeneous',1,'Threads',4);
       
       result = gurobi(model,params);
       if(strcmp(result.status,'OPTIMAL'))
@@ -256,6 +263,26 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
         obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(dist_ub,dist_ub),dist_idx);
         obj.com_cone_idx = [obj.com_cone_idx;dist_idx com_foot_idx];
       end
+    end
+    
+    function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
+      % set the lower and upper bounds for CoM velocities at the knots with indices
+      % knot_ind
+      % @param knot_idx   A 1 x m integer vector. The indices of the knots whose CoM
+      % velocities will be bounded
+      % @param lb     A 3 x m double vector. lb(:,i) is the lower bound of the CoM
+      % velocity at the knot with index knot_idx(i)
+      % @param ub     A 3 x m double vector. ub(:,i) is the upper bound of the CoM
+      % velocity at the knot with index knot_idx(i)
+      num_idx = numel(knot_idx);
+      if(~isnumeric(knot_idx) || ~isnumeric(lb) || ~isnumeric(ub))
+        error('Drake:FixedFootYawCoMPlanningPosition: input should be numeric');
+      end
+      sizecheck(knot_idx,[1,num_idx]);
+      sizecheck(lb,[3,num_idx]);
+      sizecheck(ub,[3,num_idx]);
+      obj.lb_comdot(:,knot_idx) = lb;
+      obj.ub_comdot(:,knot_idx) = ub;
     end
   end
 end

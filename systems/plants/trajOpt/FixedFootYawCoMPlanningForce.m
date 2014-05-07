@@ -292,8 +292,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = obj.Q_cost;
       model.obj = obj.f_cost;
-      obj.x_lb(obj.sigma_idx) = sqrt(sigma);
-      obj.x_ub(obj.sigma_idx) = sqrt(sigma);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
       model.cones(1) = struct('index',[obj.sigma_idx obj.epsilon_idx(:)']);

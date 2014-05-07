@@ -3,6 +3,7 @@ classdef FootStepRegionContactConstraint
   % linearized friction cone information, the body contact
   % points and contact force paramters
   properties(SetAccess = protected)
+    robot_mass % The mass of the robot
     foot_step_region_cnstr % A FootStepRegionConstraint
     mu % The friction coefficient
     num_edges % The number of edges sampled in each cone
@@ -38,6 +39,7 @@ classdef FootStepRegionContactConstraint
       obj.num_contact_pts = body_pts_size(2);
       obj.body_contact_pts = body_contact_pts;
       obj.num_force_weight = obj.num_edges*obj.num_contact_pts;
+      obj.robot_mass = obj.foot_step_region_cnstr.robot.getMass();
     end
     
     function [A,dA] = force(obj,yaw)
@@ -47,11 +49,11 @@ classdef FootStepRegionContactConstraint
       % @retval dA  A matrix. gradient of A w.r.t yaw
       if(nargin <2)
         R = obj.foot_step_region_cnstr.bodyTransform(yaw);
-        A = R*obj.edges;
+        A = obj.robot_mass*R*obj.edges;
       else
         [R,~,~,dR] = obj.foot_step_region_cnstr.bodyTransform(yaw);
-        A = R*obj.edges;
-        dA = dR*obj.edges;
+        A = obj.robot_mass*R*obj.edges;
+        dA = obj.robot_mass*dR*obj.edges;
       end
     end
     

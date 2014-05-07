@@ -1,4 +1,4 @@
-classdef FixedFootYawCoMPlanningPosition
+classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
   % 'P-step' of the alternative planning for CoM trajectory and force trajectory. This is
   % a SOCP problem for linearized friction cone.            
   properties(SetAccess = protected)
@@ -13,10 +13,7 @@ classdef FixedFootYawCoMPlanningPosition
     Hdot_idx % A 3 x obj.nT matrix. x(Hdot_idx(:,i)) is the rate of centroidal angular momentum at time t_knot(i)
     epsilon_idx % A 3 x obj.nT matrix. x(epsilon_idx(:,i)) is the residue of the PD law Hdot[i] = lambda*H[i]+epsilon[i]
     sigma_idx % An integer scalar. x(sigma_idx) is the index of sigma, which is the dummy variable used to bound the PD residue: sum_n epsilon[n]'*epsilon[n] <= sigma  
-    num_vars % The total number of decision variables in the SOCP 
-    x_names % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
-    x_lb % A obj.num_vars x 1 double vector. The lower bound for the decision variable x
-    x_ub % A obj.num_vars x 1 double vector. The upper bound for the decision variable x
+    
     Q_cost % A obj.num_vars x obj.num_vars sparse PSD matrix. The Hessian of the quadratic cost
     A_iris,b_iris % A_iris * x <= b_iris is the union of all half space constraint on the foot location from iris
     A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
@@ -30,6 +27,7 @@ classdef FixedFootYawCoMPlanningPosition
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
     lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
+    lambda % A 3 x 3 Hurwitz matrix
   end
   
   properties(Access = protected)
@@ -54,10 +52,12 @@ classdef FixedFootYawCoMPlanningPosition
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
+      obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
       obj.g = g;
+      obj.lambda = lambda;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.yaw = yaw;
@@ -67,46 +67,52 @@ classdef FixedFootYawCoMPlanningPosition
       obj.F2fsrc_map = F2fsrc_map;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.A_force = A_force;
-      obj.num_vars = 0;
+
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = cell(obj.num_vars,1);
+      com_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names((i-1)*3+(1:3)) = {sprintf('com_x[%d]',i);sprintf('com_y[%d]',i);sprintf('com_z[%d]',i)};
+        com_names((i-1)*3+(1:3)) = {sprintf('com_x[%d]',i);sprintf('com_y[%d]',i);sprintf('com_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,com_names);
+      
       obj.comp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      comp_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('comp_x[%d]',i);sprintf('comp_y[%d]',i);sprintf('comp_z[%d]',i)};
+        comp_names((i-1)*3+(1:3)) = {sprintf('comp_x[%d]',i);sprintf('comp_y[%d]',i);sprintf('comp_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,comp_names);
+      
       obj.compp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      compp_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('compp_x[%d]',i);sprintf('compp_y[%d]',i);sprintf('compp_z[%d]',i)};
+        compp_names((i-1)*3+(1:3)) = {sprintf('compp_x[%d]',i);sprintf('compp_y[%d]',i);sprintf('compp_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,compp_names);
+      
       obj.H_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      H_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('H_x[%d]',i);sprintf('H_y[%d]',i);sprintf('H_z[%d]',i)};
+        H_names((i-1)*3+(1:3)) = {sprintf('H_x[%d]',i);sprintf('H_y[%d]',i);sprintf('H_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,H_names);
+      
       obj.Hdot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      Hdot_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = {sprintf('Hdot_x[%d]',i);sprintf('Hdot_y[%d]',i);sprintf('Hdot_z[%d]',i)};
+        Hdot_names((i-1)*3+(1:3)) = {sprintf('Hdot_x[%d]',i);sprintf('Hdot_y[%d]',i);sprintf('Hdot_z[%d]',i)};
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,Hdot_names);
+      
       obj.epsilon_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      obj.x_names = [obj.x_names;cell(3*obj.nT,1)];
+      epsilon_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        obj.x_names(obj.num_vars+(i-1)*3+(1:3)) = repmat({sprintf('epsilon[%d]',i)},3,1);
+        epsilon_names((i-1)*3+(1:3)) = repmat({sprintf('epsilon[%d]',i)},3,1);
       end
-      obj.num_vars = obj.num_vars+3*obj.nT;
+      obj = obj.addDecisionVariable(3*obj.nT,epsilon_names);
+      
       obj.sigma_idx = obj.num_vars+1;
-      obj.x_names = [obj.x_names;{'sigma'}];
-      obj.num_vars = obj.num_vars+1;
+      sigma_names = {'sigma'};
+      obj = obj.addDecisionVariable(1,sigma_names);
       
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_body_pos_idx = zeros(2,obj.num_fsrc_cnstr);
@@ -128,9 +134,9 @@ classdef FixedFootYawCoMPlanningPosition
         Aval_iris = [Aval_iris;Aval_iris_i];
         obj.b_iris = [obj.b_iris;b_iris_i-obj.yaw(i)*A_iris_i(:,3)];
         num_halfspace_iris = num_halfspace_iris+size(A_iris_i,1);
-        obj.x_names = [obj.x_names;{sprintf('Foot x position for %d''th FootStepRegionContactConstraint',i);...
-          sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)}];
-        obj.num_vars = obj.num_vars+2;
+        foot_pos_names = {sprintf('Foot x position for %d''th FootStepRegionContactConstraint',i);...
+          sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)};
+        obj = obj.addDecisionVariable(2,foot_pos_names);
       end
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
       delta_s = 1/(obj.nT-1);
@@ -144,27 +150,30 @@ classdef FixedFootYawCoMPlanningPosition
       Aval_com = [Aval_com;Aval_com];
       obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(6*(obj.nT-1),1);
+      A_com_names = [repmat({'com difference'},3*(obj.nT-1),1);repmat({'comp difference'},3*(obj.nT-1),1)];
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_names);
       % linear constraint that H[n]-H[n-1] = Hdot[n]*delta_s
       iA_H = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jA_H = [reshape(obj.H_idx(:,2:end),[],1);reshape(obj.H_idx(:,1:end-1),[],1); reshape(obj.Hdot_idx(:,2:end),[],1)];
       Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
       obj.A_H = sparse(iA_H,jA_H,Aval_H,3*(obj.nT-1),obj.num_vars);
       obj.A_H_bnd = zeros(3*(obj.nT-1),1);
+      A_H_names = repmat({'H difference'},3*(obj.nT-1),1);
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_H_bnd,obj.A_H_bnd,obj.A_H),(1:obj.num_vars),A_H_names);
       % linear constraint that Hdot[n] = lambda*H[n]+epsilon[n]
       iA_angular_PD = [(1:3*obj.nT)';reshape(repmat(reshape((1:3*obj.nT),3,obj.nT),3,1),[],1);(1:3*obj.nT)'];
       jA_angular_PD = [obj.Hdot_idx(:);reshape(bsxfun(@times,obj.H_idx(:)',ones(3,1)),[],1);obj.epsilon_idx(:)];
-      Aval_angular_PD = [ones(3*obj.nT,1);reshape(repmat(-lambda,1,obj.nT),[],1);-ones(3*obj.nT,1)];
+      Aval_angular_PD = [ones(3*obj.nT,1);reshape(repmat(-obj.lambda,1,obj.nT),[],1);-ones(3*obj.nT,1)];
       obj.A_angular_PD = sparse(iA_angular_PD,jA_angular_PD,Aval_angular_PD,3*obj.nT,obj.num_vars);
       obj.A_angular_PD_bnd = zeros(3*obj.nT,1);
-      
+      A_angular_PD_names = repmat({'angular PD'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_angular_PD_bnd,obj.A_angular_PD_bnd,obj.A_angular_PD),(1:obj.num_vars),A_angular_PD_names);
       % cost sum comddot[n]'*comddot[n]+epsilon[n]'*epsilon[n]
       iQcost = [reshape(repmat(obj.compp_idx,3,1),[],1);obj.epsilon_idx(:)];
       jQcost = [reshape(bsxfun(@times,obj.compp_idx(:)',ones(3,1)),[],1);obj.epsilon_idx(:)];
       Qval_cost = [reshape(repmat(Q_comddot,1,obj.nT),[],1);ones(3*obj.nT,1)];
       obj.Q_cost = sparse(iQcost,jQcost,Qval_cost,obj.num_vars,obj.num_vars);
       % bounds on decision variables x
-      obj.x_lb = -inf(obj.num_vars,1);
-      obj.x_ub = inf(obj.num_vars,1);
       
       % The kinematic constraint on the contact bodies will be set through function
       % addKinematicPolygon
@@ -225,27 +234,33 @@ classdef FixedFootYawCoMPlanningPosition
         A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = obj.robot_mass*sdotsquare(i)*eye(3);
         A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
       end
-      model.A = sparse([obj.A_iris;obj.A_kin;obj.A_com;obj.A_H;obj.A_angular_PD;A_angular;A_compp]);
-      model.rhs = [obj.b_iris;obj.b_kin;obj.A_com_bnd;obj.A_H_bnd;obj.A_angular_PD_bnd;A_angular_bnd;A_compp_bnd];
+      A_compp_names = repmat({'newton law'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_names);
+      A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
+      
+      model.A = sparse([obj.Ain;obj.Aeq]);
+      model.rhs = [obj.bin;obj.beq];
       % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
       % or -1
       max_row_entry = max(abs(model.A),[],2);
       model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
       model.rhs = model.rhs./max_row_entry;
-      model.sense = [repmat('<',size(obj.A_iris,1)+size(obj.A_kin,1),1);repmat('=',6*(obj.nT-1)+3*(obj.nT-1)+3*obj.nT+3*obj.nT+3*obj.nT,1)];
+      model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = obj.Q_cost;
       model.obj = zeros(1,obj.num_vars);
-      obj.x_lb(obj.sigma_idx) = sqrt(sigma);
-      obj.x_ub(obj.sigma_idx) = sqrt(sigma);
-      obj.x_lb(obj.comp_idx(:)) = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-      obj.x_ub(obj.comp_idx(:)) = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
+      comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
+      
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
       model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
       params = struct('OutputFlag',false);
 
       result = gurobi(model,params);
-      if(strcmp(result.status,'OPTIMAL'))
+      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
         com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
         comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
         compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
@@ -259,22 +274,6 @@ classdef FixedFootYawCoMPlanningPosition
       end
     end
     
-    function obj = setVarBounds(obj,lb,ub,xind)
-      % @param lb,ub    The lower and uppper bound of the variables
-      % @param xind     The indices of the variables whose bounds are going to be set
-      lb = lb(:);
-      ub = ub(:);
-      xind = xind(:);
-      num_x = length(xind);
-      if(num_x ~= length(lb) || num_x ~= length(ub))
-        error('Drake:FixedFootYawCoMPlanningPosition: bound sizes do not match');
-      end
-      if(any(lb>ub))
-        error('Drake:FixedFootYawCoMPlanningPosition: lower bound should be no larger than the upper bound');
-      end
-      obj.x_lb(xind) = lb;
-      obj.x_ub(xind) = ub;
-    end
     
     function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
       % set the lower and upper bounds for CoM velocities at the knots with indices
@@ -322,45 +321,5 @@ classdef FixedFootYawCoMPlanningPosition
       obj.b_kin = [obj.b_kin;b];
     end
     
-    function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
-      delta_s = 1/(obj.nT-1);
-      valuecheck(diff(com,1,2)-comp(:,2:end)*delta_s,0,1e-4);
-      valuecheck(diff(comp,1,2)-compp(:,2:end)*delta_s,0,1e-4);
-      if(any(sdotsquare<0))
-        error('sdotsquare cannot be negative');
-      end
-      if(any(sdotsquare>obj.sdot_max^2))
-        error('sdot is larger than sdot_max');
-      end
-      % check the wrench
-      sdot_diff = diff(sdotsquare);
-      sdot_diff = [sdot_diff sdot_diff(end)];
-      foot_contact_pts_pos = cell(1,obj.num_fsrc_cnstr);
-      for i = 1:obj.num_fsrc_cnstr
-        foot_contact_pts_pos{i} = bsxfun(@times,obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i),...
-          ones(1,obj.fsrc_cnstr{i}.num_contact_pts))+obj.rotmat(:,:,i)*obj.fsrc_cnstr{i}.body_contact_pts;
-      end
-      for i = 1:obj.nT
-        F_i = zeros(3,1);
-        tau_i = zeros(3,1);
-        for j = 1:length(obj.F_idx{i})
-          fsrc_idx = obj.F2fsrc_map{i}(j);
-          F_ij = obj.A_force{fsrc_idx}*F{i}{j};
-          F_i = F_i+sum(F_ij,2);
-          foot_contact_pts_CoM = foot_contact_pts_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts));
-          tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
-        end
-        F_i(3) = F_i(3)-obj.robot_mass*obj.g;
-        mcomddot = obj.robot_mass*(compp(:,i)*sdotsquare(i)+comp(:,i)*2/delta_s*sdot_diff(i));
-        valuecheck(F_i,mcomddot,1e-4);
-        valuecheck(tau_i,Hdot(:,i),1e-4);
-        valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s,1e-4);
-        valuecheck(Hdot,obj.lambda*Hbar+epsilon,1e-4);
-        sdot = sqrt(sdotsquare);
-        if(any(2*delta_s*ones(1,obj.nT-1)./sum([sdot(1:end-1);sdot(2:end)],1)>obj.dt_max+1e-6))
-          error('dt is above dt_max');
-        end
-      end
-    end
   end
 end
