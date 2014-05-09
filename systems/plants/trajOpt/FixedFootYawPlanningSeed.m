@@ -131,7 +131,8 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
         end
       end
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
-      
+      A_iris_name = repmat({'iris constraint'},num_halfspace_iris,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(num_halfspace_iris,1),obj.b_iris,obj.A_iris),(1:obj.num_vars),A_iris_name);
       delta_s = 1/(obj.nT-1);
       % linear constraint that com[n]-com[n-1] = comp[n]*delta_s and comp[n]-comp[n-1] =
       % compp[n]*delta_s
@@ -143,7 +144,8 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       Aval_com = [Aval_com;Aval_com];
       obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(6*(obj.nT-1),1);
-      obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com));
+      A_com_name = [repmat({'com difference'},3*(obj.nT-1),1);repmat({'comp difference'},3*(obj.nT-1),1)];
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_name);
       % compute the summation of force, and the constraint that force_margin<= min_i
       % (F_i), where F_i are all force weights at i'th knot
       obj.A_newton = zeros(3*obj.nT,obj.num_vars);
@@ -160,7 +162,8 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
           force_weight_count = force_weight_count+num_force_weight_ij;
         end
       end
-      obj = obj.addLinearConstraint(LinearConstraint(-inf(force_weight_count,1),obj.A_margin_bnd,obj.A_margin));
+      A_margin_name = repmat({'force margin'},force_weight_count,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(force_weight_count,1),obj.A_margin_bnd,obj.A_margin),(1:obj.num_vars),A_margin_name);
       % The kinematic constraint on the contact bodies will be set through function
       % addKinematicPolygon
       obj.A_kin = [];
@@ -186,7 +189,8 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
         A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = -obj.robot_mass*sdotsquare(i)*eye(3);
         A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = -obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
       end
-      obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp));
+      A_compp_name = repmat({'newton law'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_name);
       comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
@@ -205,7 +209,7 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
           model.cones(i).index = obj.com_cone_idx(i,:);
         end
       end
-      params = struct('OutputFlag',false,'BarHomogeneous',1,'Threads',4);
+      params = struct('OutputFlag',false);
       
       result = gurobi(model,params);
       if(strcmp(result.status,'OPTIMAL'))
@@ -248,22 +252,22 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       end
       delta_s = 1/(obj.nT-1);
       Hbar = bsxfun(@times,H0,ones(1,obj.nT));
-      Hbar = Hbar+[zeros(3,1) cumsum(Hdot(:,2:end)*delta_s,2)];
-      epsilon = Hdot-obj.lambda*Hbar;
+      Hbar = Hbar+[zeros(3,1) cumsum(Hdot(:,2:end)*delta_s,2)/(obj.robot_mass*obj.g)];
+      epsilon = Hdot/(obj.robot_mass*obj.g)-obj.lambda*Hbar;
       sigma = sum(sum(epsilon.^2));
     end
     
-    function obj = addCoMFootDistanceConstraint(obj,fsrc_idx,dist_ub)
-      for i = 1:obj.fsrc_knot_active_idx{fsrc_idx}
-        com_foot_idx = obj.num_vars+(1:3);
-        dist_idx = obj.num_vars+4;
-        obj = obj.addDecisionVariable(4);
-        b = obj.b_xy(:,:,fsrc_idx)+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr.body_pt;
-        obj = obj.addLinearConstraint(LinearConstraint(b,b, [eye(3) -obj.A_xy(:,:,fsrc_idx) -eye(3)]),[obj.com(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.fsrc_body_pos_idx(:,fsrc_idx);com_foot_idx]);
-        obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(dist_ub,dist_ub),dist_idx);
-        obj.com_cone_idx = [obj.com_cone_idx;dist_idx com_foot_idx];
-      end
-    end
+%     function obj = addCoMFootDistanceConstraint(obj,fsrc_idx,dist_ub)
+%       for i = 1:obj.fsrc_knot_active_idx{fsrc_idx}
+%         com_foot_idx = obj.num_vars+(1:3);
+%         dist_idx = obj.num_vars+4;
+%         obj = obj.addDecisionVariable(4);
+%         b = obj.b_xy(:,:,fsrc_idx)+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr.body_pt;
+%         obj = obj.addLinearConstraint(LinearConstraint(b,b, [eye(3) -obj.A_xy(:,:,fsrc_idx) -eye(3)]),[obj.com(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.fsrc_body_pos_idx(:,fsrc_idx);com_foot_idx]);
+%         obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(dist_ub,dist_ub),dist_idx);
+%         obj.com_cone_idx = [obj.com_cone_idx;dist_idx com_foot_idx];
+%       end
+%     end
     
     function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
       % set the lower and upper bounds for CoM velocities at the knots with indices
@@ -283,6 +287,35 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       sizecheck(ub,[3,num_idx]);
       obj.lb_comdot(:,knot_idx) = lb;
       obj.ub_comdot(:,knot_idx) = ub;
+    end
+    
+    function obj = addKinematicPolygon(obj,fsrc_idx,A,b)
+      % add polygonal constraint A*[x1;y1;x2;y2;...;xN;yN]<=b on the contact bodies corresponding to
+      % obj.fsrc_cnstr{fsrc_idx(1)}, obj.fsrc_cnstr{fsrc_idx(2)},...obj.fsrc_cnstr{fsrc_idx(N)}.
+      % where [x1;y1] is the position of the body in obj.fsrc_cnstr{fsrc_idx(1)}, and so
+      % on for [xi;yi]
+      % @param fsrc_idx  An integer vector. The kinematic constraint is on the
+      % bodies in obj.fsrc_cnstr{fsrc_idx(1)} obj.fsrc_cnstr{fsrc_idx(2)} and obj.fsrc_cnstr{fsrc_idx(N)}
+      % @param A    A n x (2*length(fsrc_idx)) matrix.
+      % @param b    A n x 1 vector
+      if(~isnumeric(fsrc_idx))
+        error('Drake:FixedFootYawCoMPlanningPosition:fsrc_idx1 and fsrc_idx2 should be numeric scalar');
+      end
+      num_fsrc = numel(fsrc_idx);
+      sizecheck(fsrc_idx,[1,num_fsrc]);
+      if(~isnumeric(A) || ~isnumeric(b))
+        error('Drake:FixedFootYawCoMPlanningPosition:A and b should be numeric');
+      end
+      num_cnstr = numel(b);
+      sizecheck(A,[num_cnstr,2*num_fsrc]);
+      sizecheck(b,[num_cnstr,1]);
+      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,2*num_fsrc)),[],1);
+      jA = reshape(bsxfun(@times,reshape(obj.fsrc_body_pos_idx(:,fsrc_idx),1,[]),ones(num_cnstr,1)),[],1);
+      A_kin_new = sparse(iA,jA,A(:),num_cnstr,obj.num_vars);
+      obj.A_kin = [obj.A_kin;A_kin_new];
+      obj.b_kin = [obj.b_kin;b];
+      A_kin_name = repmat({sprintf('polygon region on fsrc %d',fsrc_idx)},num_cnstr,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b,A_kin_new),(1:obj.num_vars),A_kin_name);
     end
   end
 end

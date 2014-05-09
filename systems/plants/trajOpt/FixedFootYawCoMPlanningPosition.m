@@ -144,7 +144,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % compp[n]*delta_s
       iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comp_idx(:,2:end),[],1)];
-      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
+      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-delta_s*ones(3*(obj.nT-1),1)];
       iAcom = [iAcom;3*(obj.nT-1)+iAcom];
       jAcom = [jAcom;reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1); reshape(obj.compp_idx(:,2:end),[],1)];
       Aval_com = [Aval_com;Aval_com];
@@ -155,7 +155,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % linear constraint that H[n]-H[n-1] = Hdot[n]*delta_s
       iA_H = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jA_H = [reshape(obj.H_idx(:,2:end),[],1);reshape(obj.H_idx(:,1:end-1),[],1); reshape(obj.Hdot_idx(:,2:end),[],1)];
-      Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
+      Aval_H = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-delta_s*ones(3*(obj.nT-1),1)];
       obj.A_H = sparse(iA_H,jA_H,Aval_H,3*(obj.nT-1),obj.num_vars);
       obj.A_H_bnd = zeros(3*(obj.nT-1),1);
       A_H_names = repmat({'H difference'},3*(obj.nT-1),1);
@@ -210,14 +210,14 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       end
       sdotsquare_diff = diff(sdotsquare);
       sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
-      % A_angular*x=A_angular_bnd enforce the constraint Hdot-(contact_pt_pos-com)xF=0
+      % A_angular*x=A_angular_bnd enforce the constraint Hdot*(obj.g*obj.robot_mass)-(contact_pt_pos-com)xF=0
       A_angular = zeros(3*obj.nT,obj.num_vars);
       A_angular_bnd = zeros(3*obj.nT,1);
       A_compp = zeros(3*obj.nT,obj.num_vars);
       A_compp_bnd = zeros(3*obj.nT,1);
       for i = 1:obj.nT
         F_i = zeros(3,1);
-        A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3);
+        A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3)*obj.robot_mass*obj.g;
         for j = 1:length(obj.F2fsrc_map{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
           num_contact_pts_ij = obj.fsrc_cnstr{fsrc_idx}.num_contact_pts;
@@ -264,7 +264,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
         com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
         comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
         compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
-        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
+        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         sigma = sum(epsilon(:).^2);
@@ -317,8 +317,11 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       sizecheck(b,[num_cnstr,1]);
       iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,2*num_fsrc)),[],1);
       jA = reshape(bsxfun(@times,reshape(obj.fsrc_body_pos_idx(:,fsrc_idx),1,[]),ones(num_cnstr,1)),[],1);
-      obj.A_kin = [obj.A_kin;sparse(iA,jA,A(:),num_cnstr,obj.num_vars)];
+      A_kin_new = sparse(iA,jA,A(:),num_cnstr,obj.num_vars);
+      obj.A_kin = [obj.A_kin;A_kin_new];
       obj.b_kin = [obj.b_kin;b];
+      A_kin_name = repmat({sprintf('polygon region on fsrc %d',fsrc_idx)},num_cnstr,1);
+      obj = obj.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b,A_kin_new),(1:obj.num_vars),A_kin_name);
     end
     
   end

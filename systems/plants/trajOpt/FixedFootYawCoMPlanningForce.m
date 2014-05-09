@@ -252,7 +252,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       sizecheck(sigma,[1,1]);
       % compute the CoMddot from the comp,compp and time scaling function
       iAcomddot = reshape(repmat(reshape(1:3*obj.nT,3,obj.nT),2,1),[],1);
-      jAcomddot = reshape([bsxfun(@times,ones(3,1),[obj.sdotsquare_idx(1:end-1) obj.sdotsquare_idx(end-1)]);...
+      jAcomddot = reshape([bsxfun(@times,ones(3,1),[obj.sdotsquare_idx]);...
         bsxfun(@times,ones(3,1),[obj.sdotsquare_idx(2:end) obj.sdotsquare_idx(end)])],[],1);
       delta_s = 1/(obj.nT-1);
       Aval_comddot = reshape(obj.robot_mass*[compp-comp/(2*delta_s);comp/(2*delta_s)],[],1);
@@ -277,7 +277,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
           A_angular((i-1)*3+(1:3),obj.F_idx{i}{j}(:)) = cross(reshape(repmat(foot_contact_pos_CoM,obj.fsrc_cnstr{fsrc_idx}.num_edges,1),3,[]),...
             repmat(obj.A_force{fsrc_idx},1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts));
         end
-        A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = -eye(3);
+        A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = -eye(3)*obj.robot_mass*obj.g;
       end
       A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
@@ -300,10 +300,10 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
         model.cones(1+i) = struct('index',obj.cone_dt_idx(i,:));
       end
       
-      params = struct('OutputFlag',false,'BarHomogeneous',1,'Threads',4);
+      params = struct('OutputFlag',false);
       
       result = gurobi(model,params);
-      if(strcmp(result.status,'OPTIMAL') || strcmp(result.status,'SUBOPTIMAL'))
+      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
         F = cell(1,obj.nT);
         for i = 1:obj.nT
           for j = 1:length(obj.F_idx{i})
@@ -312,7 +312,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
           end
         end
         sdotsquare = reshape(result.x(obj.sdotsquare_idx),1,[]);
-        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT);
+        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         sigma = sum(epsilon(:).^2);
