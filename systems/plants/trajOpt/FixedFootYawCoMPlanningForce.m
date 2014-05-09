@@ -38,6 +38,8 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
     lambda % A 3 x 3 Hurwitz matrix
     dt_max %  A positive scalar. The upperbound for the time interval between any two consecutive knot points
     sdot_max % A positive scalar. The upper bound for the derivitive of time scaling funtion s w.r.t time.
+    
+    robot_dim % % The approximate dimension of the robot in meters. This is used to scale the constraint
   end
   
   properties(Access = protected)
@@ -87,6 +89,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       obj.rotmat = rotmat;
       obj.F2fsrc_map = F2fsrc_map;
       obj.A_force = A_force;
+      obj.robot_dim = 1;
       obj.H_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       H_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
@@ -279,16 +282,20 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
         end
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = -eye(3)*obj.robot_mass*obj.g;
       end
+      A_angular = A_angular/(obj.robot_mass*obj.g*obj.robot_dim);
+      A_angular_bnd = A_angular_bnd/(obj.robot_mass*obj.g*obj.robot_dim);
       A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
+      A_comddot_bnd = A_comddot_bnd/(obj.robot_mass*obj.g);
+      A_comddot = A_comddot/(obj.robot_mass*obj.g);
       A_comddot_names = repmat({'newton law'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_comddot_bnd,A_comddot_bnd,A_comddot),(1:obj.num_vars),A_comddot_names);
       
       model.A = sparse([obj.Ain;obj.Aeq]);
       model.rhs = [obj.bin;obj.beq];
-      max_row_entry = max(abs(model.A),[],2);
-      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
-      model.rhs = model.rhs./max_row_entry;
+%       max_row_entry = max(abs(model.A),[],2);
+%       model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+%       model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = obj.Q_cost;
       model.obj = obj.f_cost;

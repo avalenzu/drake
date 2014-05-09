@@ -28,6 +28,8 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
     lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
     lambda % A 3 x 3 Hurwitz matrix
+    
+    robot_dim  % The approximate dimension of the robot in meters. This is used to scale the constraint
   end
   
   properties(Access = protected)
@@ -67,7 +69,8 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.F2fsrc_map = F2fsrc_map;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.A_force = A_force;
-
+      obj.robot_dim = 1;
+      
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       com_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
@@ -181,6 +184,8 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.b_kin = [];
       obj.lb_comdot = -inf(3,obj.nT);
       obj.ub_comdot = inf(3,obj.nT);
+      
+      obj.solver = 'gurobi';
     end
     
     function [com,comp,compp,foot_pos,Hdot,Hbar,sigma,epsilon] = solve(obj,F,sdotsquare,sigma)
@@ -234,43 +239,65 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
         A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = obj.robot_mass*sdotsquare(i)*eye(3);
         A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
       end
+      A_compp_bnd = A_compp_bnd/(obj.robot_mass*obj.g);
+      A_compp = A_compp/(obj.robot_mass*obj.g);
       A_compp_names = repmat({'newton law'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_names);
+      A_angular = A_angular/(obj.robot_mass*obj.g*obj.robot_dim);
+      A_angular_bnd = A_angular_bnd/(obj.robot_mass*obj.g*obj.robot_dim);
       A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
       
-      model.A = sparse([obj.Ain;obj.Aeq]);
-      model.rhs = [obj.bin;obj.beq];
-      % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
-      % or -1
-      max_row_entry = max(abs(model.A),[],2);
-      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
-      model.rhs = model.rhs./max_row_entry;
-      model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-      model.Q = obj.Q_cost;
-      model.obj = zeros(1,obj.num_vars);
-      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
-      comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-      comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
-      
-      model.lb = obj.x_lb;
-      model.ub = obj.x_ub;
-      model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
-      params = struct('OutputFlag',false);
+      if(strcmp(obj.solver,'gurobi'))
+        model.A = sparse([obj.Ain;obj.Aeq]);
+        model.rhs = [obj.bin;obj.beq];
+        % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
+        % or -1
+%         max_row_entry = max(abs(model.A),[],2);
+%         model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+%         model.rhs = model.rhs./max_row_entry;
+        model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+        model.Q = obj.Q_cost;
+        model.obj = zeros(1,obj.num_vars);
+        obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
+        comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+        comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+        obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
 
-      result = gurobi(model,params);
-      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-        com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
-        comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
-        compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
-        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
-        Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
-        epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-        sigma = sum(epsilon(:).^2);
-        foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
-      else
-        error('P-step is infeasible');
+        model.lb = obj.x_lb;
+        model.ub = obj.x_ub;
+        model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
+        tol = 1e-6;
+        success = false;
+        while(tol<=1e-3 && ~success)
+          params = struct('OutputFlag',false,'FeasibilityTol',tol);
+
+          result = gurobi(model,params);
+          if(strcmp(result.status,'OPTIMAL'))
+            com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
+            comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
+            compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
+            Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
+            Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
+            epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
+            sigma = sum(epsilon(:).^2);
+            foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
+            success = true;
+          elseif(strcmp(result.status,'INF_OR_UNBD'))
+            tol = tol*10;
+          end
+        end
+        
+        if(~strcmp(result.status,'OPTIMAL'))
+          error('P-step infesible');
+        end
+      elseif(strcmp(obj.solver,'mosek'))
+        obj = obj.addDecisionVariable(1,{'objective'});
+        objective_idx = obj.num_vars;
+        prob = struct();
+        prob.c = zeros(1,obj.num_vars);
+        prob.c(objective_idx) = 1;
+        
       end
     end
     
