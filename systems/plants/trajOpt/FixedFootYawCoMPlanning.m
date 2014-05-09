@@ -182,5 +182,16 @@ classdef FixedFootYawCoMPlanning
         error('dt is above dt_max');
       end      
     end
+    
+    function plotResult(obj,com,foot_pos,sdotsquare)
+      figure;
+      hold on;
+      axis equal;
+      plot(com(1,:),com(2,:),'x-');
+      plot(foot_pos(1,:),foot_pos(2,:),'o');
+      sdot = sqrt(sdotsquare);
+      t = sum((2/(obj.nT-1))./(sdot(1:end-1)+sdot(2:end)));
+      title(sprintf('t=%5.2f',t));
+    end
   end
 end
