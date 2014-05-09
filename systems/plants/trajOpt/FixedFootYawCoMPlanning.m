@@ -126,10 +126,11 @@ classdef FixedFootYawCoMPlanning
       % function s at i'th knot. This is used as a initial guess
       [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
       [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
-      max_iter = 5;
+      max_iter = 8;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
-      while(iter<=max_iter)
+      tic
+      while(iter<max_iter)
         iter = iter+1;
         [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
@@ -138,6 +139,7 @@ classdef FixedFootYawCoMPlanning
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
+      toc
     end
     
     function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
@@ -170,11 +172,11 @@ classdef FixedFootYawCoMPlanning
         end
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
         mcomddot = obj.robot_mass*(compp(:,i)*sdotsquare(i)+comp(:,i)/(2*delta_s)*sdot_diff(i));
-        valuecheck(F_i,mcomddot,1e-6);
+        valuecheck(F_i,mcomddot,1e-5);
         valuecheck(tau_i,Hdot(:,i),1e-3);
       end
-      valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s,1e-3);
-      valuecheck(Hdot,obj.lambda*Hbar+epsilon,1e-3);
+      valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s/(obj.robot_mass*obj.g),1e-3);
+      valuecheck(Hdot/(obj.robot_mass*obj.g),obj.lambda*Hbar+epsilon,1e-3);
       sdot = sqrt(sdotsquare);
       if(any(2*delta_s*ones(1,obj.nT-1)./sum([sdot(1:end-1);sdot(2:end)],1)>obj.f_step.dt_max+1e-6))
         error('dt is above dt_max');
