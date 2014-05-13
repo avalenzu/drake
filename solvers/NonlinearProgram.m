@@ -121,7 +121,7 @@ classdef NonlinearProgram
         end
       else
         f = objective(obj,x);
-        if (obj.num_cin + obj.num_ceq)
+        if (obj.num_cin + obj.num_ceq>0)
           [g,h] = nonlinearConstraints(obj,x);
           fgh = [f;g;h];
         else
@@ -169,6 +169,10 @@ classdef NonlinearProgram
       obj.solver_options.snopt.VerifyLevel = 0;
       obj.solver_options.snopt.DerivativeOption = 1;
       obj.solver_options.snopt.print = '';
+      obj.solver_options.knitro = struct();
+      obj.solver_options.knitro.GradObj = 'on';
+      obj.solver_options.knitro.GradConstr = 'on';
+      obj.solver_options.knitro.Display= 'final';
       obj.check_grad = false;
     end
     
@@ -317,6 +321,10 @@ classdef NonlinearProgram
         end
       elseif(strcmpi((solver),'fmincon'))
         error('Not implemented yet');
+      elseif(strcmpi((solver),'knitro'))
+        if(strcmpi(optionname(~isspace(optionname)),'Algorithm'))
+          obj.solver_options.knitro.Algorithm = optionval;
+        end
       else
         error('solver %s not supported yet',solver);
       end
@@ -353,10 +361,20 @@ classdef NonlinearProgram
       % This function sets the nonlinear sparsity vector iGfun and jGvar based on the
       % nonlinear sparsity of the objective, nonlinear inequality constraints and
       % nonlinear equality constraints
-      % @param iGfun,jGvar. G(iGfun,jGvar) are the non-zero entries in the matrix G, which
+      % @retval iGfun,jGvar. G(iGfun,jGvar) are the non-zero entries in the matrix G, which
       % is the gradient of return value f in the objectiveAndNonlinearConstraints function
       iGfun = [obj.iFfun;obj.iCinfun+1;obj.iCeqfun+1+obj.num_cin];
       jGvar = [obj.jFvar;obj.jCinvar;obj.jCeqvar];
+    end
+    
+    function [iJfun,jJvar] = getNonlinearConstraintGradientSparsity(obj)
+      % This function sets the nonlinear sparsity vector iJfun and jJvar based on the
+      % nonlinear sparsity of the nonlinear inequality constraints and
+      % nonlinear equality constraints
+      % @retval iJfun,jJvar. J(iJfun,jJvar) are the non-zero entries in the jacobian matrix J, which
+      % is the gradient of return value f in the objective.nonlinearConstraints function
+      iJfun = [obj.iCinfun;obj.iCeqfun+obj.num_cin];
+      jJvar = [obj.jCinvar;obj.jCeqvar];
     end
     
     function [lb,ub] = bounds(obj)
@@ -372,6 +390,8 @@ classdef NonlinearProgram
           [x,objval,exitflag] = snopt(obj,x0);
         case 'fmincon'
           [x,objval,exitflag] = fmincon(obj,x0);
+        case 'knitro'
+          [x,objval,exitflag] = knitro(obj,x0);
         otherwise
           error('Drake:NonlinearProgram:UnknownSolver',['The requested solver, ',obj.solver,' is not known, or not currently supported']);
       end
@@ -379,7 +399,7 @@ classdef NonlinearProgram
     
     function [x,objval,exitflag,execution_time] = compareSolvers(obj,x0,solvers)
       if nargin<3
-        solvers={'snopt','fmincon'};
+        solvers={'snopt','fmincon','knitro'};
       end
        
       fprintf('    solver        objval        exitflag   execution time\n-------------------------------------------------------------\n')
@@ -428,7 +448,7 @@ classdef NonlinearProgram
         [f,G] = geval(@obj.objectiveAndNonlinearConstraints,x);
         f = [f;zeros(length(obj.bin)+length(obj.beq),1)];
         
-        G = G(sub2ind(size(G),iGfun,jGvar));
+        G = reshape(G(sub2ind(size(G),iGfun,jGvar)),[],1);
       end      
 
       function checkGradient(x)
@@ -499,6 +519,25 @@ classdef NonlinearProgram
       
       [x,objval,exitflag] = fmincon(@obj.objective,x0,obj.Ain,...
         obj.bin,obj.Aeq,obj.beq,obj.x_lb,obj.x_ub,@fmincon_userfun,obj.solver_options.fmincon);
+      objval = full(objval);
+    end
+    
+    function [x,objval,exitflag] = knitro(obj,x0)
+      ub_inf_idx = isinf(obj.cin_ub);
+      lb_inf_idx = isinf(obj.cin_lb);
+      function [c,ceq,dc,dceq] = knitro_userfun(x)
+        [g,h,dg,dh] = obj.nonlinearConstraints(x);
+        ceq = h;
+        c = [g(~ub_inf_idx)-obj.cin_ub(~ub_inf_idx);obj.cin_lb(~lb_inf_idx)-g(~lb_inf_idx)];
+        dc = [dg(~ub_inf_idx,:);-dg(~lb_inf_idx,:)]';
+        dceq = dh';
+      end
+      
+      [iJfun,jJvar] = obj.getNonlinearConstraintGradientSparsity();
+      Jpattern = sparse(iJfun,jJvar,ones(length(iJfun),1),obj.num_cin+obj.num_ceq,obj.num_vars);
+      obj.solver_options.knitro.JacobianPatter = Jpattern;
+      [x,objval,exitflag] = knitromatlab(@obj.objective,x0,obj.Ain,...
+        obj.bin,obj.Aeq,obj.beq,obj.x_lb,obj.x_ub,@knitro_userfun,[],obj.solver_options.knitro);
       objval = full(objval);
     end
   end
