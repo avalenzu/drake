@@ -49,7 +49,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningForce(robot_mass,t,g,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t,g,lambda,c_margin,dt_max,sdot_max,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % @param robot_mass  The mass of the robot
       % @param t   The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
@@ -70,6 +70,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
       obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
+      obj.robot_dim = robot_dim;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
       obj.g = g;
@@ -89,7 +90,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       obj.rotmat = rotmat;
       obj.F2fsrc_map = F2fsrc_map;
       obj.A_force = A_force;
-      obj.robot_dim = 1;
+      
       obj.H_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       H_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
@@ -228,7 +229,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
     end
     
-    function [F,sdotsquare,Hdot,Hbar,sigma,epsilon] = solve(obj,com,comp,compp,foot_pos,sigma)
+    function [F,sdotsquare,Hdot,Hbar,margin,sigma,epsilon] = solve(obj,com,comp,compp,foot_pos,sigma)
       % @param com    - A 3 x obj.nT matrix. com(:,i) is the CoM position at i'th knot
       % @param comp   - A 3 x obj.nT matrix. comp(:,i) is the first derivative of CoM
       % w.r.t time scaling function s at i'th knot point
@@ -321,6 +322,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
         sdotsquare = reshape(result.x(obj.sdotsquare_idx),1,[]);
         Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
         Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
+        margin = result.x(obj.margin_idx);
         epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
         sigma = sum(epsilon(:).^2);
       else
