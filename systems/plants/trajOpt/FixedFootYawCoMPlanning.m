@@ -23,8 +23,9 @@ classdef FixedFootYawCoMPlanning
   end
   
   methods
-    function obj = FixedFootYawCoMPlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr,yaw)
-      % @properties robot_mass    The mass of the robot
+    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr,yaw)
+      % @param robot_mass    The mass of the robot
+      % @param robot_dim     The estimated robot dimension in meters
       % @param t             The time knot for planning. This indicates which
       % FootStepRegionContactConstraint is active at a given time knot. The actual time is
       % determined by the scaling function.
@@ -68,12 +69,26 @@ classdef FixedFootYawCoMPlanning
         error('Drake:FixedFootYawCoMPlanning:dt_max should be positive');
       end
       if(~isnumeric(sdot_max))
-        error('Drake:FixedFootYawCoMPlanningForce:sdot_max should be numeric');
+        error('Drake:FixedFootYawCoMPlanning:sdot_max should be numeric');
       end
       sizecheck(sdot_max,[1,1]);
       if(sdot_max<=0)
-        error('Drake:FixedFootYawCoMPlanningForce:sdot_max should be positive');
+        error('Drake:FixedFootYawCoMPlanning:sdot_max should be positive');
       end
+%       if(~isnumeric(Q_H))
+%         error('Drake:FixedFootYawCoMPlanning:Q_H should be numeric');
+%       end
+%       sizecheck(Q_H,[3,3]);
+%       if(any(eig(Q_H)<0))
+%         error('Drake:FixedFootYawCoMPlanning:Q_H should be PSD matrix');
+%       end
+%       if(~isnumeric(Q_Hdot))
+%         error('Drake:FixedFootYawCoMPlanning:Q_Hdot should be numeric');
+%       end
+%       sizecheck(Q_Hdot,[3,3]);
+%       if(any(eig(Q_Hdot)<0))
+%         error('Drake:FixedFootYawCoMPlanning:Q_Hdot should be PSD matrix');
+%       end
       if(~isnumeric(Q_comddot))
         error('Drake:FixedFootYawCoMPlanning:Q_comddot should be numeric');
       end
@@ -92,6 +107,7 @@ classdef FixedFootYawCoMPlanning
       obj.A_xy = zeros(3,2,obj.num_fsrc_cnstr);
       obj.b_xy = zeros(3,1,obj.num_fsrc_cnstr);
       obj.rotmat = zeros(3,3,obj.num_fsrc_cnstr);
+      num_force_weight = 0;
       for i = 1:obj.num_fsrc_cnstr
         if(~isa(obj.fsrc_cnstr{i},'FootStepRegionContactConstraint'))
           error('Drake:FixedFootYawCoMPlanningPosition:The input should be a FootStepRegionContactConstraint');
@@ -105,6 +121,7 @@ classdef FixedFootYawCoMPlanning
           if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(t_knot(j)))
             obj.fsrc_knot_active_idx{i} = [obj.fsrc_knot_active_idx{i} j];
             obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
+            num_force_weight = num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
             is_fsrc_active = true;
           end
         end
@@ -119,6 +136,11 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.seed_step = FixedFootYawPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,Q_comddot,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      
+      % Remember to delete this later
+      sdot0 = ones(1,obj.nT);
+      angular_cost = AngularMomentumCost(robot_mass,robot_dim,t,obj.g,lambda,sdot0,num_force_weight,obj.fsrc_cnstr,...
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
     end
     
     function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,sdot0,H0)

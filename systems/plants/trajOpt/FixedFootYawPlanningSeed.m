@@ -22,7 +22,7 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
-    F2fsrc_map % A cell arry. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    F2fsrc_map % A cell array. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
@@ -33,8 +33,6 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
     
     dt_max %  A positive scalar. The upperbound for the time interval between any two consecutive knot points
     sdot_max % A positive scalar. The upper bound for the derivitive of time scaling funtion s w.r.t time.
-    com_cone_idx % A n x 4 matrix. com_cone_idx(i,:) is the index of the i'th cone for the distance between CoM and contact body
-    
   end
   
   properties(Access = protected)
@@ -204,11 +202,6 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       model.obj = obj.f_cost;
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
-      if(~isempty(obj.com_cone_idx))
-        for i = 1:size(obj.com_cone_idx,1)
-          model.cones(i).index = obj.com_cone_idx(i,:);
-        end
-      end
       params = struct('OutputFlag',false);
       
       result = gurobi(model,params);
@@ -256,18 +249,6 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
       epsilon = Hdot/(obj.robot_mass*obj.g)-obj.lambda*Hbar;
       sigma = sum(sum(epsilon.^2));
     end
-    
-%     function obj = addCoMFootDistanceConstraint(obj,fsrc_idx,dist_ub)
-%       for i = 1:obj.fsrc_knot_active_idx{fsrc_idx}
-%         com_foot_idx = obj.num_vars+(1:3);
-%         dist_idx = obj.num_vars+4;
-%         obj = obj.addDecisionVariable(4);
-%         b = obj.b_xy(:,:,fsrc_idx)+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr.body_pt;
-%         obj = obj.addLinearConstraint(LinearConstraint(b,b, [eye(3) -obj.A_xy(:,:,fsrc_idx) -eye(3)]),[obj.com(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.fsrc_body_pos_idx(:,fsrc_idx);com_foot_idx]);
-%         obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(dist_ub,dist_ub),dist_idx);
-%         obj.com_cone_idx = [obj.com_cone_idx;dist_idx com_foot_idx];
-%       end
-%     end
     
     function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
       % set the lower and upper bounds for CoM velocities at the knots with indices
