@@ -172,7 +172,7 @@ classdef NonlinearProgram
       obj.solver_options.knitro = struct();
       obj.solver_options.knitro.GradObj = 'on';
       obj.solver_options.knitro.GradConstr = 'on';
-      obj.solver_options.knitro.Display= 'final';
+      obj.solver_options.knitro.Display= 'off';
       obj.check_grad = false;
     end
     
