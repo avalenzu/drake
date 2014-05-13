@@ -12,8 +12,6 @@ classdef AngularMomentumCost < NonlinearConstraint
     
     lambda % A 3 x 3 Hurwitz matrix
     
-    sdot % A 1 x obj.nT double vector. The time derivative of the time scaling function s
-    
     num_fsrc_cnstr  % A scalar. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
@@ -29,14 +27,12 @@ classdef AngularMomentumCost < NonlinearConstraint
   end
   
   methods
-    function obj = AngularMomentumCost(robot_mass,robot_dim,t,g,lambda,sdot,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = AngularMomentumCost(robot_mass,robot_dim,t,g,lambda,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % @param robot_mass  The mass of the robot
       % @param robot_dim    An estimation of the dimension of the robot in meters.
       % @param t   The time knots
       % @param g   The gravitational acceleration
       % @param lambda   A 3 x 3 Hurwitz matrix
-      % @param sdot    A 1 x obj.nT vector. This is the time derivative of the time
-      % scaling function s
       % @param num_force_weight   The total number of force weights
       % @param fsrc_cnstr  A cell array. All the FootStepRegionContactConstraint object
       % @param fsrc_knot_active_idx   A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
@@ -50,7 +46,6 @@ classdef AngularMomentumCost < NonlinearConstraint
       obj.nT = length(obj.t_knot);
       obj.g = g;
       obj.lambda = lambda;
-      obj.sdot = sdot;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.yaw = yaw;

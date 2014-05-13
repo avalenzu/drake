@@ -38,7 +38,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningPosition(robot_mass,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
       % @param robot_mass    The mass of the robot
@@ -56,6 +56,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
       obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
+      obj.robot_dim = robot_dim;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
       obj.g = g;
@@ -69,7 +70,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.F2fsrc_map = F2fsrc_map;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.A_force = A_force;
-      obj.robot_dim = 1;
+      
       
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       com_names = cell(3*obj.nT,1);

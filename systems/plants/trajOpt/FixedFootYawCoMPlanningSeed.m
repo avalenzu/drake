@@ -1,4 +1,4 @@
-classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
+classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
   % Find the contact force that will give the desired center of mass. This is used to find
   % the initial seed
   properties(SetAccess = protected)
@@ -31,8 +31,6 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
     A_margin % A obj.nT x obj.num_vars matrix. 
     A_margin_bnd % A obj.nT x 1 vector. A_margin*x<=A_margin_bnd represents margin(i)<= min(F_i), where F_i are all the force weights at the k'th knot point
     
-    dt_max %  A positive scalar. The upperbound for the time interval between any two consecutive knot points
-    sdot_max % A positive scalar. The upper bound for the derivitive of time scaling funtion s w.r.t time.
   end
   
   properties(Access = protected)
@@ -42,15 +40,13 @@ classdef FixedFootYawPlanningSeed < NonlinearProgramWConstraintObjects
   end
   
   methods
-    function obj = FixedFootYawPlanningSeed(robot_mass,t,g,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningSeed(robot_mass,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
       obj.g = g;
       obj.lambda = lambda;
-      obj.dt_max = dt_max;
-      obj.sdot_max = sdot_max;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;

@@ -6,6 +6,7 @@ classdef FixedFootYawCoMPlanning
     seed_step  % A FixedFootYawCoMPlanningSeed object
     f_step  % A FixedFootYawCoMPlanningForce object
     p_step  % A FixedFootYawCoMPlanningPosition object
+    nlp_step % A FixedFootYawCoMPlanningNLP object
   end
   
   properties(SetAccess = protected)
@@ -130,17 +131,15 @@ classdef FixedFootYawCoMPlanning
         end
       end
       
-      obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
+      obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
-      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,...
+      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
-      obj.seed_step = FixedFootYawPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,Q_comddot,...
+      obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,Q_comddot,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       
-      % Remember to delete this later
-      sdot0 = ones(1,obj.nT);
-      angular_cost = AngularMomentumCost(robot_mass,robot_dim,t,obj.g,lambda,sdot0,num_force_weight,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
     end
     
     function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,sdot0,H0)
@@ -148,20 +147,19 @@ classdef FixedFootYawCoMPlanning
       % function s at i'th knot. This is used as a initial guess
       [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
       [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
-      max_iter = 8;
+      max_iter = 3;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
-      tic
       while(iter<max_iter)
         iter = iter+1;
         [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter-1);
-        [F,sdotsquare,Hdot,Hbar,sigma_sol(2*iter),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+        [F,sdotsquare,Hdot,Hbar,margin,sigma_sol(2*iter),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
-      toc
+      obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
     end
     
     function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
