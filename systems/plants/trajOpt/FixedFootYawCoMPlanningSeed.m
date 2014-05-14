@@ -31,6 +31,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     A_margin % A obj.nT x obj.num_vars matrix. 
     A_margin_bnd % A obj.nT x 1 vector. A_margin*x<=A_margin_bnd represents margin(i)<= min(F_i), where F_i are all the force weights at the k'th knot point
     
+    Q_comddot; % A 3 x 3 PSD matrix. Penalizes the CoM accleration.
   end
   
   properties(Access = protected)
@@ -47,6 +48,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj.nT = length(obj.t_knot);
       obj.g = g;
       obj.lambda = lambda;
+      obj.Q_comddot = Q_comddot;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
@@ -190,9 +192,9 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
       model.A = sparse([obj.Ain;obj.Aeq]);
       model.rhs = [obj.bin;obj.beq];
-      max_row_entry = max(abs(model.A),[],2);
-      model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
-      model.rhs = model.rhs./max_row_entry;
+%       max_row_entry = max(abs(model.A),[],2);
+%       model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
+%       model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       model.Q = sparse(obj.iQ_cost,obj.jQ_cost,obj.Qval_cost,obj.num_vars,obj.num_vars);
       model.obj = obj.f_cost;
@@ -202,16 +204,36 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       
       result = gurobi(model,params);
       if(strcmp(result.status,'OPTIMAL'))
-        com = reshape(result.x(obj.com_idx),3,obj.nT);
-        comp = reshape(result.x(obj.comp_idx),3,obj.nT);
-        compp = reshape(result.x(obj.compp_idx),3,obj.nT);
-        foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
-        F = cell(1,obj.nT);
-        for i = 1:obj.nT
-          for j = 1:length(obj.F2fsrc_map{i})
-            fsrc_idx = obj.F2fsrc_map{i}(j);
-            F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
+        % back off the solution a little bit. Add the conic constraint
+        % x'Qx+f'x<=backoff_factor*objective
+        
+        model_backoff.A = sparse([obj.Ain;obj.Aeq]);
+        model_backoff.rhs = [obj.bin;obj.beq];
+        model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+        model_backoff.obj = zeros(obj.num_vars,1);
+        model_backoff.lb = obj.x_lb;
+        model_backoff.ub = obj.x_ub;
+        backoff_factor = 1.02;
+        model_backoff.quadcon.Qc = model.Q;
+        model_backoff.quadcon.q = model.obj;
+        model_backoff.quadcon.rhs = result.objval*backoff_factor;
+        params = struct('OutputFlag',false);
+        
+        result = gurobi(model_backoff,params);
+        if(strcmp(result.status,'OPTIMAL'))
+          com = reshape(result.x(obj.com_idx),3,obj.nT);
+          comp = reshape(result.x(obj.comp_idx),3,obj.nT);
+          compp = reshape(result.x(obj.compp_idx),3,obj.nT);
+          foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
+          F = cell(1,obj.nT);
+          for i = 1:obj.nT
+            for j = 1:length(obj.F2fsrc_map{i})
+              fsrc_idx = obj.F2fsrc_map{i}(j);
+              F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
+            end
           end
+        else
+          error('Backoff should always be feasible');
         end
       else
         error('Initial seed is invalid. Consider to change the FootStepRegionContactConstraint objects, or adjust the sdot');

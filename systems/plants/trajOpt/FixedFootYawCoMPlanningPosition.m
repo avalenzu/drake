@@ -259,7 +259,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
 %         model.rhs = model.rhs./max_row_entry;
         model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
         model.Q = obj.Q_cost;
-        model.obj = zeros(1,obj.num_vars);
+        model.obj = zeros(obj.num_vars,1);
         obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
         comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
         comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
@@ -268,13 +268,28 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
         model.lb = obj.x_lb;
         model.ub = obj.x_ub;
         model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
-        tol = 1e-6;
-        success = false;
-        while(tol<=1e-3 && ~success)
-          params = struct('OutputFlag',false,'FeasibilityTol',tol);
+        params = struct('OutputFlag',false);
 
-          result = gurobi(model,params);
-          if(strcmp(result.status,'OPTIMAL'))
+        result = gurobi(model,params);
+        if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
+          % back off the solution a little bit. Add the conic constraint
+          % x'Qx+f'x<=backoff_factor*objective
+          
+          model_backoff.A = sparse([obj.Ain;obj.Aeq]);
+          model_backoff.rhs = [obj.bin;obj.beq];
+          model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+          model_backoff.obj = zeros(obj.num_vars,1);
+          model_backoff.lb = obj.x_lb;
+          model_backoff.ub = obj.x_ub;
+          model_backoff.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
+          backoff_factor = 0.02;
+          model_backoff.quadcon.Qc = model.Q;
+          model_backoff.quadcon.q = model.obj;
+          model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
+          params = struct('OutputFlag',false);
+
+          result = gurobi(model_backoff,params);
+          if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
             com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
             comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
             compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
@@ -283,13 +298,10 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
             epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
             sigma = sum(epsilon(:).^2);
             foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
-            success = true;
-          elseif(strcmp(result.status,'INF_OR_UNBD'))
-            tol = tol*10;
+          else
+            error('Backoff should always be feasible');
           end
-        end
-        
-        if(~strcmp(result.status,'OPTIMAL'))
+        elseif(~strcmp(result.status,'OPTIMAL'))
           error('P-step infesible');
         end
       elseif(strcmp(obj.solver,'mosek'))

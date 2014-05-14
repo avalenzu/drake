@@ -147,7 +147,7 @@ classdef FixedFootYawCoMPlanning
       % function s at i'th knot. This is used as a initial guess
       [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
       [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
-      max_iter = 3;
+      max_iter = 5;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       while(iter<max_iter)
@@ -159,7 +159,13 @@ classdef FixedFootYawCoMPlanning
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
-      obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
+      
+      [com,comp,compp,foot_pos,F,Hdot,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
+      sdot = sqrt(sdotsquare);
+      comdot = comp.*bsxfun(@times,sdot,ones(3,1));
+      sdotsquare_diff = diff(sdotsquare);
+      sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
+      comddot = compp.*bsxfun(@times,obj.sdotsquare,ones(3,1))+comp.*bsxfun(@times,sdotsquare_diff,(obj.nT-1)/2*ones(3,1));
     end
     
     function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)

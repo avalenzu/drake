@@ -4,7 +4,6 @@ classdef AngularMomentumCost < NonlinearConstraint
     robot_mass % The mass of the robot
     robot_dim % An estimate of the robot dimension in meters
     g % The gravitational acceleration
-    t_knot % The time knot
     nT % The length of obj.t_knot
     com_idx % A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at the i'th knot
     F_idx % A cell array. x(F_idx{i}(j)(:,k)) is the contact force parameters (the weights for the friction cone extreme rays) at time t_knot(i), for the j'th FootStepRegionContactConstraint, at k'th contact point
@@ -27,7 +26,7 @@ classdef AngularMomentumCost < NonlinearConstraint
   end
   
   methods
-    function obj = AngularMomentumCost(robot_mass,robot_dim,t,g,lambda,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = AngularMomentumCost(robot_mass,robot_dim,nT,g,lambda,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
       % @param robot_mass  The mass of the robot
       % @param robot_dim    An estimation of the dimension of the robot in meters.
       % @param t   The time knots
@@ -39,11 +38,10 @@ classdef AngularMomentumCost < NonlinearConstraint
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-      obj = obj@NonlinearConstraint(-inf,inf,num_force_weight+3+3*length(t)+2*length(fsrc_cnstr));
+      obj = obj@NonlinearConstraint(-inf,inf,num_force_weight+3+3*nT+2*length(fsrc_cnstr));
       obj.robot_mass = robot_mass;
       obj.robot_dim = robot_dim;
-      obj.t_knot = t;
-      obj.nT = length(obj.t_knot);
+      obj.nT = nT;
       obj.g = g;
       obj.lambda = lambda;
       obj.num_fsrc_cnstr = length(fsrc_cnstr);
@@ -62,13 +60,14 @@ classdef AngularMomentumCost < NonlinearConstraint
       obj.H0_idx = var_count+(1:3)';
       var_count = var_count +3;
       obj.fsrc_body_pos_idx = var_count+reshape(1:2*obj.num_fsrc_cnstr,2,obj.num_fsrc_cnstr);
+      var_count = var_count+2*obj.num_fsrc_cnstr;
       obj.F_idx = cell(1,obj.nT);
-      for i = 1:obj.num_fsrc_cnstr
-        for j = 1:obj.nT
-          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
-            obj.F_idx{j} = [obj.F_idx{j} {var_count+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
-            var_count = var_count+obj.fsrc_cnstr{i}.num_force_weight;
-          end
+      for i = 1:obj.nT
+        obj.F_idx{i} = cell(1,length(obj.F2fsrc_map{i}));
+        for j = 1:length(obj.F2fsrc_map{i})          
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          obj.F_idx{i}{j} =  var_count+reshape((1:obj.fsrc_cnstr{fsrc_idx}.num_force_weight),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts);
+          var_count = var_count+obj.fsrc_cnstr{fsrc_idx}.num_force_weight;
         end
       end
     end
