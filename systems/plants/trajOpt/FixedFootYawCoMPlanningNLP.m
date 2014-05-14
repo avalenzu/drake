@@ -5,6 +5,8 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
   properties(SetAccess = protected)
     H0_idx % A 3 x 1 vector. x(H0_idx) is the initial angular momentum
     robot_dim % An estimation of robot dimension in meters
+    F_idx_all % The indices of all the forces;
+    angular_cost % A AngularMomentumCost object
   end
   
   methods
@@ -28,23 +30,21 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       obj.H0_idx = obj.num_vars+(1:3)';
       H0_name = {'H0_x';'H0_y';'H0_z'};
       obj = obj.addDecisionVariable(3,H0_name);
-      angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,t,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
-      F_idx_all = zeros(obj.num_force_weight,1);
+      obj.angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,obj.nT,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.F_idx_all = zeros(obj.num_force_weight,1);
       F_count = 0;
       for i = 1:obj.nT
         for j = 1:length(obj.F_idx{i})
-          F_idx_all(F_count+(1:numel(obj.F_idx{i}{j}))) = obj.F_idx{i}{j}(:);
+          obj.F_idx_all(F_count+(1:numel(obj.F_idx{i}{j}))) = obj.F_idx{i}{j}(:);
           F_count = F_count+numel(obj.F_idx{i}{j});
         end
       end
-      obj = obj.addCost(angular_cost,[obj.com_idx(:);obj.H0_idx;obj.fsrc_body_pos_idx(:);F_idx_all]);
+      obj = obj.addCost(obj.angular_cost,[obj.com_idx(:);obj.H0_idx;obj.fsrc_body_pos_idx(:);obj.F_idx_all]);
       margin_cost = LinearConstraint(-inf,inf,-c_margin*ones(1,obj.nT));
       obj = obj.addCost(margin_cost,obj.margin_idx);
-      comddot_cost = QuadraticSumConstraint(-inf,inf,Q_comddot,zeros(3,1));
-      obj = obj.addCost(comddot_cost,obj.compp_idx(:));
     end
     
-    function [com,comp,compp,foot_pos,F,INFO] = solve(obj,sdot0,com,comp,compp,foot_pos,F,margin,H0)
+    function [com,comp,compp,foot_pos,F,Hdot,INFO] = solve(obj,sdot0,com,comp,compp,foot_pos,F,margin,H0)
       x = inf(obj.num_vars,1);
       x(obj.com_idx) = com(:);
       x(obj.comp_idx) = comp(:);
@@ -69,21 +69,35 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       end
       A_compp_name = repmat({'newton law'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_name);
+      comddot_cost = CoMAccelerationCost(obj.Q_comddot,obj.nT,sdot0.^2);
+      obj = obj.addCost(comddot_cost,[obj.comp_idx(:);obj.compp_idx(:)]);
       
-      obj = obj.setSolver('knitro');
       [x_sol,objective,INFO] = solve@NonlinearProgramWConstraintObjects(obj,x);
       com = reshape(x_sol(obj.com_idx),3,obj.nT);
       comp = reshape(x_sol(obj.comp_idx),3,obj.nT);
       compp = reshape(x_sol(obj.compp_idx),3,obj.nT);
       foot_pos = reshape(x_sol(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
       F = cell(1,obj.nT);
+      Hdot = zeros(3,obj.nT);
+      H0 = x_sol(obj.H0_idx);
+      Hbar = bsxfun(@times,H0,ones(1,obj.nT));
       for i = 1:obj.nT
         F{i} = cell(1,length(obj.F_idx{i}));
         for j = 1:length(obj.F_idx{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
+          num_contact_pts_ij = obj.fsrc_cnstr{fsrc_idx}.num_contact_pts;
           F{i}{j} = reshape(x_sol(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts);
+          force_ij = obj.A_force{fsrc_idx}*F{i}{j};
+          contact_pos = obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.body_contact_pts+bsxfun(@times,ones(1,num_contact_pts_ij),obj.A_xy(:,:,fsrc_idx)*foot_pos(:,fsrc_idx)+obj.b_xy(:,:,fsrc_idx));
+          contact_pos_CoM = contact_pos-bsxfun(@times,com(:,i),ones(1,num_contact_pts_ij));
+          Hdot(:,i) = Hdot(:,i)+sum(cross(contact_pos_CoM,force_ij),2);
         end
       end
+      scale_factor = obj.robot_mass*obj.robot_dim*obj.g;
+      Hdot_scale = Hdot/scale_factor;
+      Hbar = Hbar+cumsum(Hdot_scale,2)*(1/(obj.nT-1));
+      epsilon = (obj.lambda*Hbar-Hdot_scale);
+      sigma = sum(sum(epsilon.^2));
     end
   end
 end

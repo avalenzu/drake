@@ -312,19 +312,41 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       
       result = gurobi(model,params);
       if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-        F = cell(1,obj.nT);
+        % back off the solution a little bit. Add the conic constraint
+        % x'Qx+f'x<=backoff_factor*objective
+        model_backoff.A = sparse([obj.Ain;obj.Aeq]);
+        model_backoff.rhs = [obj.bin;obj.beq];
+        model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+        model_backoff.obj = zeros(obj.num_vars,1);
+        model_backoff.lb = obj.x_lb;
+        model_backoff.ub = obj.x_ub;
+        model_backoff.cones(1).index = [obj.sigma_idx obj.epsilon_idx(:)'];
         for i = 1:obj.nT
-          for j = 1:length(obj.F_idx{i})
-            fsrc_idx = obj.F2fsrc_map{i}(j);
-            F{i} = [F{i} {reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
-          end
+          model_backoff.cones(1+i) = struct('index',obj.cone_dt_idx(i,:));
         end
-        sdotsquare = reshape(result.x(obj.sdotsquare_idx),1,[]);
-        Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
-        Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
-        margin = result.x(obj.margin_idx);
-        epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-        sigma = sum(epsilon(:).^2);
+        backoff_factor = 0.04;
+        model_backoff.quadcon.Qc = model.Q;
+        model_backoff.quadcon.q = model.obj;
+        model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
+
+        result = gurobi(model_backoff,params);
+        if(strcmp(result.status,'OPTIMAL') || strcmp(result.status,'SUBOPTIMAL'))
+          F = cell(1,obj.nT);
+          for i = 1:obj.nT
+            for j = 1:length(obj.F_idx{i})
+              fsrc_idx = obj.F2fsrc_map{i}(j);
+              F{i} = [F{i} {reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
+            end
+          end
+          sdotsquare = reshape(result.x(obj.sdotsquare_idx),1,[]);
+          Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g;
+          Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
+          margin = result.x(obj.margin_idx);
+          epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
+          sigma = sum(epsilon(:).^2);
+        else
+          error('Backoff should always be feasible');
+        end
       else
         error('F-step is infeasible');
       end
