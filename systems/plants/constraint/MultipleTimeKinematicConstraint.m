@@ -22,7 +22,8 @@ classdef MultipleTimeKinematicConstraint < RigidBodyConstraint
     function [c,dc] = eval(obj,t,kinsol_cell)
       valid_t_idx = obj.isTimeValid(t);
       valid_t = t(valid_t_idx);
-      valid_kinsol_cell = kinsol_cell(valid_t_idx);
+      valid_kinsol_cell = kinsol_cell(:,valid_t_idx);
+      %valid_kinsol_cell = kinsol_cell(valid_t_idx);
       nq = obj.robot.getNumDOF();
       if(length(valid_t)>=2)
         num_valid_t = size(valid_t,2);

@@ -69,7 +69,8 @@ class RigidBodyConstraint
     static const int PostureChangeConstraintType                = 19;
     static const int RelativePositionConstraintType             = 20;
     static const int RelativeQuatConstraintType                 = 24;
-    static const int RelativeGazeDirConstraintType                 = 25;
+    static const int RelativeGazeDirConstraintType              = 25;
+    static const int MinDistanceConstraintType                  = 26;
 };
 
 /**
@@ -603,6 +604,63 @@ class AllBodiesClosestDistanceConstraint : public SingleTimeKinematicConstraint
     virtual ~AllBodiesClosestDistanceConstraint(){};
 };
 
+<<<<<<< HEAD
+=======
+class MinDistanceConstraint : public SingleTimeKinematicConstraint
+{
+  protected:
+    double min_distance;
+  public:
+    MinDistanceConstraint(RigidBodyManipulator* model, double min_distance,
+                                       Eigen::Vector2d tspan = DrakeRigidBodyConstraint::default_tspan);
+    //MinDistanceConstraint(const MinDistanceConstraint& rhs);
+    virtual void eval(const double* t,Eigen::VectorXd& c, Eigen::MatrixXd& dc) const;
+    virtual void name(const double* t, std::vector<std::string> &name) const;
+    void scaleDistance(const Eigen::VectorXd &dist, Eigen::VectorXd &scaled_dist, Eigen::MatrixXd &dscaled_dist_ddist) const;
+    void penalty(const Eigen::VectorXd &dist, Eigen::VectorXd &cost, Eigen::MatrixXd &dcost_ddist) const;
+    virtual void bounds(const double* t, Eigen::VectorXd& lb, Eigen::VectorXd& ub) const;
+    virtual ~MinDistanceConstraint(){};
+};
+
+class IntegratedClosestDistanceConstraint: public MultipleTimeKinematicConstraint
+{
+  protected:
+    int num_intermediate_points;
+    double min_distance;
+    Eigen::VectorXd dt;
+  public:
+    IntegratedClosestDistanceConstraint(RigidBodyManipulator* model, const Eigen::VectorXd &t, 
+        double min_distance, int num_intermediate_points, 
+        const Eigen::Vector2d &tspan = DrakeRigidBodyConstraint::default_tspan);
+    virtual int getNumConstraint(const double* t, int n_breaks) const;
+    virtual void eval_valid(const double* valid_t, int num_valid_t,const Eigen::MatrixXd &valid_q,Eigen::VectorXd &c, Eigen::MatrixXd &dc_valid) const;
+    virtual void bounds(const double* t,int n_breaks, Eigen::VectorXd &lb, Eigen::VectorXd &ub) const;
+    virtual void name(const double* t, int n_breaks,std::vector<std::string> &name_str) const;
+    void scaleDistance(const Eigen::VectorXd &dist, Eigen::VectorXd &scaled_dist, Eigen::MatrixXd &dscaled_dist_ddist) const;
+    void penalty(const Eigen::VectorXd &dist, Eigen::VectorXd &cost, Eigen::MatrixXd &dcost_ddist) const;
+    virtual ~IntegratedClosestDistanceConstraint(void){};
+};
+
+class InterpolatedClosestDistanceConstraint: public MultipleTimeKinematicConstraint
+{
+  protected:
+    int num_intermediate_points;
+    double min_distance;
+    Eigen::VectorXd dt;
+  public:
+    InterpolatedClosestDistanceConstraint(RigidBodyManipulator* model, const Eigen::VectorXd &t, 
+        double min_distance, int num_intermediate_points, 
+        const Eigen::Vector2d &tspan = DrakeRigidBodyConstraint::default_tspan);
+    virtual int getNumConstraint(const double* t, int n_breaks) const;
+    virtual void eval_valid(const double* valid_t, int num_valid_t,const Eigen::MatrixXd &valid_q,Eigen::VectorXd &c, Eigen::MatrixXd &dc_valid) const;
+    virtual void bounds(const double* t,int n_breaks, Eigen::VectorXd &lb, Eigen::VectorXd &ub) const;
+    virtual void name(const double* t, int n_breaks,std::vector<std::string> &name_str) const;
+    void scaleDistance(const Eigen::VectorXd &dist, Eigen::VectorXd &scaled_dist, Eigen::MatrixXd &dscaled_dist_ddist) const;
+    void penalty(const Eigen::VectorXd &dist, Eigen::VectorXd &cost, Eigen::MatrixXd &dcost_ddist) const;
+    virtual ~InterpolatedClosestDistanceConstraint(void){};
+};
+
+>>>>>>> 10e1987... WIP on collision avoidance
 class WorldPositionInFrameConstraint: public WorldPositionConstraint
 {
   protected:
