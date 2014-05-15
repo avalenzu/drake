@@ -21,6 +21,7 @@ classdef FixedFootYawCoMPlanning
     nT % The total number of knot points
     robot_mass % The mass of the robot
     g % gravitational acceleration
+    robot_dim % A estimation of the dimension of robot in meters
   end
   
   methods
@@ -41,6 +42,14 @@ classdef FixedFootYawCoMPlanning
         error('Drake:FixedFootYawCoMPlanning:robot mass should be positive');
       end
       obj.robot_mass = robot_mass;
+      if(~isnumeric(robot_dim))
+        error('Drake:FixedFootYawCoMPlanning:robot dimension should be numeric');
+      end
+      sizecheck(robot_dim,[1,1]);
+      if(robot_dim<=0)
+        error('Drake:FixedFootYawCoMPlanning:robot dimension should be positive');
+      end
+      obj.robot_dim = robot_dim;
       if(~isnumeric(t))
         error('Drake:FixedFootYawCoMPlanning:t should be numeric');
       end
@@ -160,12 +169,55 @@ classdef FixedFootYawCoMPlanning
         sigma = sigma_sol(2*iter);
       end
       
-      [com,comp,compp,foot_pos,F,Hdot,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
+      [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
       sdot = sqrt(sdotsquare);
       comdot = comp.*bsxfun(@times,sdot,ones(3,1));
       sdotsquare_diff = diff(sdotsquare);
       sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
-      comddot = compp.*bsxfun(@times,obj.sdotsquare,ones(3,1))+comp.*bsxfun(@times,sdotsquare_diff,(obj.nT-1)/2*ones(3,1));
+      comddot = compp.*bsxfun(@times,sdotsquare,ones(3,1))+comp.*bsxfun(@times,sdotsquare_diff,(obj.nT-1)/2*ones(3,1));
+      delta_t = 2/(obj.nT-1)./(sdot(1:end-1)+sdot(2:end));
+      t = cumsum([0 delta_t]);
+    end
+    
+    function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
+      % @param com_idx    A 1 x n vector. The com(:,com_idx) will be bounded
+      % @param com_lb     A 3 x n vector. The lower bound for com(:,com_idx);
+      % @param com_ub     A 3 x n vector. The upper bound for com(:,com_idx);
+      num_idx = length(com_idx);
+      sizecheck(com_lb,[3,num_idx]);
+      sizecheck(com_ub,[3,num_idx]);
+      bnds = BoundingBoxConstraint(com_lb(:),com_ub(:));
+      obj.seed_step = obj.seed_step.addBoundingBoxConstraint(bnds,reshape(obj.seed_step.com_idx(:,com_idx),[],1));
+      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.com_idx(:,com_idx),[],1));
+      obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(bnds,reshape(obj.nlp_step.com_idx(:,com_idx),[],1));
+    end
+    
+    function obj = addH0Bounds(obj,H0_lb,H0_ub)
+      % set the bounds on the initial angular momentum
+      sizecheck(H0_lb,[3,1]);
+      sizecheck(H0_ub,[3,1]);
+      scaling_factor = obj.robot_dim*obj.robot_mass*obj.g;
+      bnds = BoundingBoxConstraint(H0_lb/scaling_factor,H0_ub/scaling_factor);
+      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,obj.p_step.H_idx(:,1));
+      obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,obj.f_step.H_idx(:,1));
+      obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(bnds,obj.nlp_step.H0_idx);
+    end
+    
+    function obj = addCoMdotBounds(obj,comdot_idx,comdot_lb,comdot_ub)
+      % set the bounds on the com velocity
+      % @param comdot_idx  A 1 x n vector. comdot(:,comdot_idx) will be bounded
+      % @param comdot_lb   A 3 x n vector. The lower bounds of the CoM velocity
+      % @param comdot_ub   A 3 x n vector. The upper bounds of the CoM velocity
+      num_idx = length(comdot_idx);
+      sizecheck(comdot_lb,[3,num_idx]);
+      sizecheck(comdot_ub,[3,num_idx]);
+      obj.seed_step.lb_comdot(:,comdot_idx) = comdot_lb;
+      obj.seed_step.ub_comdot(:,comdot_idx) = comdot_ub;
+      obj.p_step.lb_comdot(:,comdot_idx) = comdot_lb;
+      obj.p_step.ub_comdot(:,comdot_idx) = comdot_ub;
+      obj.f_step.lb_comdot(:,comdot_idx) = comdot_lb;
+      obj.f_step.ub_comdot(:,comdot_idx) = comdot_ub;
     end
     
     function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
