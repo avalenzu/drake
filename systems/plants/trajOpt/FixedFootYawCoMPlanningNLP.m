@@ -44,7 +44,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       obj = obj.addCost(margin_cost,obj.margin_idx);
     end
     
-    function [com,comp,compp,foot_pos,F,Hdot,INFO] = solve(obj,sdot0,com,comp,compp,foot_pos,F,margin,H0)
+    function [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = solve(obj,sdot0,com,comp,compp,foot_pos,F,margin,H0)
       x = inf(obj.num_vars,1);
       x(obj.com_idx) = com(:);
       x(obj.comp_idx) = comp(:);

@@ -13,9 +13,6 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     margin_idx % A 1 x obj.nT vector. x(margin_idx(i)) is the force margin at time t_knot(i). We want to maximize this margin for better robustness
     F_idx % A cell array. x(F_idx{i}{j}(:,k)) is the contact force parameter (the weights for the friction cone extreme rays) at time t_knot(i), for the j'th FootStepRegionContactConstraint, at k'th contact point
     
-    iQ_cost % The row indices of non-zero entries in the quadratic cost
-    jQ_cost % The column indices of non-zero entries in the quadratic cost
-    Qval_cost % The value of the non-zero entries in the quadratic cost
     f_cost % A obj.num_vars x 1 vector. The linear componenet of the cost
     A_iris,b_iris % A_iris * x <= b_iris is the union of all half space constraint on the foot location from iris
     A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
@@ -26,12 +23,16 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
-    lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
+    
     A_newton % A 3*obj.nT x obj.num_vars matrix. force(:) = A_newton*x, where force(:,i) is the total force at i'th knot point
     A_margin % A obj.nT x obj.num_vars matrix. 
     A_margin_bnd % A obj.nT x 1 vector. A_margin*x<=A_margin_bnd represents margin(i)<= min(F_i), where F_i are all the force weights at the k'th knot point
     
     Q_comddot; % A 3 x 3 PSD matrix. Penalizes the CoM accleration.
+  end
+  
+  properties
+    lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
   end
   
   properties(Access = protected)
@@ -167,9 +168,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj.lb_comdot = -inf(3,obj.nT);
       obj.ub_comdot = inf(3,obj.nT);
       
-      obj.iQ_cost = reshape(repmat(obj.compp_idx,3,1),[],1);
-      obj.jQ_cost = reshape(bsxfun(@times,obj.compp_idx(:)',ones(3,1)),[],1);
-      obj.Qval_cost = reshape(repmat(Q_comddot,1,obj.nT),[],1);
+      
       obj.f_cost = zeros(obj.num_vars,1);
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
     end
@@ -196,7 +195,20 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
 %       model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
 %       model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-      model.Q = sparse(obj.iQ_cost,obj.jQ_cost,obj.Qval_cost,obj.num_vars,obj.num_vars);
+      delta_s = 1/(obj.nT-1);
+      Qcomddot_row = [reshape(repmat(obj.compp_idx,3,1),[],1);...
+        reshape(repmat(obj.comp_idx,3,1),[],1);...
+        reshape(repmat(obj.compp_idx,3,1),[],1);...
+        reshape(repmat(obj.comp_idx,3,1),[],1)];
+      Qcomddot_col = [reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1)];
+      Qcomddot_val = [reshape(bsxfun(@times,obj.Q_comddot(:),sdotsquare.^2),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).^2),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1)];
+      model.Q = sparse(Qcomddot_row,Qcomddot_col,Qcomddot_val,obj.num_vars,obj.num_vars);
       model.obj = obj.f_cost;
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
@@ -266,26 +278,6 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       Hbar = Hbar+[zeros(3,1) cumsum(Hdot(:,2:end)*delta_s,2)/(obj.robot_mass*obj.g)];
       epsilon = Hdot/(obj.robot_mass*obj.g)-obj.lambda*Hbar;
       sigma = sum(sum(epsilon.^2));
-    end
-    
-    function obj = setCoMVelocityBounds(obj,knot_idx,lb,ub)
-      % set the lower and upper bounds for CoM velocities at the knots with indices
-      % knot_ind
-      % @param knot_idx   A 1 x m integer vector. The indices of the knots whose CoM
-      % velocities will be bounded
-      % @param lb     A 3 x m double vector. lb(:,i) is the lower bound of the CoM
-      % velocity at the knot with index knot_idx(i)
-      % @param ub     A 3 x m double vector. ub(:,i) is the upper bound of the CoM
-      % velocity at the knot with index knot_idx(i)
-      num_idx = numel(knot_idx);
-      if(~isnumeric(knot_idx) || ~isnumeric(lb) || ~isnumeric(ub))
-        error('Drake:FixedFootYawCoMPlanningPosition: input should be numeric');
-      end
-      sizecheck(knot_idx,[1,num_idx]);
-      sizecheck(lb,[3,num_idx]);
-      sizecheck(ub,[3,num_idx]);
-      obj.lb_comdot(:,knot_idx) = lb;
-      obj.ub_comdot(:,knot_idx) = ub;
     end
     
     function obj = addKinematicPolygon(obj,fsrc_idx,A,b)
