@@ -236,7 +236,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       obj.ub_comdot = inf(3,obj.nT);
     end
     
-    function [F,sdotsquare,Hdot,Hbar,margin,sigma,epsilon] = solve(obj,com,comp,compp,foot_pos,sigma)
+    function [F,sdotsquare,Hdot,Hbar,margin,sigma,epsilon,INFO] = solve(obj,com,comp,compp,foot_pos,sigma)
       % @param com    - A 3 x obj.nT matrix. com(:,i) is the CoM position at i'th knot
       % @param comp   - A 3 x obj.nT matrix. comp(:,i) is the first derivative of CoM
       % w.r.t time scaling function s at i'th knot point
@@ -256,6 +256,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       % function s.
       % @retval epsilon   A 3 x obj.nT matrix. The residue of the PD law on angular
       % momentum
+      % @retval INFO   1 is successful, 0 for failure
       sizecheck(com,[3,obj.nT]);
       sizecheck(comp,[3,obj.nT]);
       sizecheck(compp,[3,obj.nT]);
@@ -345,7 +346,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
         for i = 1:obj.nT
           model_backoff.cones(1+i) = struct('index',obj.cone_dt_idx(i,:));
         end
-        backoff_factor = 0.05;
+        backoff_factor = 0.07;
         model_backoff.quadcon.Qc = model.Q;
         model_backoff.quadcon.q = model.obj;
         model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
@@ -365,11 +366,23 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
           margin = result.x(obj.margin_idx);
           epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
           sigma = sum(epsilon(:).^2);
+          INFO = 1;
         else
-          error('Backoff should always be feasible');
+          INFO = 0;
+%           error('Backoff should always be feasible');
         end
       else
-        error('F-step is infeasible');
+        INFO = 0;
+%         error('F-step is infeasible');
+      end
+      if(INFO == 0)
+        F = {};
+        sdotsquare = [];
+        Hdot = [];
+        Hbar = [];
+        margin = [];
+        epsilon = [];
+        sigma = [];
       end
     end
     

@@ -154,22 +154,44 @@ classdef FixedFootYawCoMPlanning
     function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,sdot0,H0)
       % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
       % function s at i'th knot. This is used as a initial guess
-      [com,comp,compp,foot_pos,F,sdotsquare] = obj.seed_step.solve(sdot0);
+      [com,comp,compp,foot_pos,F,sdotsquare,margin] = obj.seed_step.solve(sdot0);
       [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
-      max_iter = 5;
+      max_iter = 10;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
-      while(iter<max_iter)
+      INFO = 1;
+      while(iter<max_iter && INFO == 1)
         iter = iter+1;
-        [com,comp,compp,foot_pos,Hdot,Hbar,sigma_sol(2*iter-1),epsilon] = obj.p_step.solve(F,sdotsquare,sigma);
+        [com_iter,comp_iter,compp_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sdotsquare,sigma);
+        if(INFO == 1)
+          com = com_iter;
+          comp = comp_iter;
+          compp = compp_iter;
+          foot_pos = foot_pos_iter;
+          Hdot = Hdot_iter;
+          Hbar = Hbar_iter;
+          sigma_sol(2*iter-1) = sigma_sol_iter;
+          epsilon = epsilon_iter;
+        end
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter-1);
-        [F,sdotsquare,Hdot,Hbar,margin,sigma_sol(2*iter),epsilon] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+        [F_iter,sdotsquare_iter,Hdot_iter,Hbar_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+        if(INFO == 1)
+          F = F_iter;
+          sdotsquare = sdotsquare_iter;
+          Hdot = Hdot_iter;
+          Hbar = Hbar_iter;
+          margin = margin_iter;
+          sigma_sol(2*iter) = sigma_sol_iter;
+          epsilon = epsilon_iter;
+        end
+        
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
       
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
       [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
       sdot = sqrt(sdotsquare);
       comdot = comp.*bsxfun(@times,sdot,ones(3,1));
