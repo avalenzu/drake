@@ -131,17 +131,14 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       A_iris_name = repmat({'iris constraint'},num_halfspace_iris,1);
       obj = obj.addLinearConstraint(LinearConstraint(-inf(num_halfspace_iris,1),obj.b_iris,obj.A_iris),(1:obj.num_vars),A_iris_name);
       delta_s = 1/(obj.nT-1);
-      % linear constraint that com[n]-com[n-1] = comp[n]*delta_s and comp[n]-comp[n-1] =
-      % compp[n]*delta_s
-      iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
-      jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comp_idx(:,2:end),[],1)];
-      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-reshape(bsxfun(@times,ones(3,1),delta_s*ones(1,obj.nT-1)),[],1)];
-      iAcom = [iAcom;3*(obj.nT-1)+iAcom];
-      jAcom = [jAcom;reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1); reshape(obj.compp_idx(:,2:end),[],1)];
-      Aval_com = [Aval_com;Aval_com];
-      obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
-      obj.A_com_bnd = zeros(6*(obj.nT-1),1);
-      A_com_name = [repmat({'com difference'},3*(obj.nT-1),1);repmat({'comp difference'},3*(obj.nT-1),1)];
+      % linear constraint on the quatic interpolation of com
+      % delta_s^2(compp[i+1]-compp[i]) = -12(com[i+1]-com[i])+6*delta_s(comp[i]+comp[i+1])
+      iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
+      jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1);reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.compp_idx(:,1:end-1),[],1);reshape(obj.compp_idx(:,2:end),[],1)];
+      Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);delta_s^2*ones(3*(obj.nT-1),1);-delta_s^2*ones(3*(obj.nT-1),1)];
+      obj.A_com = sparse(iAcom,jAcom,Aval_com,3*(obj.nT-1),obj.num_vars);
+      obj.A_com_bnd = zeros(3*(obj.nT-1),1);
+      A_com_name = repmat({'com difference'},3*(obj.nT-1),1);
       obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_name);
       % compute the summation of force, and the constraint that force_margin<= min_i
       % (F_i), where F_i are all force weights at i'th knot
@@ -173,7 +170,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
     end
     
-    function [com,comp,compp,foot_pos,F,sdotsquare] = solve(obj,sdot0)
+    function [com,comp,compp,foot_pos,F,sdotsquare,margin] = solve(obj,sdot0)
       % @param sdot0   A 1 x obj.nT vector
       sdotsquare = sdot0.^2;
       sdotsquare_diff = diff(sdotsquare);
@@ -225,10 +222,10 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         model_backoff.obj = zeros(obj.num_vars,1);
         model_backoff.lb = obj.x_lb;
         model_backoff.ub = obj.x_ub;
-        backoff_factor = 1.02;
+        backoff_factor = 0.02;
         model_backoff.quadcon.Qc = model.Q;
         model_backoff.quadcon.q = model.obj;
-        model_backoff.quadcon.rhs = result.objval*backoff_factor;
+        model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
         params = struct('OutputFlag',false);
         
         result = gurobi(model_backoff,params);
@@ -237,6 +234,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
           comp = reshape(result.x(obj.comp_idx),3,obj.nT);
           compp = reshape(result.x(obj.compp_idx),3,obj.nT);
           foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
+          margin = result.x(obj.margin_idx);
           F = cell(1,obj.nT);
           for i = 1:obj.nT
             for j = 1:length(obj.F2fsrc_map{i})

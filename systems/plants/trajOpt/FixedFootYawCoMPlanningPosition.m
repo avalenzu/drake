@@ -149,18 +149,15 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       end
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
       delta_s = 1/(obj.nT-1);
-      % linear constraint that com[n]-com[n-1] = comp[n]*delta_s and comp[n]-comp[n-1] =
-      % compp[n]*delta_s
-      iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
-      jAcom = [reshape(obj.com_idx(:,2:end),[],1);reshape(obj.com_idx(:,1:end-1),[],1); reshape(obj.comp_idx(:,2:end),[],1)];
-      Aval_com = [ones(3*(obj.nT-1),1);-ones(3*(obj.nT-1),1);-delta_s*ones(3*(obj.nT-1),1)];
-      iAcom = [iAcom;3*(obj.nT-1)+iAcom];
-      jAcom = [jAcom;reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1); reshape(obj.compp_idx(:,2:end),[],1)];
-      Aval_com = [Aval_com;Aval_com];
-      obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
-      obj.A_com_bnd = zeros(6*(obj.nT-1),1);
-      A_com_names = [repmat({'com difference'},3*(obj.nT-1),1);repmat({'comp difference'},3*(obj.nT-1),1)];
-      obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_names);
+      % linear constraint on the quatic interpolation of com
+      % delta_s^2(compp[i+1]-compp[i]) = -12(com[i+1]-com[i])+6*delta_s(comp[i]+comp[i+1])
+      iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
+      jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1);reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.compp_idx(:,1:end-1),[],1);reshape(obj.compp_idx(:,2:end),[],1)];
+      Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);delta_s^2*ones(3*(obj.nT-1),1);-delta_s^2*ones(3*(obj.nT-1),1)];
+      obj.A_com = sparse(iAcom,jAcom,Aval_com,3*(obj.nT-1),obj.num_vars);
+      obj.A_com_bnd = zeros(3*(obj.nT-1),1);
+      A_com_name = repmat({'com difference'},3*(obj.nT-1),1);
+      obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_name);
       % linear constraint that H[n]-H[n-1] = Hdot[n]*delta_s
       iA_H = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';];
       jA_H = [reshape(obj.H_idx(:,2:end),[],1);reshape(obj.H_idx(:,1:end-1),[],1); reshape(obj.Hdot_idx(:,2:end),[],1)];
@@ -188,7 +185,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.solver = 'gurobi';
     end
     
-    function [com,comp,compp,foot_pos,Hdot,Hbar,sigma,epsilon] = solve(obj,F,sdotsquare,sigma)
+    function [com,comp,compp,foot_pos,Hdot,Hbar,sigma,epsilon,INFO] = solve(obj,F,sdotsquare,sigma)
       % @param F     A cell array. F{i}{j} is the force parameters for
       % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
       % @param sigma   A scalar. The upper bound for sum_n
@@ -206,6 +203,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % position of the contact body in obj.fsrc_cnstr{i}
       % @retval epsilon   A 3 x obj.nT matrix. The residue of the PD law on angular
       % momentum.
+      % @retval INFO   1 for success, 0 for failure
       if(~iscell(F) || length(F) ~= obj.nT)
         error('Drake:FixedFootYawCoMPlanningPosition:F should be a cell of length obj.nT');
       end
@@ -247,83 +245,87 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       A_angular_bnd = A_angular_bnd/(obj.robot_mass*obj.g*obj.robot_dim);
       A_angular_names = repmat({'angular momentum'},3*obj.nT,1);
       obj = obj.addLinearConstraint(LinearConstraint(A_angular_bnd,A_angular_bnd,A_angular),(1:obj.num_vars),A_angular_names);
-      
-      if(strcmp(obj.solver,'gurobi'))
-        model.A = sparse([obj.Ain;obj.Aeq]);
-        model.rhs = [obj.bin;obj.beq];
-        % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
-        % or -1
+
+      model.A = sparse([obj.Ain;obj.Aeq]);
+      model.rhs = [obj.bin;obj.beq];
+      % normalize the A matrix and rhs, so that the maximum entry in each row is either 1
+      % or -1
 %         max_row_entry = max(abs(model.A),[],2);
 %         model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
 %         model.rhs = model.rhs./max_row_entry;
-        model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-        delta_s = 1/(obj.nT-1);
-        Qcomddot_row = [reshape(repmat(obj.compp_idx,3,1),[],1);...
-          reshape(repmat(obj.comp_idx,3,1),[],1);...
-          reshape(repmat(obj.compp_idx,3,1),[],1);...
-          reshape(repmat(obj.comp_idx,3,1),[],1)];
-        Qcomddot_col = [reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1);...
-          reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
-          reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
-          reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1)];
-        Qcomddot_val = [reshape(bsxfun(@times,obj.Q_comddot(:),sdotsquare.^2),[],1);...
-          reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).^2),[],1);...
-          reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1);...
-          reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1)];
-        model.Q = sparse(Qcomddot_row,Qcomddot_col,Qcomddot_val,obj.num_vars,obj.num_vars)...
-          +sparse(obj.epsilon_idx(:),obj.epsilon_idx(:),ones(3*obj.nT,1),obj.num_vars,obj.num_vars);
-        model.obj = zeros(obj.num_vars,1);
-        obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
-        comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-        comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-        obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
+      model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+      delta_s = 1/(obj.nT-1);
+      Qcomddot_row = [reshape(repmat(obj.compp_idx,3,1),[],1);...
+        reshape(repmat(obj.comp_idx,3,1),[],1);...
+        reshape(repmat(obj.compp_idx,3,1),[],1);...
+        reshape(repmat(obj.comp_idx,3,1),[],1)];
+      Qcomddot_col = [reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
+        reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1)];
+      Qcomddot_val = [reshape(bsxfun(@times,obj.Q_comddot(:),sdotsquare.^2),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).^2),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1);...
+        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1)];
+      model.Q = sparse(Qcomddot_row,Qcomddot_col,Qcomddot_val,obj.num_vars,obj.num_vars)...
+        +sparse(obj.epsilon_idx(:),obj.epsilon_idx(:),ones(3*obj.nT,1),obj.num_vars,obj.num_vars);
+      model.obj = zeros(obj.num_vars,1);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(sqrt(sigma),sqrt(sigma)),obj.sigma_idx);
+      comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
+      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
 
-        model.lb = obj.x_lb;
-        model.ub = obj.x_ub;
-        model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
+      model.lb = obj.x_lb;
+      model.ub = obj.x_ub;
+      model.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
+      params = struct('OutputFlag',false);
+
+      result = gurobi(model,params);
+      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
+        % back off the solution a little bit. Add the conic constraint
+        % x'Qx+f'x<=backoff_factor*objective
+
+        model_backoff.A = sparse([obj.Ain;obj.Aeq]);
+        model_backoff.rhs = [obj.bin;obj.beq];
+        model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+        model_backoff.obj = zeros(obj.num_vars,1);
+        model_backoff.lb = obj.x_lb;
+        model_backoff.ub = obj.x_ub;
+        model_backoff.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
+        backoff_factor = 0.02;
+        model_backoff.quadcon.Qc = model.Q;
+        model_backoff.quadcon.q = model.obj;
+        model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
         params = struct('OutputFlag',false);
 
-        result = gurobi(model,params);
+        result = gurobi(model_backoff,params);
         if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-          % back off the solution a little bit. Add the conic constraint
-          % x'Qx+f'x<=backoff_factor*objective
-          
-          model_backoff.A = sparse([obj.Ain;obj.Aeq]);
-          model_backoff.rhs = [obj.bin;obj.beq];
-          model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-          model_backoff.obj = zeros(obj.num_vars,1);
-          model_backoff.lb = obj.x_lb;
-          model_backoff.ub = obj.x_ub;
-          model_backoff.cones.index = [obj.sigma_idx obj.epsilon_idx(:)'];
-          backoff_factor = 0.04;
-          model_backoff.quadcon.Qc = model.Q;
-          model_backoff.quadcon.q = model.obj;
-          model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
-          params = struct('OutputFlag',false);
-
-          result = gurobi(model_backoff,params);
-          if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-            com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
-            comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
-            compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
-            Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g*obj.robot_dim;
-            Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
-            epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
-            sigma = sum(epsilon(:).^2);
-            foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
-          else
-            error('Backoff should always be feasible');
-          end
-        elseif(~strcmp(result.status,'OPTIMAL'))
-          error('P-step infesible');
+          com = reshape(result.x(obj.com_idx(:)),3,obj.nT);
+          comp = reshape(result.x(obj.comp_idx(:)),3,obj.nT);
+          compp = reshape(result.x(obj.compp_idx(:)),3,obj.nT);
+          Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g*obj.robot_dim;
+          Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
+          epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
+          sigma = sum(epsilon(:).^2);
+          foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,[]);
+          INFO = 1;
+        else
+          INFO = 0;
+%             error('Backoff should always be feasible');
         end
-      elseif(strcmp(obj.solver,'mosek'))
-        obj = obj.addDecisionVariable(1,{'objective'});
-        objective_idx = obj.num_vars;
-        prob = struct();
-        prob.c = zeros(1,obj.num_vars);
-        prob.c(objective_idx) = 1;
-        
+      elseif(~strcmp(result.status,'OPTIMAL'))
+        INFO = 0;
+%           error('P-step infesible');
+      end
+      if(INFO == 0)
+        com = [];
+        comp = [];
+        compp = [];
+        foot_pos = [];
+        Hdot = [];
+        Hbar = [];
+        epsilon = [];
+        sigma = [];
       end
     end
     
