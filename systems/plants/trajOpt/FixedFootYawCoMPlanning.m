@@ -22,6 +22,7 @@ classdef FixedFootYawCoMPlanning
     robot_mass % The mass of the robot
     g % gravitational acceleration
     robot_dim % A estimation of the dimension of robot in meters
+    lb_comdot,ub_comdot % The lower and upper bound for the CoM velocities
   end
   
   methods
@@ -160,6 +161,9 @@ classdef FixedFootYawCoMPlanning
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       INFO = 1;
+      figure(1);
+      plot3(com(1,:),com(2,:),com(3,:),'x-');
+      hold on;
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
         [com_iter,comp_iter,compp_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sdotsquare,sigma);
@@ -189,7 +193,7 @@ classdef FixedFootYawCoMPlanning
 %         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
-      
+      plot3(com(1,:),com(2,:),com(3,:),'x-r');
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
       [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
@@ -244,8 +248,9 @@ classdef FixedFootYawCoMPlanning
     
     function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
       delta_s = 1/(obj.nT-1);
-      valuecheck(diff(com,1,2)-comp(:,2:end)*delta_s,0,1e-4);
-      valuecheck(diff(comp,1,2)-compp(:,2:end)*delta_s,0,1e-4);
+%       valuecheck(diff(com,1,2)-comp(:,2:end)*delta_s,0,1e-4);
+%       valuecheck(diff(comp,1,2)-compp(:,2:end)*delta_s,0,1e-4);
+      
       if(any(sdotsquare<0))
         error('sdotsquare cannot be negative');
       end
