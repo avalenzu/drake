@@ -42,13 +42,15 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       obj = obj.addCost(obj.angular_cost,[obj.com_idx(:);obj.H0_idx;obj.fsrc_body_pos_idx(:);obj.F_idx_all]);
       margin_cost = LinearConstraint(-inf,inf,-c_margin*ones(1,obj.nT));
       obj = obj.addCost(margin_cost,obj.margin_idx);
+      comddot_cost = QuadraticSumConstraint(-inf,inf,Q_comddot,zeros(3,obj.nT));
+       obj = obj.addCost(comddot_cost,obj.comddot_idx(:));
     end
     
-    function [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = solve(obj,sdot0,com,comp,compp,foot_pos,F,margin,H0)
+    function [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = solve(obj,com,comdot,comddot,foot_pos,F,margin,H0)
       x = inf(obj.num_vars,1);
       x(obj.com_idx) = com(:);
-      x(obj.comp_idx) = comp(:);
-      x(obj.compp_idx) = compp(:);
+      x(obj.comdot_idx) = comdot(:);
+      x(obj.comddot_idx) = comddot(:);
       x(obj.margin_idx) = margin(:);
       x(obj.fsrc_body_pos_idx) = foot_pos(:);
       for i = 1:obj.nT
@@ -58,24 +60,10 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       end
       x(obj.H0_idx) = H0;
       
-      sdotsquare = sdot0.^2;
-      sdotsquare_diff = diff(sdotsquare);
-      sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
-      A_compp = obj.A_newton;
-      A_compp_bnd = reshape(bsxfun(@times,[0;0;obj.robot_mass*obj.g],ones(1,obj.nT)),[],1);
-      for i = 1:obj.nT
-        A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = -obj.robot_mass*sdotsquare(i)*eye(3);
-        A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = -obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
-      end
-      A_compp_name = repmat({'newton law'},3*obj.nT,1);
-      obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_name);
-      comddot_cost = CoMAccelerationCost(obj.Q_comddot,obj.nT,sdot0.^2);
-      obj = obj.addCost(comddot_cost,[obj.comp_idx(:);obj.compp_idx(:)]);
-      
       [x_sol,objective,INFO] = solve@NonlinearProgramWConstraintObjects(obj,x);
       com = reshape(x_sol(obj.com_idx),3,obj.nT);
-      comp = reshape(x_sol(obj.comp_idx),3,obj.nT);
-      compp = reshape(x_sol(obj.compp_idx),3,obj.nT);
+      comdot = reshape(x_sol(obj.comdot_idx),3,obj.nT);
+      comddot = reshape(x_sol(obj.comddot_idx),3,obj.nT);
       foot_pos = reshape(x_sol(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
       F = cell(1,obj.nT);
       Hdot = zeros(3,obj.nT);

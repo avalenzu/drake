@@ -51,7 +51,7 @@ c_margin = 0.1;
 dt_max = 0.2;
 sdot_max = 2;
 robot_dim = 1;
-planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr],yaw');
+planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr],yaw');
 % planning.p_step = planning.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning.p_step.com_idx(:,1));
 % planning.p_step = planning.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.p_step.com_idx(:,end));
 % planning.p_step = planning.p_step.setCoMVelocityBounds([1,nT],zeros(3,2),zeros(3,2));
@@ -62,11 +62,13 @@ planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,dt_max
 % planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.seed_step.com_idx(:,end));
 % planning.seed_step = planning.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(0.5*ones(planning.seed_step.nT,1),2*ones(planning.seed_step.nT,1)),planning.seed_step.com_idx(3,:));
 % planning.seed_step = planning.seed_step.setCoMVelocityBounds([1,nT],zeros(3,2),zeros(3,2));
+g = 9.8;
 planning = planning.addCoMBounds([1 nT],[com0 com1-[0.1;0.1;0.05]],[com0 com1+[0.1;0.1;0.05]]);
 planning = planning.addCoMBounds(1:nT,[-inf(2,nT);0.5*ones(1,nT)],[inf(2,nT);1.5*ones(1,nT)]);
 planning = planning.addCoMdotBounds([1,nT],zeros(3,2),zeros(3,2));
 planning = planning.addH0Bounds(zeros(3,1),zeros(3,1));
 planning = planning.addCoMdotBounds(2:nT-1,bsxfun(@times,ones(1,nT-2),[-1;-1;-0.5]),bsxfun(@times,ones(1,nT-2),[1;1;0.5]));
+planning = planning.addCoMddotBounds(1:nT,bsxfun(@times,ones(1,nT),[-g;-g;-g]),bsxfun(@times,ones(1,nT),[g;g;g]));
 % planning.nlp_step = planning.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning.nlp_step.com_idx(:,1));
 % planning.nlp_step = planning.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.nlp_step.com_idx(:,end));
 % planning.nlp_step = planning.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(0.5*ones(planning.nlp_step.nT,1),2*ones(planning.nlp_step.nT,1)),planning.seed_step.com_idx(3,:));
@@ -81,7 +83,6 @@ planning.p_step = planning.p_step.addKinematicPolygon([i num_steps+i+1],A_polygo
 planning.seed_step = planning.seed_step.addKinematicPolygon([i num_steps+i+1],A_polygon,b_polygon);
 end
 
-sdot0 = ones(1,nT);
 planning_nlp = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr]);
 planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning_nlp.com_idx(:,1));
 planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning_nlp.com_idx(:,end));
@@ -91,7 +92,7 @@ planning_nlp = planning_nlp.addBoundingBoxConstraint(BoundingBoxConstraint(yaw,y
 % [com,comp,compp,foot_pos,F,sdotsquare] = planning.seed_step.solve(sdot0);
 % [Hbar,Hdot,sigma] = planning.seed_step.angularMomentum(com,foot_pos,F,zeros(3,1));
 % planning_nlp.solve(com,comp,compp,foot_pos,yaw,F,sqrt(sdotsquare),Hdot,Hbar);
-[com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,F_sol] = planning.solve(sdot0,zeros(3,1));
+[com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,F_sol] = planning.solve(zeros(3,1));
 
 end
 
