@@ -8,8 +8,8 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     nT % The length of obj.t_knot
     lambda % A 3 x 3 Hurwitz matrix. This is used in the PD law on angular momentum.
     com_idx; % A 3 x obj.nT matrix. x(com_idx(:,i)) is the CoM position at time t_knot(i) in the decision variable x
-    comp_idx; % A 3 x obj.nT matrix. x(comp_idx(:,i)) is the first derivative of CoM w.r.t time scaling function s a i'th knot point
-    compp_idx; % A 3 x obj.nT matrix. x(compp_idx(:,i)) is the second derivative of CoM w.r.t time scaling function s a i'th knot point
+    comdot_idx; % A 3 x obj.nT matrix. x(comdot_idx(:,i)) is the first derivative of CoM w.r.t time scaling function s a i'th knot point
+    comddot_idx; % A 3 x obj.nT matrix. x(comddot_idx(:,i)) is the second derivative of CoM w.r.t time scaling function s a i'th knot point
     margin_idx % A 1 x obj.nT vector. x(margin_idx(i)) is the force margin at time t_knot(i). We want to maximize this margin for better robustness
     F_idx % A cell array. x(F_idx{i}{j}(:,k)) is the contact force parameter (the weights for the friction cone extreme rays) at time t_knot(i), for the j'th FootStepRegionContactConstraint, at k'th contact point
     
@@ -29,11 +29,10 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     A_margin_bnd % A obj.nT x 1 vector. A_margin*x<=A_margin_bnd represents margin(i)<= min(F_i), where F_i are all the force weights at the k'th knot point
     
     Q_comddot; % A 3 x 3 PSD matrix. Penalizes the CoM accleration.
+    Q_comddot_big % A obj.num_vars x obj.num_vars matrix. x'*Q_comddot_big*x = sum_i comddot(:,i)'*obj.Q_comddot*comddot(:,i)
   end
   
-  properties
-    lb_comdot,ub_comdot % lb_comdot and ub_comdot are the lower and upper bound of the CoM velocities respectively
-  end
+  
   
   properties(Access = protected)
     A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
@@ -68,18 +67,18 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       end
       obj = obj.addDecisionVariable(3*obj.nT,com_names);
       
-      obj.comp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
+      obj.comdot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       comp_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
         comp_names((i-1)*3+(1:3)) = {sprintf('comp_x[%d]',i);sprintf('comp_y[%d]',i);sprintf('comp_z[%d]',i)};
       end
       obj = obj.addDecisionVariable(3*obj.nT,comp_names);
-      obj.compp_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
-      compp_names = cell(3*obj.nT,1);
+      obj.comddot_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
+      comddot_names = cell(3*obj.nT,1);
       for i = 1:obj.nT
-        compp_names((i-1)*3+(1:3)) = {sprintf('compp_x[%d]',i);sprintf('compp_y[%d]',i);sprintf('compp_z[%d]',i)};
+        comddot_names((i-1)*3+(1:3)) = {sprintf('comddot_x[%d]',i);sprintf('comddot_y[%d]',i);sprintf('comddot_z[%d]',i)};
       end
-      obj = obj.addDecisionVariable(3*obj.nT,compp_names);
+      obj = obj.addDecisionVariable(3*obj.nT,comddot_names);
       obj.margin_idx = obj.num_vars+(1:obj.nT);
       margin_names = cell(obj.nT,1);
       for i = 1:obj.nT
@@ -130,12 +129,13 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
       A_iris_name = repmat({'iris constraint'},num_halfspace_iris,1);
       obj = obj.addLinearConstraint(LinearConstraint(-inf(num_halfspace_iris,1),obj.b_iris,obj.A_iris),(1:obj.num_vars),A_iris_name);
-      delta_s = 1/(obj.nT-1);
+      dt = diff(obj.t_knot);
       % linear constraint on the quatic interpolation of com
-      % delta_s^2(compp[i+1]-compp[i]) = -12(com[i+1]-com[i])+6*delta_s(comp[i]+comp[i+1])
+      % delta_s^2(comddot[i+1]-comddot[i]) = -12(com[i+1]-com[i])+6*delta_s(comdot[i]+comdot[i+1])
       iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
-      jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);reshape(obj.comp_idx(:,1:end-1),[],1);reshape(obj.comp_idx(:,2:end),[],1);reshape(obj.compp_idx(:,1:end-1),[],1);reshape(obj.compp_idx(:,2:end),[],1)];
-      Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);6*delta_s*ones(3*(obj.nT-1),1);delta_s^2*ones(3*(obj.nT-1),1);-delta_s^2*ones(3*(obj.nT-1),1)];
+      jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);reshape(obj.comddot_idx(:,1:end-1),[],1);reshape(obj.comddot_idx(:,2:end),[],1)];
+      Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);...
+        reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);reshape(bsxfun(@times,dt.^2,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
       obj.A_com = sparse(iAcom,jAcom,Aval_com,3*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(3*(obj.nT-1),1);
       A_com_name = repmat({'com difference'},3*(obj.nT-1),1);
@@ -155,57 +155,37 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
           obj.A_margin(force_weight_count+(1:num_force_weight_ij),obj.margin_idx(i)) = 1;
           force_weight_count = force_weight_count+num_force_weight_ij;
         end
+        obj.A_newton((i-1)*3+(1:3),obj.comddot_idx(:,i)) = -obj.robot_mass*eye(3);
       end
+      A_newton_bnd = reshape(bsxfun(@times,[0;0;obj.robot_mass*obj.g],ones(1,obj.nT)),[],1);
+      obj.A_newton = obj.A_newton/(obj.robot_mass*obj.g);
+      A_newton_bnd = A_newton_bnd/(obj.robot_mass*obj.g);
+      A_newton_name = repmat({'newton law'},3*obj.nT,1);
+      obj = obj.addLinearConstraint(LinearConstraint(A_newton_bnd,A_newton_bnd,obj.A_newton),(1:obj.num_vars),A_newton_name);
+      
       A_margin_name = repmat({'force margin'},force_weight_count,1);
       obj = obj.addLinearConstraint(LinearConstraint(-inf(force_weight_count,1),obj.A_margin_bnd,obj.A_margin),(1:obj.num_vars),A_margin_name);
       % The kinematic constraint on the contact bodies will be set through function
       % addKinematicPolygon
       obj.A_kin = [];
       obj.b_kin = [];
-      obj.lb_comdot = -inf(3,obj.nT);
-      obj.ub_comdot = inf(3,obj.nT);
-      
-      
       obj.f_cost = zeros(obj.num_vars,1);
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
+      Q_comddot_row = reshape(repmat(obj.comddot_idx,3,1),[],1);
+      Q_comddot_col = reshape(bsxfun(@times,ones(3,1),obj.comddot_idx(:)'),[],1);
+      Q_comddot_val = reshape(bsxfun(@times,ones(1,obj.nT),Q_comddot(:)),[],1);
+      obj.Q_comddot_big = sparse(Q_comddot_row,Q_comddot_col,Q_comddot_val,obj.num_vars,obj.num_vars);
     end
     
-    function [com,comp,compp,foot_pos,F,sdotsquare,margin] = solve(obj,sdot0)
-      % @param sdot0   A 1 x obj.nT vector
-      sdotsquare = sdot0.^2;
-      sdotsquare_diff = diff(sdotsquare);
-      sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
-      A_compp = obj.A_newton;
-      A_compp_bnd = reshape(bsxfun(@times,[0;0;obj.robot_mass*obj.g],ones(1,obj.nT)),[],1);
-      for i = 1:obj.nT
-        A_compp((i-1)*3+(1:3),obj.compp_idx(:,i)) = -obj.robot_mass*sdotsquare(i)*eye(3);
-        A_compp((i-1)*3+(1:3),obj.comp_idx(:,i)) = -obj.robot_mass*(obj.nT-1)/2*sdotsquare_diff(i)*eye(3);
-      end
-      A_compp_name = repmat({'newton law'},3*obj.nT,1);
-      obj = obj.addLinearConstraint(LinearConstraint(A_compp_bnd,A_compp_bnd,A_compp),(1:obj.num_vars),A_compp_name);
-      comp_lb = reshape(obj.lb_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-      comp_ub = reshape(obj.ub_comdot./bsxfun(@times,ones(3,1),sqrt(sdotsquare)),[],1);
-      obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(comp_lb,comp_ub),obj.comp_idx(:));
+    function [com,comdot,comddot,foot_pos,F,margin] = solve(obj)
       model.A = sparse([obj.Ain;obj.Aeq]);
       model.rhs = [obj.bin;obj.beq];
 %       max_row_entry = max(abs(model.A),[],2);
 %       model.A = sparse(model.A./bsxfun(@times,max_row_entry,ones(1,obj.num_vars)));
 %       model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-      delta_s = 1/(obj.nT-1);
-      Qcomddot_row = [reshape(repmat(obj.compp_idx,3,1),[],1);...
-        reshape(repmat(obj.comp_idx,3,1),[],1);...
-        reshape(repmat(obj.compp_idx,3,1),[],1);...
-        reshape(repmat(obj.comp_idx,3,1),[],1)];
-      Qcomddot_col = [reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1);...
-        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
-        reshape(bsxfun(@times,ones(3,1),obj.comp_idx(:)'),[],1);...
-        reshape(bsxfun(@times,ones(3,1),obj.compp_idx(:)'),[],1)];
-      Qcomddot_val = [reshape(bsxfun(@times,obj.Q_comddot(:),sdotsquare.^2),[],1);...
-        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).^2),[],1);...
-        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1);...
-        reshape(bsxfun(@times,obj.Q_comddot(:),(sdotsquare_diff/(2*delta_s)).*sdotsquare),[],1)];
-      model.Q = sparse(Qcomddot_row,Qcomddot_col,Qcomddot_val,obj.num_vars,obj.num_vars);
+      
+      model.Q = obj.Q_comddot_big;
       model.obj = obj.f_cost;
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
@@ -231,8 +211,8 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         result = gurobi(model_backoff,params);
         if(strcmp(result.status,'OPTIMAL'))
           com = reshape(result.x(obj.com_idx),3,obj.nT);
-          comp = reshape(result.x(obj.comp_idx),3,obj.nT);
-          compp = reshape(result.x(obj.compp_idx),3,obj.nT);
+          comdot = reshape(result.x(obj.comdot_idx),3,obj.nT);
+          comddot = reshape(result.x(obj.comddot_idx),3,obj.nT);
           foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
           margin = result.x(obj.margin_idx);
           F = cell(1,obj.nT);

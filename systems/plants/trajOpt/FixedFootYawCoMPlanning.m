@@ -22,16 +22,13 @@ classdef FixedFootYawCoMPlanning
     robot_mass % The mass of the robot
     g % gravitational acceleration
     robot_dim % A estimation of the dimension of robot in meters
-    lb_comdot,ub_comdot % The lower and upper bound for the CoM velocities
   end
   
   methods
-    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,fsrc_cnstr,yaw)
+    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw)
       % @param robot_mass    The mass of the robot
       % @param robot_dim     The estimated robot dimension in meters
-      % @param t             The time knot for planning. This indicates which
-      % FootStepRegionContactConstraint is active at a given time knot. The actual time is
-      % determined by the scaling function.
+      % @param t             The time knot for planning. 
       % @properties fsrc_cnstr    A cell of FootStepRegionContactConstraint
       % @properties yaw      A double vector. yaw(i) is the yaw angle of the body in
       % fsrc_cnstr{i}
@@ -71,20 +68,6 @@ classdef FixedFootYawCoMPlanning
       sizecheck(c_margin,[1,1]);
       if(c_margin<0)
         error('Drake:FixedFootYawCoMPlanning:c_margin should be non-negative');
-      end
-      if(~isnumeric(dt_max))
-        error('Drake:FixedFootYawCoMPlanning:dt_max should be numeric');
-      end
-      sizecheck(dt_max,[1,1]);
-      if(dt_max<=0)
-        error('Drake:FixedFootYawCoMPlanning:dt_max should be positive');
-      end
-      if(~isnumeric(sdot_max))
-        error('Drake:FixedFootYawCoMPlanning:sdot_max should be numeric');
-      end
-      sizecheck(sdot_max,[1,1]);
-      if(sdot_max<=0)
-        error('Drake:FixedFootYawCoMPlanning:sdot_max should be positive');
       end
 %       if(~isnumeric(Q_H))
 %         error('Drake:FixedFootYawCoMPlanning:Q_H should be numeric');
@@ -143,7 +126,7 @@ classdef FixedFootYawCoMPlanning
       
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
-      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,dt_max,sdot_max,...
+      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,Q_comddot,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
@@ -152,10 +135,10 @@ classdef FixedFootYawCoMPlanning
       
     end
     
-    function [com,comp,compp,foot_pos,Hdot,F] = solve(obj,sdot0,H0)
+    function [com,comdot,comddot,foot_pos,Hdot,F] = solve(obj,H0)
       % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
       % function s at i'th knot. This is used as a initial guess
-      [com,comp,compp,foot_pos,F,sdotsquare,margin] = obj.seed_step.solve(sdot0);
+      [com,comdot,comddot,foot_pos,F,margin] = obj.seed_step.solve();
       [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
       max_iter = 10;
       sigma_sol = zeros(1,2*max_iter);
@@ -166,23 +149,22 @@ classdef FixedFootYawCoMPlanning
       hold on;
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
-        [com_iter,comp_iter,compp_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sdotsquare,sigma);
+        [com_iter,comdot_iter,comddot_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sigma);
         if(INFO == 1)
           com = com_iter;
-          comp = comp_iter;
-          compp = compp_iter;
+          comdot = comdot_iter;
+          comddot = comddot_iter;
           foot_pos = foot_pos_iter;
           Hdot = Hdot_iter;
           Hbar = Hbar_iter;
           sigma_sol(2*iter-1) = sigma_sol_iter;
           epsilon = epsilon_iter;
         end
-%         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+%         checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter-1);
-        [F_iter,sdotsquare_iter,Hdot_iter,Hbar_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comp,compp,foot_pos,sigma);
+        [F_iter,Hdot_iter,Hbar_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comdot,comddot,foot_pos,sigma);
         if(INFO == 1)
           F = F_iter;
-          sdotsquare = sdotsquare_iter;
           Hdot = Hdot_iter;
           Hbar = Hbar_iter;
           margin = margin_iter;
@@ -190,20 +172,13 @@ classdef FixedFootYawCoMPlanning
           epsilon = epsilon_iter;
         end
         
-%         checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+%         checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
       plot3(com(1,:),com(2,:),com(3,:),'x-r');
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
-      [com,comp,compp,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(sqrt(sdotsquare),com,comp,compp,foot_pos,F,margin,Hbar(:,1));
-      sdot = sqrt(sdotsquare);
-      comdot = comp.*bsxfun(@times,sdot,ones(3,1));
-      sdotsquare_diff = diff(sdotsquare);
-      sdotsquare_diff = [sdotsquare_diff sdotsquare_diff(end)];
-      comddot = compp.*bsxfun(@times,sdotsquare,ones(3,1))+comp.*bsxfun(@times,sdotsquare_diff,(obj.nT-1)/2*ones(3,1));
-      delta_t = 2/(obj.nT-1)./(sdot(1:end-1)+sdot(2:end));
-      t = cumsum([0 delta_t]);
+      [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,Hbar(:,1));
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
@@ -238,18 +213,28 @@ classdef FixedFootYawCoMPlanning
       num_idx = length(comdot_idx);
       sizecheck(comdot_lb,[3,num_idx]);
       sizecheck(comdot_ub,[3,num_idx]);
-      obj.seed_step.lb_comdot(:,comdot_idx) = comdot_lb;
-      obj.seed_step.ub_comdot(:,comdot_idx) = comdot_ub;
-      obj.p_step.lb_comdot(:,comdot_idx) = comdot_lb;
-      obj.p_step.ub_comdot(:,comdot_idx) = comdot_ub;
-      obj.f_step.lb_comdot(:,comdot_idx) = comdot_lb;
-      obj.f_step.ub_comdot(:,comdot_idx) = comdot_ub;
+      obj.seed_step = obj.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.seed_step.comdot_idx(:,comdot_idx),[],1));
+      obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.p_step.comdot_idx(:,comdot_idx),[],1));
+      obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.nlp_step.comdot_idx(:,comdot_idx),[],1));
     end
     
-    function checkSolution(obj,com,comp,compp,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
+    function obj = addCoMddotBounds(obj,comddot_idx,comddot_lb,comddot_ub)
+      % set the bounds on the com acceleration
+      % @param comddot_idx  A 1 x n vector. comdot(:,comddot_idx) will be bounded
+      % @param comddot_lb   A 3 x n vector. The lower bounds of the CoM acceleration
+      % @param comddot_ub   A 3 x n vector. The upper bounds of the CoM acceleration
+      num_idx = length(comddot_idx);
+      sizecheck(comddot_lb,[3,num_idx]);
+      sizecheck(comddot_ub,[3,num_idx]);
+      obj.seed_step = obj.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.seed_step.comddot_idx(:,comddot_idx),[],1));
+      obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.p_step.comddot_idx(:,comddot_idx),[],1));
+      obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.nlp_step.comddot_idx(:,comddot_idx),[],1));
+    end
+    
+    function checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
       delta_s = 1/(obj.nT-1);
-%       valuecheck(diff(com,1,2)-comp(:,2:end)*delta_s,0,1e-4);
-%       valuecheck(diff(comp,1,2)-compp(:,2:end)*delta_s,0,1e-4);
+%       valuecheck(diff(com,1,2)-comdot(:,2:end)*delta_s,0,1e-4);
+%       valuecheck(diff(comdot,1,2)-comddot(:,2:end)*delta_s,0,1e-4);
       
       if(any(sdotsquare<0))
         error('sdotsquare cannot be negative');
@@ -276,7 +261,7 @@ classdef FixedFootYawCoMPlanning
           tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
         end
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
-        mcomddot = obj.robot_mass*(compp(:,i)*sdotsquare(i)+comp(:,i)/(2*delta_s)*sdot_diff(i));
+        mcomddot = obj.robot_mass*(comddot(:,i)*sdotsquare(i)+comdot(:,i)/(2*delta_s)*sdot_diff(i));
         valuecheck(F_i,mcomddot,1e-5);
         valuecheck(tau_i,Hdot(:,i),1e-3);
       end
