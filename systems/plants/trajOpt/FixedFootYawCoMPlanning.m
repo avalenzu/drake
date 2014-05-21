@@ -179,6 +179,9 @@ classdef FixedFootYawCoMPlanning
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
       [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,Hbar(:,1));
+      plot3(com(1,:),com(2,:),com(3,:),'x-g')
+      legend('initial guess without optimizing angular momentum','bilinear alternation','NLP')
+      title('COM trajectory')
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
