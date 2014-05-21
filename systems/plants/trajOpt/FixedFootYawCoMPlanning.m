@@ -145,8 +145,9 @@ classdef FixedFootYawCoMPlanning
       iter = 0;
       INFO = 1;
       figure(1);
-      plot3(com(1,:),com(2,:),com(3,:),'x-');
+      qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
       hold on;
+      plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
         [com_iter,comdot_iter,comddot_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sigma);
@@ -175,12 +176,14 @@ classdef FixedFootYawCoMPlanning
 %         checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
         sigma = sigma_sol(2*iter);
       end
-      plot3(com(1,:),com(2,:),com(3,:),'x-r');
+      bilinear_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-r');
+      plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'or');
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
       [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,Hbar(:,1));
-      plot3(com(1,:),com(2,:),com(3,:),'x-g')
-      legend('initial guess without optimizing angular momentum','bilinear alternation','NLP')
+      nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
+      plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'og');
+      legend([qp_com_handle bilinear_com_handle nlp_com_handle],'initial guess without optimizing angular momentum','bilinear alternation','NLP')
       title('COM trajectory')
     end
     
@@ -232,6 +235,23 @@ classdef FixedFootYawCoMPlanning
       obj.seed_step = obj.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.seed_step.comddot_idx(:,comddot_idx),[],1));
       obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.p_step.comddot_idx(:,comddot_idx),[],1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.nlp_step.comddot_idx(:,comddot_idx),[],1));
+    end
+    
+    function obj = addCoMFootPolygon(obj,fsrc_idx,vertices)
+      % add a CoMFootStepPolygon on the CoM and the body in obj.fsrc_cnstr{fsrc_idx}
+      % @param fsrc_idx   An integer. The index of the FootStepRegionContactConstraint
+      % @param vertices   A 3 x n matrix. vertices(:,i) is the coordinate of the i'th
+      % vertex in the body frame
+      com_foot_polygon = CoMFootStepPolygon(obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr,vertices);
+      [A,b] = com_foot_polygon.halfspace(obj.yaw(fsrc_idx));
+      for i = 1:length(obj.fsrc_knot_active_idx{fsrc_idx})
+        obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
+          [obj.seed_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+        obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
+          [obj.p_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.p_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+        obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
+          [obj.nlp_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+      end
     end
     
     function checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
