@@ -31,6 +31,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
     robot_dim  % The approximate dimension of the robot in meters. This is used to scale the constraint
     Q_comddot % A 3 x 3 PSD matrix. Penalize the quadratic cost on CoM acceleration
     Q_comddot_big % A obj.num_vars x obj.num_vars matrix. x'*Q_comddot_big*x = sum_i comddot(:,i)'*obj.Q_comddot*comddot(:,i)
+    com_traj_order % An integer. The order of the polynomial to interpolate CoM. Acceptable orders are cubic or quartic
   end
   
   properties(Access = protected)
@@ -39,7 +40,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t,g,lambda,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order)
       % obj =
       % FixedFootYawCoMPlanningPosition(robot_mass,t,lambda,Q_comddot,foot_step_region_contact_cnstr1,yaw1,foot_step_region_contact_cnstr2,yaw2,...)
       % @param robot_mass    The mass of the robot
@@ -72,7 +73,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.F2fsrc_map = F2fsrc_map;
       obj.fsrc_knot_active_idx = fsrc_knot_active_idx;
       obj.A_force = A_force;
-      
+      obj.com_traj_order = com_traj_order;
       
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       com_names = cell(3*obj.nT,1);
@@ -147,11 +148,22 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       obj.A_iris = sparse(iA_iris,jA_iris,Aval_iris,num_halfspace_iris,obj.num_vars);
       dt = diff(obj.t_knot);
       % linear constraint on the quatic interpolation of com
-      % dt^2(comddot[i+1]-comddot[i]) = -12(com[i+1]-com[i])+6*dt*(comdot[i]+comdot[i+1])
-      iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
-      jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);reshape(obj.comddot_idx(:,1:end-1),[],1);reshape(obj.comddot_idx(:,2:end),[],1)];
-      Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);...
-        reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);reshape(bsxfun(@times,dt.^2,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
+      % For quartic polynoial, dt^2(comddot[i+1]-comddot[i]) = -12(com[i+1]-com[i])+6*dt(comdot[i]+comdot[i+1])
+      % For cubic polynomial, 6*(com[i+1]-com[i])-2*dt*comdot[i+1]-4*dt*comdot[i]-dt^2*comddot[i] = 0
+      if(obj.com_traj_order == 4)
+        iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
+        jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);...
+          reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);...
+          reshape(obj.comddot_idx(:,1:end-1),[],1);reshape(obj.comddot_idx(:,2:end),[],1)];
+        Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);...
+          reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);reshape(bsxfun(@times,dt.^2,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
+      elseif(obj.com_traj_order == 3)
+        iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
+        jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);...
+          reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);reshape(obj.comddot_idx(:,1:end-1),[],1)];
+        Aval_com = [-6*ones(3*(obj.nT-1),1);6*ones(3*(obj.nT-1),1);reshape(bsxfun(@times, -4*dt,ones(3,1)),[],1);...
+          reshape(bsxfun(@times,-2*dt,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
+      end
       obj.A_com = sparse(iAcom,jAcom,Aval_com,3*(obj.nT-1),obj.num_vars);
       obj.A_com_bnd = zeros(3*(obj.nT-1),1);
       A_com_name = repmat({'com difference'},3*(obj.nT-1),1);

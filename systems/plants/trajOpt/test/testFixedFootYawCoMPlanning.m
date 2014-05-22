@@ -51,7 +51,8 @@ c_margin = 0.1;
 dt_max = 0.2;
 sdot_max = 2;
 robot_dim = 1;
-planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr],yaw');
+com_traj_order = 3;
+planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr],yaw',com_traj_order);
 % planning.p_step = planning.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(com0,com0),planning.p_step.com_idx(:,1));
 % planning.p_step = planning.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(com1,com1),planning.p_step.com_idx(:,end));
 % planning.p_step = planning.p_step.setCoMVelocityBounds([1,nT],zeros(3,2),zeros(3,2));
@@ -86,8 +87,7 @@ planning.nlp_step = planning.nlp_step.setSolverOptions('snopt','superbasicslimit
 r2l_xy_polygon = RelativeFootPositionPolygon([-0.1 -0.1 0.1 0.1;0.2 0.5 0.5 0.2]);
 [A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
 for i = 1:num_steps-1
-planning.p_step = planning.p_step.addKinematicPolygon([i num_steps+i+1],A_polygon,b_polygon);
-planning.seed_step = planning.seed_step.addKinematicPolygon([i num_steps+i+1],A_polygon,b_polygon);
+planning = planning.addFootPolygon([i num_steps+i+1],A_polygon,b_polygon);
 end
 
 planning_nlp = CoMForcePlanning(robot_mass,t,lambda,c_margin,dt_max,sdot_max,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr]);

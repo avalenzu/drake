@@ -7,6 +7,7 @@ classdef FixedFootYawCoMPlanning
     f_step  % A FixedFootYawCoMPlanningForce object
     p_step  % A FixedFootYawCoMPlanningPosition object
     nlp_step % A FixedFootYawCoMPlanningNLP object
+    com_traj_order % An integer. The order of the polynomial to interpolate CoM. Acceptable orders are cubic or quartic
   end
   
   properties(SetAccess = protected)
@@ -25,13 +26,15 @@ classdef FixedFootYawCoMPlanning
   end
   
   methods
-    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw)
+    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,com_traj_order)
       % @param robot_mass    The mass of the robot
       % @param robot_dim     The estimated robot dimension in meters
       % @param t             The time knot for planning. 
       % @properties fsrc_cnstr    A cell of FootStepRegionContactConstraint
-      % @properties yaw      A double vector. yaw(i) is the yaw angle of the body in
+      % @param yaw      A double vector. yaw(i) is the yaw angle of the body in
       % fsrc_cnstr{i}
+      % @param com_traj_order    The order of polynomial to interpolate the CoM
+      % trajectory. Currently accept 3 or 4
       if(~isnumeric(robot_mass))
         error('Drake:FixedFootYawCoMPlanning:robot mass should be numeric');
       end
@@ -123,15 +126,19 @@ classdef FixedFootYawCoMPlanning
           error('Drake:FixedFootYawCoMPlanningPosition:The %dth FootStepRegionContactConstraint is not active for any t_knot');
         end
       end
-      
+      if(com_traj_order == 3 || com_traj_order == 4)
+        obj.com_traj_order = com_traj_order;
+      else
+        error('Unsupported order of polynoimal to interpolate com trajectory');
+      end
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,Q_comddot,...
-        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       
     end
     
@@ -147,6 +154,7 @@ classdef FixedFootYawCoMPlanning
       figure(1);
       qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
       hold on;
+      axis equal
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
@@ -252,6 +260,34 @@ classdef FixedFootYawCoMPlanning
         obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
           [obj.nlp_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx)]);
       end
+    end
+    
+    function obj = addFootPolygon(obj,fsrc_idx,A_polygon,b_polygon)
+      % add a polygonal constraint on the relative position between two
+      % FootStepRegionContactConstraint. The polygon is defined as A_polygon*[x;y] <=
+      % b_polygon
+      % @param fsrc_idx An integer vector. The kinematic constraint is on the
+      % bodies in obj.fsrc_cnstr{fsrc_idx(1)} obj.fsrc_cnstr{fsrc_idx(2)} and obj.fsrc_cnstr{fsrc_idx(N)}
+      % @param A_polygon    A n x (2*length(fsrc_idx)) matrix.
+      % @param b_polygon    A n x 1 vector
+      if(~isnumeric(fsrc_idx))
+        error('Drake:FixedFootYawCoMPlanning:fsrc_idx1 and fsrc_idx2 should be numeric scalar');
+      end
+      num_fsrc = numel(fsrc_idx);
+      sizecheck(fsrc_idx,[1,num_fsrc]);
+      if(~isnumeric(A_polygon) || ~isnumeric(b_polygon))
+        error('Drake:FixedFootYawCoMPlanning:A and b should be numeric');
+      end
+      num_cnstr = numel(b_polygon);
+      sizecheck(A_polygon,[num_cnstr,2*num_fsrc]);
+      sizecheck(b_polygon,[num_cnstr,1]);
+      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,2*num_fsrc)),[],1);
+      jA = reshape(bsxfun(@times,1:2*length(fsrc_idx),ones(num_cnstr,1)),[],1);
+      A_kin_new = sparse(iA,jA,A_polygon(:),num_cnstr,2*length(fsrc_idx));
+      A_kin_name = repmat({sprintf('polygon region on fsrc %d',fsrc_idx)},num_cnstr,1);
+      obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
+      obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.p_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
+      obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
     end
     
     function checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
