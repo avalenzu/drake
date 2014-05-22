@@ -10,7 +10,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order)
       % @param robot_mass  The mass of the robot
       % @param robot_dim    An estimation of the dimension of the robot in meters.
       % @param t   The time knot for planning. 
@@ -25,7 +25,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-      obj = obj@FixedFootYawCoMPlanningSeed(robot_mass,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat);
+      obj = obj@FixedFootYawCoMPlanningSeed(robot_mass,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order);
       obj.robot_dim = robot_dim;
       obj.H0_idx = obj.num_vars+(1:3)';
       H0_name = {'H0_x';'H0_y';'H0_z'};
