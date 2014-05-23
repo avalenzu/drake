@@ -62,7 +62,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       obj.rotmat = rotmat;
       obj.F2fsrc_map = F2fsrc_map;
       obj.A_force = A_force;
-      obj.com_traj_order = 3;
+      obj.com_traj_order = com_traj_order;
      
       obj.com_idx = reshape(obj.num_vars+(1:3*obj.nT),3,obj.nT);
       com_names = cell(3*obj.nT,1);

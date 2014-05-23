@@ -28,7 +28,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       obj.H0_idx = obj.num_vars+(1:3)';
       H0_name = {'H0_x';'H0_y';'H0_z'};
       obj = obj.addDecisionVariable(3,H0_name);
-      obj.angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,obj.nT,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,obj.t_knot,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.F_idx_all = zeros(obj.num_force_weight,1);
       F_count = 0;
       for i = 1:obj.nT
