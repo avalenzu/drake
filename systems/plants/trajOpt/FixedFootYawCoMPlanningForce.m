@@ -172,7 +172,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       obj.f_cost(obj.margin_idx(:)) = -c_margin;
     end
     
-    function [F,Hdot,Hbar,margin,sigma,epsilon,INFO] = solve(obj,com,comdot,comddot,foot_pos,sigma)
+    function [F,Hdot,H,margin,sigma,epsilon,INFO] = solve(obj,com,comdot,comddot,foot_pos,sigma)
       % @param com    - A 3 x obj.nT matrix. com(:,i) is the CoM position at i'th knot
       % @param comdot   - A 3 x obj.nT matrix. comdot(:,i) is the CoM velocities
       % @param comddot  - A 3 x obj.nT matrix. comddot(:,i) is the CoM accelerations 
@@ -185,8 +185,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
       % @retval Hdot   A 3 x obj.nT matrix. Hdot[i] is the rate of the angular momentum at
       % i'th knot point
-      % @retval Hbar   A 3 x obj.nT matrix. The integration of Hdot w.r.t the time scaling
-      % function s.
+      % @retval H   A 3 x obj.nT matrix. The angular momentum.
       % @retval epsilon   A 3 x obj.nT matrix. The residue of the PD law on angular
       % momentum
       % @retval INFO   1 is successful, 0 for failure
@@ -267,10 +266,12 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
               F{i} = [F{i} {reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
             end
           end
-          Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*obj.robot_mass*obj.g*obj.robot_dim;
+          H_scale = (obj.robot_mass*obj.g*obj.robot_dim);
+          Hdot = reshape(result.x(obj.Hdot_idx(:)),3,obj.nT)*H_scale;
           Hbar = reshape(result.x(obj.H_idx(:)),3,obj.nT);
           margin = result.x(obj.margin_idx);
           epsilon = reshape(result.x(obj.epsilon_idx(:)),3,obj.nT);
+          H = Hbar*H_scale;
           sigma = sum(epsilon(:).^2);
           INFO = 1;
         else
@@ -284,7 +285,7 @@ classdef FixedFootYawCoMPlanningForce < NonlinearProgramWConstraintObjects
       if(INFO == 0)
         F = {};
         Hdot = [];
-        Hbar = [];
+        H = [];
         margin = [];
         epsilon = [];
         sigma = [];

@@ -4,7 +4,6 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
   % fixed for the trajectory.
   properties(SetAccess = protected)
     H0_idx % A 3 x 1 vector. x(H0_idx) is the initial angular momentum
-    robot_dim % An estimation of robot dimension in meters
     F_idx_all % The indices of all the forces;
     angular_cost % A AngularMomentumCost object
   end
@@ -25,8 +24,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-      obj = obj@FixedFootYawCoMPlanningSeed(robot_mass,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order);
-      obj.robot_dim = robot_dim;
+      obj = obj@FixedFootYawCoMPlanningSeed(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order);
       obj.H0_idx = obj.num_vars+(1:3)';
       H0_name = {'H0_x';'H0_y';'H0_z'};
       obj = obj.addDecisionVariable(3,H0_name);
@@ -46,7 +44,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
        obj = obj.addCost(comddot_cost,obj.comddot_idx(:));
     end
     
-    function [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = solve(obj,com,comdot,comddot,foot_pos,F,margin,H0)
+    function [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = solve(obj,com,comdot,comddot,foot_pos,F,margin,H0)
       x = inf(obj.num_vars,1);
       x(obj.com_idx) = com(:);
       x(obj.comdot_idx) = comdot(:);
@@ -58,7 +56,8 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
           x(obj.F_idx{i}{j}) = F{i}{j}(:);
         end
       end
-      x(obj.H0_idx) = H0;
+      H_scale = obj.robot_mass*obj.robot_dim*obj.g;
+      x(obj.H0_idx) = H0/H_scale;
       
       [x_sol,objective,INFO] = solve@NonlinearProgramWConstraintObjects(obj,x);
       com = reshape(x_sol(obj.com_idx),3,obj.nT);
@@ -67,8 +66,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       foot_pos = reshape(x_sol(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
       F = cell(1,obj.nT);
       Hdot = zeros(3,obj.nT);
-      H0 = x_sol(obj.H0_idx);
-      Hbar = bsxfun(@times,H0,ones(1,obj.nT));
+      H0 = x_sol(obj.H0_idx)*H_scale;
       for i = 1:obj.nT
         F{i} = cell(1,length(obj.F_idx{i}));
         for j = 1:length(obj.F_idx{i})
@@ -81,10 +79,10 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
           Hdot(:,i) = Hdot(:,i)+sum(cross(contact_pos_CoM,force_ij),2);
         end
       end
-      scale_factor = obj.robot_mass*obj.robot_dim*obj.g;
-      Hdot_scale = Hdot/scale_factor;
-      Hbar = Hbar+cumsum(Hdot_scale,2)*(1/(obj.nT-1));
-      epsilon = (obj.lambda*Hbar-Hdot_scale);
+      dt = diff(obj.t_knot);
+      
+      H = cumsum([H0 Hdot(:,2:end).*bsxfun(@times,ones(3,1),dt)],2);
+      epsilon = (Hdot/H_scale-obj.lambda*H/H_scale);
       sigma = sum(sum(epsilon.^2));
     end
   end

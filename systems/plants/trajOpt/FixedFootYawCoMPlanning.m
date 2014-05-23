@@ -19,6 +19,7 @@ classdef FixedFootYawCoMPlanning
     A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
     A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
     lambda % A 3 x 3 Hurwitz matrix
+    t_knot % The time knots
     nT % The total number of knot points
     robot_mass % The mass of the robot
     g % gravitational acceleration
@@ -54,8 +55,8 @@ classdef FixedFootYawCoMPlanning
       if(~isnumeric(t))
         error('Drake:FixedFootYawCoMPlanning:t should be numeric');
       end
-      t_knot = reshape(unique(t),1,[]);
-      obj.nT = length(t_knot);
+      obj.t_knot = reshape(unique(t),1,[]);
+      obj.nT = length(obj.t_knot);
       obj.g = 9.81;
       if(~isnumeric(lambda))
         error('Drake:FixedFootYawCoMPlanning:lambda should be numeric');
@@ -115,7 +116,7 @@ classdef FixedFootYawCoMPlanning
         obj.A_force{i} = obj.fsrc_cnstr{i}.force(yaw(i));
         [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = obj.fsrc_cnstr{i}.foot_step_region_cnstr.bodyTransform(obj.yaw(i));
         for j = 1:obj.nT
-          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(t_knot(j)))
+          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
             obj.fsrc_knot_active_idx{i} = [obj.fsrc_knot_active_idx{i} j];
             obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
             num_force_weight = num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
@@ -131,13 +132,13 @@ classdef FixedFootYawCoMPlanning
       else
         error('Unsupported order of polynoimal to interpolate com trajectory');
       end
-      obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
+      obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
-      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,...
+      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
-      obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,t_knot,obj.g,lambda,c_margin,Q_comddot,...
+      obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
-      obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
+      obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       
     end
@@ -146,53 +147,56 @@ classdef FixedFootYawCoMPlanning
       % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
       % function s at i'th knot. This is used as a initial guess
       [com,comdot,comddot,foot_pos,F,margin] = obj.seed_step.solve();
-      [Hbar,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
+      [H,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
+      checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
       max_iter = 10;
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       INFO = 1;
-      figure(1);
+      figure;
       qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
       hold on;
-      axis equal
+      
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
-        [com_iter,comdot_iter,comddot_iter,foot_pos_iter,Hdot_iter,Hbar_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sigma);
+        [com_iter,comdot_iter,comddot_iter,foot_pos_iter,Hdot_iter,H_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sigma);
         if(INFO == 1)
           com = com_iter;
           comdot = comdot_iter;
           comddot = comddot_iter;
           foot_pos = foot_pos_iter;
           Hdot = Hdot_iter;
-          Hbar = Hbar_iter;
+          H = H_iter;
           sigma_sol(2*iter-1) = sigma_sol_iter;
           epsilon = epsilon_iter;
         end
-%         checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+        checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);  
         sigma = sigma_sol(2*iter-1);
-        [F_iter,Hdot_iter,Hbar_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comdot,comddot,foot_pos,sigma);
+        [F_iter,Hdot_iter,H_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comdot,comddot,foot_pos,sigma);
         if(INFO == 1)
           F = F_iter;
           Hdot = Hdot_iter;
-          Hbar = Hbar_iter;
+          H = H_iter;
           margin = margin_iter;
           sigma_sol(2*iter) = sigma_sol_iter;
           epsilon = epsilon_iter;
         end
         
-%         checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon);
+        checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
         sigma = sigma_sol(2*iter);
       end
       bilinear_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-r');
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'or');
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',700);
-      [com,comdot,comddot,foot_pos,F,Hdot,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,Hbar(:,1));
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',500);
+      [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
+      checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
       nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'og');
       legend([qp_com_handle bilinear_com_handle nlp_com_handle],'initial guess without optimizing angular momentum','bilinear alternation','NLP')
       title('COM trajectory')
+      axis equal
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
@@ -290,20 +294,8 @@ classdef FixedFootYawCoMPlanning
       obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
     end
     
-    function checkSolution(obj,com,comdot,comddot,foot_pos,F,sdotsquare,Hdot,Hbar,epsilon)
-      delta_s = 1/(obj.nT-1);
-%       valuecheck(diff(com,1,2)-comdot(:,2:end)*delta_s,0,1e-4);
-%       valuecheck(diff(comdot,1,2)-comddot(:,2:end)*delta_s,0,1e-4);
-      
-      if(any(sdotsquare<0))
-        error('sdotsquare cannot be negative');
-      end
-      if(any(sdotsquare>obj.f_step.sdot_max^2))
-        error('sdot is larger than sdot_max');
-      end
-      % check the wrench
-      sdot_diff = diff(sdotsquare);
-      sdot_diff = [sdot_diff sdot_diff(end)];
+    function checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon)
+      dt = diff(obj.t_knot);
       foot_contact_pts_pos = cell(1,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
         foot_contact_pts_pos{i} = bsxfun(@times,obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i),...
@@ -320,16 +312,23 @@ classdef FixedFootYawCoMPlanning
           tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
         end
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
-        mcomddot = obj.robot_mass*(comddot(:,i)*sdotsquare(i)+comdot(:,i)/(2*delta_s)*sdot_diff(i));
-        valuecheck(F_i,mcomddot,1e-5);
+        mcomddot = obj.robot_mass*comddot(:,i);
+        valuecheck(F_i,mcomddot,1e-3);
         valuecheck(tau_i,Hdot(:,i),1e-3);
       end
-      valuecheck(diff(Hbar,1,2),Hdot(:,2:end)*delta_s/(obj.robot_mass*obj.g),1e-3);
-      valuecheck(Hdot/(obj.robot_mass*obj.g),obj.lambda*Hbar+epsilon,1e-3);
-      sdot = sqrt(sdotsquare);
-      if(any(2*delta_s*ones(1,obj.nT-1)./sum([sdot(1:end-1);sdot(2:end)],1)>obj.f_step.dt_max+1e-6))
-        error('dt is above dt_max');
-      end      
+      valuecheck(diff(H,1,2),Hdot(:,2:end).*bsxfun(@times,dt,ones(3,1)),1e-3);
+      H_scale = obj.robot_mass*obj.g*obj.robot_dim;
+      valuecheck(obj.lambda*H/H_scale+epsilon-Hdot/H_scale,zeros(3,obj.nT),1e-3);
+      if(obj.com_traj_order == 3)
+        a = com(:,1:end-1);
+        b = comdot(:,1:end-1);
+        c = (3*com(:,2:end)-3*com(:,1:end-1)-(2*comdot(:,1:end-1)+comdot(:,2:end)).*bsxfun(@times,ones(3,1),dt))./bsxfun(@times,ones(3,1),dt.^2);
+        d = ((comdot(:,2:end)+comdot(:,1:end-1)).*bsxfun(@times,ones(3,1),dt)-2*com(:,2:end)+2*com(:,1:end-1))./bsxfun(@times,ones(3,1),dt.^3);
+        valuecheck(a+b.*bsxfun(@times,ones(3,1),dt)+c.*bsxfun(@times,ones(3,1),dt.^2)+d.*bsxfun(@times,ones(3,1),dt.^3),com(:,2:end),1e-3);
+        valuecheck(b+2*c.*bsxfun(@times,ones(3,1),dt)+3*d.*bsxfun(@times,ones(3,1),dt.^2),comdot(:,2:end),1e-3);
+        valuecheck(comddot(:,1:end-1),2*c,1e-3);
+        valuecheck(6*com(:,2:end)-6*com(:,1:end-1)-(4*comdot(:,1:end-1)+2*comdot(:,2:end)).*bsxfun(@times,ones(3,1),dt)-comddot(:,1:end-1).*bsxfun(@times,ones(3,1),dt.^2),zeros(3,obj.nT-1),1e-3);
+      end
     end
     
     function plotResult(obj,com,foot_pos,sdotsquare)

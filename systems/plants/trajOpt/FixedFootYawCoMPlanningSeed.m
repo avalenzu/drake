@@ -3,6 +3,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
   % the initial seed
   properties(SetAccess = protected)
     robot_mass % The mass of the robot
+    robot_dim % An estimation of the length of the robot
     t_knot % The time knot for planning
     g % The gravitational acceleration
     nT % The length of obj.t_knot
@@ -13,7 +14,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     margin_idx % A 1 x obj.nT vector. x(margin_idx(i)) is the force margin at time t_knot(i). We want to maximize this margin for better robustness
     F_idx % A cell array. x(F_idx{i}{j}(:,k)) is the contact force parameter (the weights for the friction cone extreme rays) at time t_knot(i), for the j'th FootStepRegionContactConstraint, at k'th contact point
     
-    f_cost % A obj.num_vars x 1 vector. The linear componenet of the cost
+    
     A_iris,b_iris % A_iris * x <= b_iris is the union of all half space constraint on the foot location from iris
     A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
@@ -29,7 +30,9 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     A_margin_bnd % A obj.nT x 1 vector. A_margin*x<=A_margin_bnd represents margin(i)<= min(F_i), where F_i are all the force weights at the k'th knot point
     
     Q_comddot; % A 3 x 3 PSD matrix. Penalizes the CoM accleration.
-    Q_comddot_big % A obj.num_vars x obj.num_vars matrix. x'*Q_comddot_big*x = sum_i comddot(:,i)'*obj.Q_comddot*comddot(:,i)
+    Q_cost % A obj.num_vars x obj.num_vars matrix. The Hessian of the quadratic cost
+    f_cost % A obj.num_vars x 1 vector. The linear componenet of the cost
+    
     com_traj_order % An integer. The order of the polynomial to interpolate CoM. Acceptable orders are cubic or quartic
   end
   
@@ -41,9 +44,10 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningSeed(robot_mass,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order)
+    function obj = FixedFootYawCoMPlanningSeed(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order)
       obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
+      obj.robot_dim = robot_dim;
       obj.t_knot = t;
       obj.nT = length(obj.t_knot);
       obj.g = g;
@@ -185,7 +189,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       Q_comddot_row = reshape(repmat(obj.comddot_idx,3,1),[],1);
       Q_comddot_col = reshape(bsxfun(@times,ones(3,1),obj.comddot_idx(:)'),[],1);
       Q_comddot_val = reshape(bsxfun(@times,ones(1,obj.nT),Q_comddot(:)),[],1);
-      obj.Q_comddot_big = sparse(Q_comddot_row,Q_comddot_col,Q_comddot_val,obj.num_vars,obj.num_vars);
+      obj.Q_cost = sparse(Q_comddot_row,Q_comddot_col,Q_comddot_val,obj.num_vars,obj.num_vars);
     end
     
     function [com,comdot,comddot,foot_pos,F,margin] = solve(obj)
@@ -196,7 +200,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
 %       model.rhs = model.rhs./max_row_entry;
       model.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
       
-      model.Q = obj.Q_comddot_big;
+      model.Q = obj.Q_cost;
       model.obj = obj.f_cost;
       model.lb = obj.x_lb;
       model.ub = obj.x_ub;
@@ -241,7 +245,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       end
     end
     
-    function [Hbar,Hdot,sigma,epsilon] = angularMomentum(obj,com,foot_pos,F,H0)
+    function [H,Hdot,sigma,epsilon] = angularMomentum(obj,com,foot_pos,F,H0)
       % Compute the angular momentum given the com trajectory, foot_pos, force and initial
       % angular momentum
       % @param com    A 3 x obj.nT matrix. The CoM position
@@ -262,40 +266,13 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
           Hdot(:,i) = Hdot(:,i)+sum(cross(foot_contact_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)),force),2);
         end
       end
-      delta_s = 1/(obj.nT-1);
-      Hbar = bsxfun(@times,H0,ones(1,obj.nT));
-      Hbar = Hbar+[zeros(3,1) cumsum(Hdot(:,2:end)*delta_s,2)/(obj.robot_mass*obj.g)];
-      epsilon = Hdot/(obj.robot_mass*obj.g)-obj.lambda*Hbar;
+      dt = diff(obj.t_knot);
+      H_scale = obj.robot_mass*obj.g*obj.robot_dim;
+      Hbar = bsxfun(@times,H0/H_scale,ones(1,obj.nT));
+      Hbar = Hbar+[zeros(3,1) cumsum((Hdot(:,2:end)/H_scale).*bsxfun(@times,ones(3,1),dt),2)];
+      epsilon = Hdot/H_scale-obj.lambda*Hbar;
       sigma = sum(sum(epsilon.^2));
-    end
-    
-    function obj = addKinematicPolygon(obj,fsrc_idx,A,b)
-      % add polygonal constraint A*[x1;y1;x2;y2;...;xN;yN]<=b on the contact bodies corresponding to
-      % obj.fsrc_cnstr{fsrc_idx(1)}, obj.fsrc_cnstr{fsrc_idx(2)},...obj.fsrc_cnstr{fsrc_idx(N)}.
-      % where [x1;y1] is the position of the body in obj.fsrc_cnstr{fsrc_idx(1)}, and so
-      % on for [xi;yi]
-      % @param fsrc_idx  An integer vector. The kinematic constraint is on the
-      % bodies in obj.fsrc_cnstr{fsrc_idx(1)} obj.fsrc_cnstr{fsrc_idx(2)} and obj.fsrc_cnstr{fsrc_idx(N)}
-      % @param A    A n x (2*length(fsrc_idx)) matrix.
-      % @param b    A n x 1 vector
-      if(~isnumeric(fsrc_idx))
-        error('Drake:FixedFootYawCoMPlanningPosition:fsrc_idx1 and fsrc_idx2 should be numeric scalar');
-      end
-      num_fsrc = numel(fsrc_idx);
-      sizecheck(fsrc_idx,[1,num_fsrc]);
-      if(~isnumeric(A) || ~isnumeric(b))
-        error('Drake:FixedFootYawCoMPlanningPosition:A and b should be numeric');
-      end
-      num_cnstr = numel(b);
-      sizecheck(A,[num_cnstr,2*num_fsrc]);
-      sizecheck(b,[num_cnstr,1]);
-      iA = reshape(bsxfun(@times,(1:num_cnstr)',ones(1,2*num_fsrc)),[],1);
-      jA = reshape(bsxfun(@times,reshape(obj.fsrc_body_pos_idx(:,fsrc_idx),1,[]),ones(num_cnstr,1)),[],1);
-      A_kin_new = sparse(iA,jA,A(:),num_cnstr,obj.num_vars);
-      obj.A_kin = [obj.A_kin;A_kin_new];
-      obj.b_kin = [obj.b_kin;b];
-      A_kin_name = repmat({sprintf('polygon region on fsrc %d',fsrc_idx)},num_cnstr,1);
-      obj = obj.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b,A_kin_new),(1:obj.num_vars),A_kin_name);
+      H = Hbar*H_scale;
     end
     
   end
