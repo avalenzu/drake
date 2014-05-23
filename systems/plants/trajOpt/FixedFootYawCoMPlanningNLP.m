@@ -58,7 +58,9 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       end
       H_scale = obj.robot_mass*obj.robot_dim*obj.g;
       x(obj.H0_idx) = H0/H_scale;
-      
+      if(any(abs(obj.Aeq*x-obj.beq)>1e-3) || any(obj.Ain*x-obj.bin>1e-5))
+        warning('Drake:FixedFootYawCoMPlanningNLP: The seed is not feasible');
+      end
       [x_sol,objective,INFO] = solve@NonlinearProgramWConstraintObjects(obj,x);
       com = reshape(x_sol(obj.com_idx),3,obj.nT);
       comdot = reshape(x_sol(obj.comdot_idx),3,obj.nT);

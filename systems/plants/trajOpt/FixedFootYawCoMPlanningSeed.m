@@ -241,7 +241,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
           error('Backoff should always be feasible');
         end
       else
-        error('Initial seed is invalid. Consider to change the FootStepRegionContactConstraint objects, or adjust the sdot');
+        error('Initial seed is invalid.');
       end
     end
     
