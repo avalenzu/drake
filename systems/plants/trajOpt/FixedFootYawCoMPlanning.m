@@ -143,7 +143,7 @@ classdef FixedFootYawCoMPlanning
       
     end
     
-    function [com,comdot,comddot,foot_pos,Hdot,F] = solve(obj,H0)
+    function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
       % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
       % function s at i'th knot. This is used as a initial guess
       tic
@@ -163,7 +163,7 @@ classdef FixedFootYawCoMPlanning
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
       while(iter<max_iter && INFO == 1)
         iter = iter+1;
-        display(sprintf('P step, iter %d',iter));
+        display(sprintf('\nP step, iter %d',iter));
         tic
         [com_iter,comdot_iter,comddot_iter,foot_pos_iter,Hdot_iter,H_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.p_step.solve(F,sigma);
         toc
@@ -179,7 +179,7 @@ classdef FixedFootYawCoMPlanning
         end
         checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);  
         sigma = sigma_sol(2*iter-1);
-        display(sprintf('F step,iter %d',iter));
+        display(sprintf('\nF step,iter %d',iter));
         tic
         [F_iter,Hdot_iter,H_iter,margin_iter,sigma_sol_iter,epsilon_iter,INFO] = obj.f_step.solve(com,comdot,comddot,foot_pos,sigma);
         toc
@@ -197,7 +197,7 @@ classdef FixedFootYawCoMPlanning
       end
       bilinear_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-r');
       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'or');
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e4);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',200);
 %       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
       display('nlp step');
@@ -274,12 +274,14 @@ classdef FixedFootYawCoMPlanning
       com_foot_polygon = CoMFootStepPolygon(obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr,vertices);
       [A,b] = com_foot_polygon.halfspace(obj.yaw(fsrc_idx));
       for i = 1:length(obj.fsrc_knot_active_idx{fsrc_idx})
+        t_idx = obj.fsrc_knot_active_idx{fsrc_idx}(i);
+        con_name = repmat({sprintf('polygon constraint between fsrc%d and com at t[%d]',fsrc_idx,t_idx)},length(b),1);
         obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
-          [obj.seed_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+          [obj.seed_step.com_idx(:,t_idx);obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
         obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
-          [obj.p_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.p_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+          [obj.p_step.com_idx(:,t_idx);obj.p_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
         obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
-          [obj.nlp_step.com_idx(:,obj.fsrc_knot_active_idx{fsrc_idx}(i));obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx)]);
+          [obj.nlp_step.com_idx(:,t_idx);obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
       end
     end
     
@@ -309,6 +311,26 @@ classdef FixedFootYawCoMPlanning
       obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
       obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.p_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
       obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
+    end
+    
+    function obj = addFootPositionConstraint(obj,fsrc_idx,constraint)
+      % Add a BoundingBoxConstraint or a LinearConstraint on the foot position
+      % @param fsrc_idx   A scalar. The index of the FootStepRegionContactConstraint
+      % @param constraint   A BoundingBoxConstraint or a LinearConstraint object
+      if(~isnumeric(fsrc_idx) || numel(fsrc_idx) ~= 1)
+        error('Drake:FixedFootYawCoMPlanning: fsrc_idx should be a scaler');
+      end
+      if(isa(constraint,'LinearConstraint'))
+        obj.seed_step = obj.seed_step.addLinearConstraint(constraint,obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx));
+        obj.p_step = obj.p_step.addLinearConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
+        obj.nlp_step = obj.nlp_step.addLinearConstraint(constraint,obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx));
+      elseif(isa(constraint,'BoundingBoxConstraint'))
+        obj.seed_step = obj.seed_step.addBoundingBoxConstraint(constraint,obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx));
+        obj.p_step = obj.p_step.addBoundingBoxConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
+        obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(constraint,obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx));
+      else
+        error('Drake:FixedFootYawCoMPlanning: unsupported constraint');
+      end
     end
     
     function checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon)
@@ -358,15 +380,5 @@ classdef FixedFootYawCoMPlanning
       end
     end
     
-    function plotResult(obj,com,foot_pos,sdotsquare)
-      figure;
-      hold on;
-      axis equal;
-      plot(com(1,:),com(2,:),'x-');
-      plot(foot_pos(1,:),foot_pos(2,:),'o');
-      sdot = sqrt(sdotsquare);
-      t = sum((2/(obj.nT-1))./(sdot(1:end-1)+sdot(2:end)));
-      title(sprintf('t=%5.2f',t));
-    end
   end
 end

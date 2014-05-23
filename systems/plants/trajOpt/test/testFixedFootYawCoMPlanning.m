@@ -52,25 +52,27 @@ com_traj_order = 4;
 planning = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,[lfoot_fsrc_cnstr,rfoot_fsrc_cnstr],yaw',com_traj_order);
 g = 9.8;
 planning = planning.addCoMBounds([1 nT],[com0 com1],[com0 com1]);
-planning = planning.addCoMBounds(1:nT,[-inf(2,nT);0.5*ones(1,nT)],[inf(2,nT);1.5*ones(1,nT)]);
+planning = planning.addCoMBounds(1:nT,[-inf(2,nT);0.8*ones(1,nT)],[inf(2,nT);1*ones(1,nT)]);
 planning = planning.addCoMdotBounds([1,nT],zeros(3,2),zeros(3,2));
 planning = planning.addH0Bounds(zeros(3,1),zeros(3,1));
 planning = planning.addCoMdotBounds(2:nT-1,bsxfun(@times,ones(1,nT-2),[-1;-1;-0.5]),bsxfun(@times,ones(1,nT-2),[1;1;0.5]));
 planning = planning.addCoMddotBounds(1:nT,bsxfun(@times,ones(1,nT),[-g;-g;-g]),bsxfun(@times,ones(1,nT),[g;g;g]));
 
-com_rfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;-0.15;0.9]);
-com_lfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;0.15;0.9]);
+com_rfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;0.1;0.9]);
+com_lfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;-0.1;0.9]);
 for i = 1:num_steps
   planning = planning.addCoMFootPolygon(num_steps+i,com_rfoot_vertices);
   planning = planning.addCoMFootPolygon(i,com_lfoot_vertices);
 end
 planning.nlp_step = planning.nlp_step.setSolverOptions('snopt','superbasicslimit',3000);
-r2l_xy_polygon = RelativeFootPositionPolygon([-0.1 -0.1 0.1 0.1;0.2 0.5 0.5 0.2]);
+r2l_xy_polygon = RelativeFootPositionPolygon([0.6 0.6 0.2 0.2;-0.1 -0.4 -0.1 -0.4]);
 [A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
 for i = 1:num_steps-1
 planning = planning.addFootPolygon([i num_steps+i+1],A_polygon,b_polygon);
 end
 
+planning = planning.addFootPositionConstraint(1,BoundingBoxConstraint(lfoot_pos_star(1:2),lfoot_pos_star(1:2)));
+% planning = planning.addFootPositionConstraint(num_steps+1,BoundingBoxConstraint(rfoot_pos_star(1:2),rfoot_pos_star(1:2)));
 [com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,F_sol] = planning.solve(zeros(3,1));
 
 end
