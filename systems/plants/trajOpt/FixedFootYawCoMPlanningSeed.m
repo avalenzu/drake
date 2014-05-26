@@ -134,10 +134,11 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       A_iris_name = repmat({'iris constraint'},num_halfspace_iris,1);
       obj = obj.addLinearConstraint(LinearConstraint(-inf(num_halfspace_iris,1),obj.b_iris,obj.A_iris),(1:obj.num_vars),A_iris_name);
       dt = diff(obj.t_knot);
-      % linear constraint on the quatic interpolation of com
-      % For quartic polynoial, dt^2(comddot[i+1]-comddot[i]) = -12(com[i+1]-com[i])+6*dt(comdot[i]+comdot[i+1])
-      % For cubic polynomial, 6*(com[i+1]-com[i])-2*dt*comdot[i+1]-4*dt*comdot[i]-dt^2*comddot[i] = 0
+      % linear constraint on cubic polynomial interpolation on CoM. For cubic polynomial
+      % 12(com(:,i+1)-com(:,i))-6t(comdot(:,i+1)+comdot(:,i))+t^2(comddot(:,i+1)-comddot(:,i))
+      % comdot(:,i+1)-comdot(:,i) = t/2(comddot(:,i)+comddot(:,i+1))
       if(obj.com_traj_order == 4)
+        error('Do not support quartic polynomial any more');
         iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
         jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);...
           reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);...
@@ -145,15 +146,22 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         Aval_com = [12*ones(3*(obj.nT-1),1);-12*ones(3*(obj.nT-1),1);reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);...
           reshape(bsxfun(@times,6*dt,ones(3,1)),[],1);reshape(bsxfun(@times,dt.^2,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
       elseif(obj.com_traj_order == 3)
-        iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
+        iAcom = [(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))'];
         jAcom = [reshape(obj.com_idx(:,1:end-1),[],1);reshape(obj.com_idx(:,2:end),[],1);...
-          reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);reshape(obj.comddot_idx(:,1:end-1),[],1)];
-        Aval_com = [-6*ones(3*(obj.nT-1),1);6*ones(3*(obj.nT-1),1);reshape(bsxfun(@times, -4*dt,ones(3,1)),[],1);...
-          reshape(bsxfun(@times,-2*dt,ones(3,1)),[],1);reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1)];
-      end
-      obj.A_com = sparse(iAcom,jAcom,Aval_com,3*(obj.nT-1),obj.num_vars);
-      obj.A_com_bnd = zeros(3*(obj.nT-1),1);
-      A_com_name = repmat({'com difference'},3*(obj.nT-1),1);
+          reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);...
+          reshape(obj.comddot_idx(:,1:end-1),[],1);reshape(obj.comddot_idx(:,2:end),[],1)];
+        Aval_com = [-12*ones(3*(obj.nT-1),1);12*ones(3*(obj.nT-1),1);...
+          reshape(bsxfun(@times, -6*dt,ones(3,1)),[],1);reshape(bsxfun(@times,-6*dt,ones(3,1)),[],1);...
+          reshape(bsxfun(@times,-dt.^2,ones(3,1)),[],1);reshape(bsxfun(@times,dt.^2,ones(3,1)),[],1)];
+        iAcom = [iAcom;3*(obj.nT-1)+[(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))';(1:3*(obj.nT-1))']];
+        jAcom = [jAcom;reshape(obj.comdot_idx(:,1:end-1),[],1);reshape(obj.comdot_idx(:,2:end),[],1);...
+          reshape(obj.comddot_idx(:,1:end-1),[],1);reshape(obj.comddot_idx(:,2:end),[],1)];
+        Aval_com = [Aval_com;-ones(3*(obj.nT-1),1);ones(3*(obj.nT-1),1);...
+          reshape(bsxfun(@times,-dt/2,ones(3,1)),[],1);reshape(bsxfun(@times,-dt/2,ones(3,1)),[],1)];
+        obj.A_com = sparse(iAcom,jAcom,Aval_com,6*(obj.nT-1),obj.num_vars);
+        obj.A_com_bnd = zeros(6*(obj.nT-1),1);
+        A_com_name = repmat({'com difference'},6*(obj.nT-1),1);
+      end      
       obj = obj.addLinearConstraint(LinearConstraint(obj.A_com_bnd,obj.A_com_bnd,obj.A_com),(1:obj.num_vars),A_com_name);
       % compute the summation of force, and the constraint that force_margin<= min_i
       % (F_i), where F_i are all force weights at i'th knot
@@ -224,7 +232,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         params = struct('OutputFlag',false);
         
         result = gurobi(model_backoff,params);
-        if(strcmp(result.status,'OPTIMAL'))
+        if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
           com = reshape(result.x(obj.com_idx),3,obj.nT);
           comdot = reshape(result.x(obj.comdot_idx),3,obj.nT);
           comddot = reshape(result.x(obj.comddot_idx),3,obj.nT);
