@@ -8,6 +8,7 @@ classdef FixedFootYawCoMPlanning
     p_step  % A FixedFootYawCoMPlanningPosition object
     nlp_step % A FixedFootYawCoMPlanningNLP object
     com_traj_order % An integer. The order of the polynomial to interpolate CoM. Acceptable orders are cubic or quartic
+    visualizer % A FixedFootYawCoMPlanningVisualizer object
   end
   
   properties(SetAccess = protected)
@@ -140,7 +141,7 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
-      
+      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.t_knot,obj.g,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
@@ -238,6 +239,13 @@ classdef FixedFootYawCoMPlanning
       obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,obj.p_step.H_idx(:,1));
       obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,obj.f_step.H_idx(:,1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(bnds,obj.nlp_step.H0_idx);
+    end
+    
+    function obj = addHBounds(obj,t_idx,H_lb,H_ub)
+      % add the bounds on the angular momentum for the bilinear alternation
+      bnds = BoundingBoxConstraint(H_lb,H_ub);
+      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.H_idx(:,t_idx),[],1));
+      obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,reshape(obj.f_step.H_idx(:,t_idx),[],1));
     end
     
     function obj = addCoMdotBounds(obj,comdot_idx,comdot_lb,comdot_ub)
@@ -380,5 +388,34 @@ classdef FixedFootYawCoMPlanning
       end
     end
     
+    function com_traj = CoMPPTraj(obj,com,comdot,comddot)
+      dt = diff(obj.t_knot);
+      if(obj.com_traj_order == 3)
+        a = com(:,1:end-1);
+        b = comdot(:,1:end-1);
+        c = (3*com(:,2:end)-3*com(:,1:end-1)-(2*comdot(:,1:end-1)+comdot(:,2:end)).*bsxfun(@times,ones(3,1),dt))./bsxfun(@times,ones(3,1),dt.^2);
+        d = ((comdot(:,2:end)+comdot(:,1:end-1)).*bsxfun(@times,ones(3,1),dt)-2*com(:,2:end)+2*com(:,1:end-1))./bsxfun(@times,ones(3,1),dt.^3);
+        coefs = zeros(3,obj.nT-1,4);
+        coefs(:,:,4) = a;
+        coefs(:,:,3) = b;
+        coefs(:,:,2) = c;
+        coefs(:,:,1) = d;
+        pp = mkpp(obj.t_knot,coefs,3);
+      elseif(obj.com_traj_order == 4)
+        a = com(:,1:end-1);
+        b = comdot(:,1:end-1);
+        c = 0.5*comddot(:,1:end-1);
+        d = (4*com(:,2:end)-4*com(:,1:end-1)-(3*comdot(:,1:end-1)+comdot(:,2:end)).*bsxfun(@times,ones(3,1),dt)-comddot(:,1:end-1).*bsxfun(@times,ones(3,1),dt.^2))./bsxfun(@times,ones(3,1),dt.^3);
+        e = ((comdot(:,2:end)+2*comdot(:,1:end-1)).*bsxfun(@times,ones(3,1),dt)+0.5*comddot(:,1:end-1).*bsxfun(@times,ones(3,1),dt.^2)-3*com(:,2:end)+3*com(:,1:end-1))./bsxfun(@times,ones(3,1),dt.^4);
+        coefs = zeros(3,obj.nT-1,5);
+        coefs(:,:,5) = a;
+        coefs(:,:,4) = b;
+        coefs(:,:,3) = c;
+        coefs(:,:,2) = d;
+        coefs(:,:,1) = e;
+        pp = mkpp(obj.t_knot,coefs,3);
+      end
+      com_traj = PPTrajectory(pp);
+    end
   end
 end
