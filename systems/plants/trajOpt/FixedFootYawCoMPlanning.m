@@ -15,6 +15,7 @@ classdef FixedFootYawCoMPlanning
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    fsrc_tspan % A obj.num_fsrc_cnstr x 2 double matrix. fsrc_tspan(i,:) is the time span for the i'th knot points
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
     A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
@@ -25,6 +26,9 @@ classdef FixedFootYawCoMPlanning
     robot_mass % The mass of the robot
     g % gravitational acceleration
     robot_dim % A estimation of the dimension of robot in meters
+    
+    com_frame;
+    fsrc_frame;
   end
   
   methods
@@ -133,6 +137,12 @@ classdef FixedFootYawCoMPlanning
       else
         error('Unsupported order of polynoimal to interpolate com trajectory');
       end
+      
+      obj.com_frame = CoordinateFrame('com',3,[],{'com_x';'com_y';'com_z'});
+      obj.fsrc_frame = cell(obj.num_fsrc_cnstr,1);
+      for i = 1:obj.num_fsrc_cnstr
+        obj.fsrc_frame{i} = CoordinateFrame('fsrc',3+obj.fsrc_cnstr{i}.num_contact_pts*3,[]);
+      end
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,...
@@ -141,7 +151,12 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
-      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.t_knot,obj.g,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.fsrc_tspan = zeros(obj.num_fsrc_cnstr,2);
+      for i = 1:obj.num_fsrc_cnstr
+        obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
+      end
+      use_lcmgl = true;
+      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,use_lcmgl);
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
@@ -157,6 +172,7 @@ classdef FixedFootYawCoMPlanning
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       INFO = 1;
+      obj.visualize(com,comdot,comddot,foot_pos,F);
       figure;
       qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
       hold on;
@@ -216,6 +232,7 @@ classdef FixedFootYawCoMPlanning
       plot(obj.t_knot,H'/(obj.robot_mass*obj.robot_dim));
       title('angular momentum nomalized by mass times robot length');
       legend('x','y','z');
+      obj.visualize(com,comdot,comddot,foot_pos,F);
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
@@ -418,6 +435,49 @@ classdef FixedFootYawCoMPlanning
         pp = mkpp(obj.t_knot,coefs,3);
       end
       com_traj = PPTrajectory(pp);
+      com_traj = com_traj.setOutputFrame(obj.com_frame);
+    end
+    
+    function [force_traj,force_traj_stack] = forceTrajectory(obj,F)
+      % @param F   The force weight 
+      % @retval force_traj   A obj.num_fsrc_cnstr x 1 cell of trajectories.
+      % @retval force_traj_stack   Same as force_traj, except force_traj_stack.eval(t) =
+      % reshape(force_traj.eval(t),[],1)
+      force_traj = cell(obj.num_fsrc_cnstr,1);
+      force_traj_stack = cell(obj.num_fsrc_cnstr,1);
+      force = cell(obj.num_fsrc_cnstr,1);
+      force_stack = cell(obj.num_fsrc_cnstr,1);
+      for i = 1:obj.num_fsrc_cnstr
+        force{i} = zeros(3,obj.fsrc_cnstr{i}.num_contact_pts,length(obj.fsrc_knot_active_idx{i}));
+      end
+      for i = 1:obj.nT
+        for j = 1:length(obj.F2fsrc_map{i})
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          force{fsrc_idx}(:,:,i==obj.fsrc_knot_active_idx{fsrc_idx}) = obj.A_force{fsrc_idx}*F{i}{j};
+        end
+      end
+      for i = 1:obj.num_fsrc_cnstr
+        force_stack{i} = zeros(3*obj.fsrc_cnstr{i}.num_contact_pts,obj.nT);
+        force_stack{i}(:,obj.fsrc_knot_active_idx{i}) = reshape(force{i},[],length(obj.fsrc_knot_active_idx{i}));
+        force_traj{i} = PPTrajectory(foh(obj.t_knot(obj.fsrc_knot_active_idx{i}),force{i}));
+        force_traj_stack{i} = PPTrajectory(foh(obj.t_knot,force_stack{i}));
+      end
+    end
+    
+    function visualize(obj,com,comdot,comddot,foot_pos,F)
+      com_traj = obj.CoMPPTraj(com,comdot,comddot);
+      [~,force_traj_stack] = obj.forceTrajectory(F);
+      visualizer_traj = com_traj;
+      for i = 1:obj.num_fsrc_cnstr
+        fsrc_pos_traj = PPTrajectory(zoh(obj.t_knot,bsxfun(@times,[foot_pos(:,i);obj.yaw(i)],ones(1,obj.nT))));
+        fsrc_traj = [fsrc_pos_traj;force_traj_stack{i}];
+        fsrc_traj = fsrc_traj.setOutputFrame(obj.fsrc_frame{i});
+        visualizer_traj = [visualizer_traj;fsrc_traj];
+      end
+      obj.visualizer.viz{1} = obj.visualizer.viz{1}.setCoMSamples(com);
+      obj.visualizer.playback(visualizer_traj,struct('slider',true));
     end
   end
+  
+  
 end
