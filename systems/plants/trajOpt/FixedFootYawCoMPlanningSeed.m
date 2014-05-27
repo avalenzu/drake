@@ -215,39 +215,39 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       params = struct('OutputFlag',false);
       
       result = gurobi(model,params);
-      if(strcmp(result.status,'OPTIMAL'))
-        % back off the solution a little bit. Add the conic constraint
-        % x'Qx+f'x<=backoff_factor*objective
-        
-        model_backoff.A = sparse([obj.Ain;obj.Aeq]);
-        model_backoff.rhs = [obj.bin;obj.beq];
-        model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
-        model_backoff.obj = zeros(obj.num_vars,1);
-        model_backoff.lb = obj.x_lb;
-        model_backoff.ub = obj.x_ub;
-        backoff_factor = 0.02;
-        model_backoff.quadcon.Qc = model.Q;
-        model_backoff.quadcon.q = model.obj;
-        model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
-        params = struct('OutputFlag',false);
-        
-        result = gurobi(model_backoff,params);
-        if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-          com = reshape(result.x(obj.com_idx),3,obj.nT);
-          comdot = reshape(result.x(obj.comdot_idx),3,obj.nT);
-          comddot = reshape(result.x(obj.comddot_idx),3,obj.nT);
-          foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
-          margin = result.x(obj.margin_idx);
-          F = cell(1,obj.nT);
-          for i = 1:obj.nT
-            for j = 1:length(obj.F2fsrc_map{i})
-              fsrc_idx = obj.F2fsrc_map{i}(j);
-              F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
-            end
+%       if(strcmp(result.status,'OPTIMAL'))
+%         % back off the solution a little bit. Add the conic constraint
+%         % x'Qx+f'x<=backoff_factor*objective
+%         
+%         model_backoff.A = sparse([obj.Ain;obj.Aeq]);
+%         model_backoff.rhs = [obj.bin;obj.beq];
+%         model_backoff.sense = [repmat('<',length(obj.bin),1);repmat('=',length(obj.beq),1)];
+%         model_backoff.obj = zeros(obj.num_vars,1);
+%         model_backoff.lb = obj.x_lb;
+%         model_backoff.ub = obj.x_ub;
+%         backoff_factor = 0.02;
+%         model_backoff.quadcon.Qc = model.Q;
+%         model_backoff.quadcon.q = model.obj;
+%         model_backoff.quadcon.rhs = result.objval*(1+sign(result.objval)*backoff_factor);
+%         params = struct('OutputFlag',false);
+%         
+%         result = gurobi(model_backoff,params);
+      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
+        com = reshape(result.x(obj.com_idx),3,obj.nT);
+        comdot = reshape(result.x(obj.comdot_idx),3,obj.nT);
+        comddot = reshape(result.x(obj.comddot_idx),3,obj.nT);
+        foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
+        margin = result.x(obj.margin_idx);
+        F = cell(1,obj.nT);
+        for i = 1:obj.nT
+          for j = 1:length(obj.F2fsrc_map{i})
+            fsrc_idx = obj.F2fsrc_map{i}(j);
+            F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
           end
-        else
-          error('Backoff should always be feasible');
         end
+%         else
+%           error('Backoff should always be feasible');
+%         end
       else
         error('Initial seed is invalid.');
       end
