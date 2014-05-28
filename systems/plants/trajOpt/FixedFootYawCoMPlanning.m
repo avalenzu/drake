@@ -62,6 +62,10 @@ classdef FixedFootYawCoMPlanning
         error('Drake:FixedFootYawCoMPlanning:t should be numeric');
       end
       obj.t_knot = reshape(unique(t),1,[]);
+      for i = 1:length(fsrc_cnstr)
+        t_diff = bsxfun(@minus,obj.t_knot,fsrc_cnstr{i}.foot_step_region_cnstr.tspan');
+        obj.t_knot = unique([obj.t_knot(all(abs(t_diff)>1e-5,1)) fsrc_cnstr{i}.foot_step_region_cnstr.tspan]);
+      end
       obj.nT = length(obj.t_knot);
       obj.g = 9.81;
       if(~isnumeric(lambda))
@@ -157,8 +161,7 @@ classdef FixedFootYawCoMPlanning
       for i = 1:obj.num_fsrc_cnstr
         obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
       end
-      use_lcmgl = true;
-      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame,use_lcmgl);
+      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame);
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
@@ -216,7 +219,7 @@ classdef FixedFootYawCoMPlanning
 %       end
 %       bilinear_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-r');
 %       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'or');
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',2e4);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e6);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',200);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
 %       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
@@ -488,6 +491,8 @@ classdef FixedFootYawCoMPlanning
       zmp_traj = obj.ZMPTrajectory(com,comddot,Hdot);
       visualizer_traj = [visualizer_traj;zmp_traj];
       obj.visualizer.viz{1} = obj.visualizer.viz{1}.setCoMSamples(com);
+      zmp = zmp_traj.eval(obj.t_knot);
+      obj.visualizer.viz{end} = obj.visualizer.viz{end}.setZMPSamples(zmp);
       obj.visualizer.playback(visualizer_traj,struct('slider',true));
     end
     

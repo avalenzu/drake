@@ -1,15 +1,16 @@
 classdef CoMVisualizer < Visualizer
   properties(SetAccess = protected)
     com_samples % A 3 x n matrix. The sample of CoM trajectory to be visualized
-    use_lcmgl
+    lcmgl_traj
+    lcmgl_pt
   end
   methods
-    function obj = CoMVisualizer(com_frame,use_lcmgl)
-      if(~islogical(use_lcmgl) || numel(use_lcmgl) ~= 1)
-        error('Drake:CoMVisualizer: use_lcmgl should be a boolean');
-      end
+    function obj = CoMVisualizer(com_frame)
       obj = obj@Visualizer(com_frame);
-      obj.use_lcmgl = use_lcmgl;
+      obj.lcmgl_traj = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'com_traj');
+      
+      obj.lcmgl_pt = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'com');
+      
     end
     
     function obj = setCoMSamples(obj,com)
@@ -19,20 +20,12 @@ classdef CoMVisualizer < Visualizer
     
     function draw(obj,t,y)
       sizecheck(y,[3,1]);
-      if(obj.use_lcmgl)
-        lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'com_traj');
-        lcmgl.plot3(obj.com_samples(1,:),obj.com_samples(2,:),obj.com_samples(3,:));
-        lcmgl.switchBuffers();
-        lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'com');
-        lcmgl.glColor3f(1,0,0);
-        lcmgl.sphere(y,0.03,20,20);
-        lcmgl.switchBuffers();
-      else
-        plot3(obj.com_samples(1,:),obj.com_samples(2,:),obj.com_samples(3,:));
-        plot3(y(1),y(2),y(3),'o','MarkerSize',10);
-        axis equal
-        axis([min(obj.com_samples(1,:))-0.5,max(obj.com_samples(1,:))+0.5 min(obj.com_samples(2,:))-0.5,max(obj.com_samples(2,:))+0.5 min(obj.com_samples(3,:))-1.5,max(obj.com_samples(1,:))+0.5]);
-      end
+      obj.lcmgl_traj.glColor3f(0,0,1);
+      obj.lcmgl_traj.plot3(obj.com_samples(1,:),obj.com_samples(2,:),obj.com_samples(3,:));
+      obj.lcmgl_traj.switchBuffers();
+      obj.lcmgl_pt.glColor3f(1,0,0);
+      obj.lcmgl_pt.sphere(y,0.03,20,20);
+      obj.lcmgl_pt.switchBuffers();
     end
   end
 end

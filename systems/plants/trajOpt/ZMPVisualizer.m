@@ -1,25 +1,29 @@
 classdef ZMPVisualizer < Visualizer
   properties(SetAccess = protected)
-    use_lcmgl
+    zmp_samples
+    lcmgl_traj
+    lcmgl_pt
   end
   methods
-    function obj = ZMPVisualizer(zmp_frame,use_lcmgl)
-      if(~islogical(use_lcmgl) || numel(use_lcmgl) ~= 1)
-        error('Drake:ZMPVisualizer: use_lcmgl should be a boolean');
-      end
+    function obj = ZMPVisualizer(zmp_frame)
       obj = obj@Visualizer(zmp_frame);
-      obj.use_lcmgl = use_lcmgl;
+      obj.lcmgl_traj = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'zmp_traj');
+      
+      obj.lcmgl_pt = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'zmp');
+      
     end
     
     function draw(obj,t,y)
-      if(obj.use_lcmgl)
-        lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,'zmp');
-        lcmgl.glColor3f(1,0,0);
-        lcmgl.sphere([y;0],0.02,20,20);
-        lcmgl.switchBuffers();
-      else
-        plot3(y(1),y(2),0,'o','MarkerSize',10);
-      end
+      obj.lcmgl_traj.glColor3f(0,0,1);
+      obj.lcmgl_traj.plot3(obj.zmp_samples(1,:),obj.zmp_samples(2,:),zeros(1,size(obj.zmp_samples,2)));
+      obj.lcmgl_traj.switchBuffers();
+      obj.lcmgl_pt.glColor3f(1,0,0);
+      obj.lcmgl_pt.sphere([y;0],0.02,20,20);
+      obj.lcmgl_pt.switchBuffers();
+    end
+    
+    function obj = setZMPSamples(obj,zmp)
+      obj.zmp_samples = zmp;
     end
   end
 end
