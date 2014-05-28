@@ -29,6 +29,7 @@ classdef FixedFootYawCoMPlanning
     
     com_frame;
     fsrc_frame;
+    zmp_frame;
   end
   
   methods
@@ -143,6 +144,7 @@ classdef FixedFootYawCoMPlanning
       for i = 1:obj.num_fsrc_cnstr
         obj.fsrc_frame{i} = CoordinateFrame('fsrc',3+obj.fsrc_cnstr{i}.num_contact_pts*3,[]);
       end
+      obj.zmp_frame = CoordinateFrame('zmp',2,[],{'zmp_x','zmp_y'});
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,...
@@ -156,7 +158,7 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
       end
       use_lcmgl = true;
-      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,use_lcmgl);
+      obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame,use_lcmgl);
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
@@ -172,7 +174,7 @@ classdef FixedFootYawCoMPlanning
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       INFO = 1;
-      obj.visualize(com,comdot,comddot,foot_pos,F);
+      obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
       figure;
       qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
       hold on;
@@ -232,7 +234,7 @@ classdef FixedFootYawCoMPlanning
       plot(obj.t_knot,H'/(obj.robot_mass*obj.robot_dim));
       title('angular momentum nomalized by mass times robot length');
       legend('x','y','z');
-      obj.visualize(com,comdot,comddot,foot_pos,F);
+      obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
@@ -366,6 +368,8 @@ classdef FixedFootYawCoMPlanning
         foot_contact_pts_pos{i} = bsxfun(@times,obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i),...
           ones(1,obj.fsrc_cnstr{i}.num_contact_pts))+obj.rotmat(:,:,i)*obj.fsrc_cnstr{i}.body_contact_pts;
       end
+      cop = zeros(2,obj.nT);
+      tau_oi = zeros(3,obj.nT);
       for i = 1:obj.nT
         F_i = zeros(3,1);
         tau_i = zeros(3,1);
@@ -375,12 +379,19 @@ classdef FixedFootYawCoMPlanning
           F_i = F_i+sum(F_ij,2);
           foot_contact_pts_CoM = foot_contact_pts_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts));
           tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
+          tau_oi(:,i) = tau_oi(:,i)+sum(cross(foot_contact_pts_pos{fsrc_idx},F_ij),2);
+          cop(1,i) = cop(1,i)+sum(F_ij(3,:).*foot_contact_pts_pos{fsrc_idx}(1,:)-F_ij(1,:).*foot_contact_pts_pos{fsrc_idx}(3,:));
+          cop(2,i) = cop(2,i)+sum(F_ij(3,:).*foot_contact_pts_pos{fsrc_idx}(2,:)-F_ij(2,:).*foot_contact_pts_pos{fsrc_idx}(3,:));
         end
+        cop(:,i) = cop(:,i)/F_i(3);
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
         mcomddot = obj.robot_mass*comddot(:,i);
         valuecheck(F_i,mcomddot,1e-3);
         valuecheck(tau_i,Hdot(:,i),1e-3);
       end
+      zmp = [(-Hdot(2,:)+obj.robot_mass*obj.g*com(1,:)-obj.robot_mass*com(3,:).*comddot(1,:)+obj.robot_mass*com(1,:).*comddot(3,:))./(obj.robot_mass*comddot(3,:)+obj.robot_mass*obj.g);...
+        (Hdot(1,:)+obj.robot_mass*com(2,:).*comddot(3,:)-obj.robot_mass*com(3,:).*comddot(2,:)+obj.robot_mass*obj.g*com(2,:))./(obj.robot_mass*comddot(3,:)+obj.robot_mass*obj.g)];
+      valuecheck(cop,zmp,1e-3);
       valuecheck(diff(H,1,2),Hdot(:,2:end).*bsxfun(@times,dt,ones(3,1)),1e-3);
       H_scale = obj.robot_mass*obj.g*obj.robot_dim;
       valuecheck(obj.lambda*H/H_scale+epsilon-Hdot/H_scale,zeros(3,obj.nT),1e-3);
@@ -464,7 +475,7 @@ classdef FixedFootYawCoMPlanning
       end
     end
     
-    function visualize(obj,com,comdot,comddot,foot_pos,F)
+    function visualize(obj,com,comdot,comddot,foot_pos,F,Hdot)
       com_traj = obj.CoMPPTraj(com,comdot,comddot);
       [~,force_traj_stack] = obj.forceTrajectory(F);
       visualizer_traj = com_traj;
@@ -474,8 +485,17 @@ classdef FixedFootYawCoMPlanning
         fsrc_traj = fsrc_traj.setOutputFrame(obj.fsrc_frame{i});
         visualizer_traj = [visualizer_traj;fsrc_traj];
       end
+      zmp_traj = obj.ZMPTrajectory(com,comddot,Hdot);
+      visualizer_traj = [visualizer_traj;zmp_traj];
       obj.visualizer.viz{1} = obj.visualizer.viz{1}.setCoMSamples(com);
       obj.visualizer.playback(visualizer_traj,struct('slider',true));
+    end
+    
+    function zmp_traj = ZMPTrajectory(obj,com,comddot,Hdot)
+      zmp = [(-Hdot(2,:)+obj.robot_mass*obj.g*com(1,:)-obj.robot_mass*com(3,:).*comddot(1,:)+obj.robot_mass*com(1,:).*comddot(3,:))./(obj.robot_mass*comddot(3,:)+obj.robot_mass*obj.g);...
+        (Hdot(1,:)+obj.robot_mass*com(2,:).*comddot(3,:)-obj.robot_mass*com(3,:).*comddot(2,:)+obj.robot_mass*obj.g*com(2,:))./(obj.robot_mass*comddot(3,:)+obj.robot_mass*obj.g)];
+      zmp_traj = PPTrajectory(foh(obj.t_knot,zmp));
+      zmp_traj = zmp_traj.setOutputFrame(obj.zmp_frame);
     end
   end
   
