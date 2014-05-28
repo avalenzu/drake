@@ -11,7 +11,7 @@ classdef FixedFootYawCoMPlanningVisualizer < MultiVisualizer
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningVisualizer(robot_mass,g,fsrc_cnstr,fsrc_tspan,com_frame,fsrc_frame,use_lcmgl)
+    function obj = FixedFootYawCoMPlanningVisualizer(robot_mass,g,fsrc_cnstr,fsrc_tspan,com_frame,fsrc_frame,zmp_frame,use_lcmgl)
       % @param fsrc_tspan    A obj.num_fsrc_cnstr x 2 matrix. fsrc_tspan(i,:) is the time
       % span for the i'th FootStepRegionContactConstraint
       com_visualizer = CoMVisualizer(com_frame,use_lcmgl);
@@ -20,7 +20,8 @@ classdef FixedFootYawCoMPlanningVisualizer < MultiVisualizer
       for i = 1:length(fsrc_cnstr)
         fsrc_visualizer{i} = FootStepRegionContactVisualizer(fsrc_cnstr{i},force_normalizer,fsrc_tspan(i,:),fsrc_frame{i},use_lcmgl);
       end
-      obj = obj@MultiVisualizer([{com_visualizer};fsrc_visualizer]);
+      zmp_visualizer = ZMPVisualizer(zmp_frame,use_lcmgl);
+      obj = obj@MultiVisualizer([{com_visualizer};fsrc_visualizer;{zmp_visualizer}]);
     end
     
   end
