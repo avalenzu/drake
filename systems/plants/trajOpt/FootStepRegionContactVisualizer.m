@@ -3,7 +3,7 @@ classdef FootStepRegionContactVisualizer < Visualizer
     fsrc_cnstr % A FootStepRegionContactConstraint
     force_normalizer % A positive scalar. The force is normalized by obj.force_scale for drawing
     tspan % A 1 x 2 vector. The time span of this constraint being active
-    use_lcmgl
+    lcmgl
   end
   
   properties(Access = protected)
@@ -14,7 +14,7 @@ classdef FootStepRegionContactVisualizer < Visualizer
   end
   
   methods
-    function obj = FootStepRegionContactVisualizer(fsrc_cnstr,force_normalizer,tspan,frame,use_lcmgl)
+    function obj = FootStepRegionContactVisualizer(fsrc_cnstr,force_normalizer,tspan,frame)
       % @param fsrc_cnstr   A FootStepRegionContactConstraint object
       % @param force_normalizer  A positive scaler. 
       % @param tspan    A 1 x 2 double vector. The time span of this constraint being
@@ -31,15 +31,15 @@ classdef FootStepRegionContactVisualizer < Visualizer
       if(~isa(frame,'CoordinateFrame'))
         error('Drake:FootStepRegionContactVisualizer:the input should be a CoordinateFrame');
       end
-      if(~islogical(use_lcmgl) || numel(use_lcmgl) ~= 1)
-        error('Drake:FootStepRegionContactVisualizer: use_lcmgl should be a boolean');
-      end
       obj = obj@Visualizer(frame);
-      obj.use_lcmgl = use_lcmgl;
+     
       obj.fsrc_cnstr = fsrc_cnstr;
       obj.force_normalizer = force_normalizer;
       obj.tspan = tspan;
       obj.yaw_cache = inf;
+      
+      obj.lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,sprintf('foot%d',obj.fsrc_cnstr.foot_step_region_cnstr.body));
+      
     end
     
     function draw(obj,t,y)
@@ -59,27 +59,17 @@ classdef FootStepRegionContactVisualizer < Visualizer
         foot_contact_pos = bsxfun(@times,ones(1,obj.fsrc_cnstr.num_contact_pts),A_xy*y(1:2)+b_xy)+rotmat*obj.fsrc_cnstr.body_contact_pts;
         conv_hull_idx = convhull(foot_contact_pos(1,:),foot_contact_pos(2,:));
         force = reshape(y(4:end),3,obj.fsrc_cnstr.num_contact_pts);
-        force_normalized = force/obj.force_normalizer;
-        if(obj.use_lcmgl)
-          lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,sprintf('foot%d',obj.fsrc_cnstr.foot_step_region_cnstr.body));
-          lcmgl.glColor3f(0,0,1);
-          for i = 1:obj.fsrc_cnstr.num_contact_pts
-            lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
-              foot_contact_pos(1,conv_hull_idx(i+1)),foot_contact_pos(2,conv_hull_idx(i+1)),foot_contact_pos(3,conv_hull_idx(i+1)));
-            lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
-              force_normalized(1,conv_hull_idx(i))+foot_contact_pos(1,conv_hull_idx(i)),force_normalized(2,conv_hull_idx(i))+foot_contact_pos(2,conv_hull_idx(i)),force_normalized(3,conv_hull_idx(i))+foot_contact_pos(3,conv_hull_idx(i)));
-          end
-          lcmgl.switchBuffers;
-        else
-          plot3(foot_contact_pos(1,conv_hull_idx),foot_contact_pos(2,conv_hull_idx),foot_contact_pos(3,conv_hull_idx));
-
-          for i = 1:obj.fsrc_cnstr.num_contact_pts
-            plot3([foot_contact_pos(1,i) foot_contact_pos(1,i)+force_normalized(1,i)],...
-              [foot_contact_pos(2,i) foot_contact_pos(2,i)+force_normalized(2,i)],...
-              [foot_contact_pos(3,i) foot_contact_pos(3,i)+force_normalized(3,i)]);
-          end
+        force_normalized = force/obj.force_normalizer;         
+        for i = 1:obj.fsrc_cnstr.num_contact_pts
+          obj.lcmgl.glColor3f(0,0,1);
+          obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
+            foot_contact_pos(1,conv_hull_idx(i+1)),foot_contact_pos(2,conv_hull_idx(i+1)),foot_contact_pos(3,conv_hull_idx(i+1)));
+          obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
+            force_normalized(1,conv_hull_idx(i))+foot_contact_pos(1,conv_hull_idx(i)),force_normalized(2,conv_hull_idx(i))+foot_contact_pos(2,conv_hull_idx(i)),force_normalized(3,conv_hull_idx(i))+foot_contact_pos(3,conv_hull_idx(i)));
         end
+        obj.lcmgl.switchBuffers;
       end
+      
     end
   end
 end
