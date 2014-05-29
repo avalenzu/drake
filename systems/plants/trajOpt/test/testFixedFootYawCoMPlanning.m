@@ -56,7 +56,7 @@ planning = planning.addCoMBounds(1:nT,[-inf(2,nT);0.8*ones(1,nT)],[inf(2,nT);1*o
 planning = planning.addCoMdotBounds([1,nT],zeros(3,2),zeros(3,2));
 planning = planning.addH0Bounds(zeros(3,1),zeros(3,1));
 planning = planning.addCoMdotBounds(2:nT-1,bsxfun(@times,ones(1,nT-2),[-1;-1;-0.5]),bsxfun(@times,ones(1,nT-2),[1;1;0.5]));
-planning = planning.addCoMddotBounds(1:nT,bsxfun(@times,ones(1,nT),[-g;-g;-g]),bsxfun(@times,ones(1,nT),[g;g;g]));
+planning = planning.addCoMddotBounds(1:nT,bsxfun(@times,ones(1,nT),[-g;-g;-0.99*g]),bsxfun(@times,ones(1,nT),[g;g;g]));
 planning = planning.addHBounds(nT,zeros(3,1),zeros(3,1));
 com_rfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;0.15;0.9]);
 com_lfoot_vertices = [(-1).^([0 0 0 0 1 1 1 1]);(-1).^([0 0 1 1 0 0 1 1]);(-1).^([0 1 0 1 0 1 0 1])].*bsxfun(@times,ones(1,8),[0.3;0.1;0.15])+bsxfun(@times,ones(1,8),[0;-0.15;0.9]);
@@ -97,20 +97,20 @@ end
 
 l_land_time = 0;
 r_land_time = (stand_time-step_time)/2;
-lfoot_fsrc_cnstr = cell(1,num_steps);
-rfoot_fsrc_cnstr = cell(1,num_steps);
+lfoot_fsrc_cnstr = FootStepRegionContactConstraint.empty(num_steps,0);
+rfoot_fsrc_cnstr = FootStepRegionContactConstraint.empty(num_steps,0);
 r_fsr = FootStepRegionConstraint(robot,A_iris,b_iris,C_iris,d_iris,r_foot,r_foot_pt,r_foot_z_offset,[0;0;1],[0;0;0],[0,(stand_time-step_time)/2]);
-rfoot_fsrc_cnstr{1} = FootStepRegionContactConstraint(r_fsr,mu,num_edges,r_foot_contact_pts);
+rfoot_fsrc_cnstr(1) = FootStepRegionContactConstraint(r_fsr,mu,num_edges,r_foot_contact_pts);
 r_land_time = r_land_time+step_time;
 for i = 1:num_steps-1
   l_fsr = FootStepRegionConstraint(robot,A_iris,b_iris,C_iris,d_iris,l_foot,l_foot_pt,l_foot_z_offset,[0;0;1],[0;0;0],[l_land_time,l_land_time+stand_time]);
-  lfoot_fsrc_cnstr{i} = FootStepRegionContactConstraint(l_fsr,mu,num_edges,l_foot_contact_pts);
+  lfoot_fsrc_cnstr(i) = FootStepRegionContactConstraint(l_fsr,mu,num_edges,l_foot_contact_pts);
   l_land_time = l_land_time+step_time+stand_time;
   r_fsr = FootStepRegionConstraint(robot,A_iris,b_iris,C_iris,d_iris,r_foot,r_foot_pt,r_foot_z_offset,[0;0;1],[0;0;0],[r_land_time,r_land_time+stand_time]);
-  rfoot_fsrc_cnstr{i+1} = FootStepRegionContactConstraint(r_fsr,mu,num_edges,r_foot_contact_pts);
+  rfoot_fsrc_cnstr(i+1) = FootStepRegionContactConstraint(r_fsr,mu,num_edges,r_foot_contact_pts);
   r_land_time = r_land_time+step_time+stand_time;
 end
-l_fsr = FootStepRegionConstraint(robot,A_iris,b_iris,C_iris,d_iris,l_foot,l_foot_pt,l_foot_z_offset,[0;0;1],[0;0;0],[l_land_time,rfoot_fsrc_cnstr{end}.foot_step_region_cnstr.tspan(end)]);
-lfoot_fsrc_cnstr{end} = FootStepRegionContactConstraint(l_fsr,mu,num_edges,l_foot_contact_pts);
-tspan = [0 rfoot_fsrc_cnstr{end}.foot_step_region_cnstr.tspan(end)];
+l_fsr = FootStepRegionConstraint(robot,A_iris,b_iris,C_iris,d_iris,l_foot,l_foot_pt,l_foot_z_offset,[0;0;1],[0;0;0],[l_land_time,rfoot_fsrc_cnstr(num_steps).foot_step_region_cnstr.tspan(end)]);
+lfoot_fsrc_cnstr(num_steps) = FootStepRegionContactConstraint(l_fsr,mu,num_edges,l_foot_contact_pts);
+tspan = [0 rfoot_fsrc_cnstr(num_steps).foot_step_region_cnstr.tspan(end)];
 end

@@ -19,11 +19,11 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
     A_H,A_H_bnd % A_H * x = A_H_bnd is the constraint on the euler integraton of angular momentum
     A_angular_PD,A_angular_PD_bnd % A_angular_PD * x = A_angular_PD_bnd is the constraint Hdot[n] = lambda*H[n]+epsilon[n]
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
-    fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
+    fsrc_cnstr % An array of FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
-    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
+    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
     
     lambda % A 3 x 3 Hurwitz matrix
@@ -36,8 +36,8 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
   end
   
   properties(Access = protected)
-    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
+    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
   end
   
   methods
@@ -53,10 +53,11 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % momentum stays at 0 by putting the constraint Hdot[n] = lambda*H[n]+epsilon[n]
       % @param Q_comddot     A 3 x 3 PSD matrix. The cost is sum_n
       % comddot[n]'*Q_comddot*comddot[n]+epsilon[n]'*epsilon[n]
-      % @param fsrc_cnstr  A cell array. All the FootStepRegionContactConstraint object
-      % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
-      % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
-      % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
+      % @param fsrc_cnstr  An array of FootStepRegionContactConstraint object
+      % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for
+      % obj.fsrc_cnstr(i)
+      % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
+      % @param A_force    A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
       obj = obj@NonlinearProgramWConstraintObjects(0);
       obj.robot_mass = robot_mass;
       obj.robot_dim = robot_dim;
@@ -132,8 +133,8 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       for i = 1:obj.num_fsrc_cnstr
         fsrc_pos_idx = obj.num_vars+(1:2)';
         obj.fsrc_body_pos_idx(:,i) = fsrc_pos_idx;
-        A_iris_i = obj.fsrc_cnstr{i}.foot_step_region_cnstr.A;
-        b_iris_i = obj.fsrc_cnstr{i}.foot_step_region_cnstr.b;
+        A_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.A;
+        b_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.b;
         iA_iris_i = num_halfspace_iris+reshape([(1:size(A_iris_i,1))' (1:size(A_iris_i,1))'],[],1);
         jA_iris_i = [(obj.num_vars+1)*ones(size(A_iris_i,1),1);(obj.num_vars+2)*ones(size(A_iris_i,1),1)];
         Aval_iris_i = reshape(A_iris_i(:,1:2),[],1);
@@ -215,7 +216,7 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
       % @retval comddot  A 3 x obj.nT matrix. comddot(:,i) is the second derivative of com
       % w.r.t scaling function s at i'th knot point
       % @retval foot_pos   A 2 x obj.num_fsrc_cnstr matrix. foot_pos(:,i) is the xy
-      % position of the contact body in obj.fsrc_cnstr{i}
+      % position of the contact body in obj.fsrc_cnstr(i)
       % @retval epsilon   A 3 x obj.nT matrix. The residue of the PD law on angular
       % momentum.
       % @retval INFO   1 for success, 0 for failure
@@ -231,13 +232,13 @@ classdef FixedFootYawCoMPlanningPosition < NonlinearProgramWConstraintObjects
         A_angular((i-1)*3+(1:3),obj.Hdot_idx(:,i)) = eye(3)*obj.robot_mass*obj.g*obj.robot_dim;
         for j = 1:length(obj.F2fsrc_map{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
-          num_contact_pts_ij = obj.fsrc_cnstr{fsrc_idx}.num_contact_pts;
-          sizecheck(F{i}{j},[obj.fsrc_cnstr{fsrc_idx}.num_edges,num_contact_pts_ij]);
+          num_contact_pts_ij = obj.fsrc_cnstr(fsrc_idx).num_contact_pts;
+          sizecheck(F{i}{j},[obj.fsrc_cnstr(fsrc_idx).num_edges,num_contact_pts_ij]);
           F_ij = obj.A_force{fsrc_idx}*F{i}{j}; % F_ij(:,k) is the contact force at the k'th corner of the foot.
           F_i = F_i+sum(F_ij,2);
           A_angular((i-1)*3+(1:3),obj.fsrc_body_pos_idx(:,fsrc_idx)) = ...
             [sum(cross(F_ij,bsxfun(@times,obj.A_xy(:,1,fsrc_idx),ones(1,num_contact_pts_ij))),2) sum(cross(F_ij,bsxfun(@times,obj.A_xy(:,2,fsrc_idx),ones(1,num_contact_pts_ij))),2)];
-          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy(:,:,fsrc_idx),ones(1,num_contact_pts_ij))+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.body_contact_pts),2);
+          A_angular_bnd((i-1)*3+(1:3)) = A_angular_bnd((i-1)*3+(1:3))-sum(cross(F_ij,bsxfun(@times,obj.b_xy(:,:,fsrc_idx),ones(1,num_contact_pts_ij))+obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr(fsrc_idx).body_contact_pts),2);
         end
         A_angular((i-1)*3+(1:3),obj.com_idx(:,i)) = -[0 -F_i(3) F_i(2);F_i(3) 0 -F_i(1);-F_i(2) F_i(1) 0];
         comddot_bnd((i-1)*3+(1:3)) = (F_i-[0;0;obj.robot_mass*obj.g])/(obj.robot_mass);
