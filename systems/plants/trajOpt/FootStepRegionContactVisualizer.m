@@ -67,9 +67,9 @@ classdef FootStepRegionContactVisualizer < Visualizer
           obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
             force_normalized(1,conv_hull_idx(i))+foot_contact_pos(1,conv_hull_idx(i)),force_normalized(2,conv_hull_idx(i))+foot_contact_pos(2,conv_hull_idx(i)),force_normalized(3,conv_hull_idx(i))+foot_contact_pos(3,conv_hull_idx(i)));
         end
-        obj.lcmgl.switchBuffers;
+        
       end
-      
+      obj.lcmgl.switchBuffers;
     end
   end
 end

@@ -18,11 +18,11 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
     A_iris,b_iris % A_iris * x <= b_iris is the union of all half space constraint on the foot location from iris
     A_com,A_com_bnd % A_com * x = A_com_bnd is the constraint on the euler integration of CoM
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
-    fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
+    fsrc_cnstr % An array of FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
-    F2fsrc_map % A cell array. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    F2fsrc_map % A cell array. obj.fsrc_cnstr(F2fsrc_map{i}(j)) is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
-    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
+    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
     A_kin,b_kin  % A_kin*x<=b_kin encodes the kinematic constraint on the contact points and CoM
     
     A_newton % A 3*obj.nT x obj.num_vars matrix. force(:) = A_newton*x, where force(:,i) is the total force at i'th knot point
@@ -38,8 +38,8 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
   
   
   properties(Access = protected)
-    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
+    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
     num_force_weight % A scalar. The total number of force weights.
   end
   
@@ -102,8 +102,8 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       for i = 1:obj.num_fsrc_cnstr
         fsrc_pos_idx = obj.num_vars+(1:2)';
         obj.fsrc_body_pos_idx(:,i) = fsrc_pos_idx;
-        A_iris_i = obj.fsrc_cnstr{i}.foot_step_region_cnstr.A;
-        b_iris_i = obj.fsrc_cnstr{i}.foot_step_region_cnstr.b;
+        A_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.A;
+        b_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.b;
         iA_iris_i = num_halfspace_iris+reshape([(1:size(A_iris_i,1))' (1:size(A_iris_i,1))'],[],1);
         jA_iris_i = [(obj.num_vars+1)*ones(size(A_iris_i,1),1);(obj.num_vars+2)*ones(size(A_iris_i,1),1)];
         Aval_iris_i = reshape(A_iris_i(:,1:2),[],1);
@@ -116,17 +116,17 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
           sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)};
         obj = obj.addDecisionVariable(2,foot_pos_names);
         for j = 1:obj.nT
-          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
-            obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr{i}.num_force_weight),obj.fsrc_cnstr{i}.num_edges,obj.fsrc_cnstr{i}.num_contact_pts)}];
-            F_names = cell(obj.fsrc_cnstr{i}.num_force_weight,1);
-            for k = 1:obj.fsrc_cnstr{i}.num_contact_pts
-              for l = 1:obj.fsrc_cnstr{i}.num_edges
-                F_names{(k-1)*obj.fsrc_cnstr{i}.num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
+          if(obj.fsrc_cnstr(i).foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
+            obj.F_idx{j} = [obj.F_idx{j} {obj.num_vars+reshape((1:obj.fsrc_cnstr(i).num_force_weight),obj.fsrc_cnstr(i).num_edges,obj.fsrc_cnstr(i).num_contact_pts)}];
+            F_names = cell(obj.fsrc_cnstr(i).num_force_weight,1);
+            for k = 1:obj.fsrc_cnstr(i).num_contact_pts
+              for l = 1:obj.fsrc_cnstr(i).num_edges
+                F_names{(k-1)*obj.fsrc_cnstr(i).num_edges+l} = sprintf('fsrc[%d] pt %d weight %d at %d knot',i,k,l,j);
               end
             end
-            obj = obj.addDecisionVariable(obj.fsrc_cnstr{i}.num_force_weight,F_names);
-            obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(obj.fsrc_cnstr{i}.num_force_weight,1),inf(obj.fsrc_cnstr{i}.num_force_weight,1)),reshape(obj.F_idx{j}{end},[],1));
-            obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
+            obj = obj.addDecisionVariable(obj.fsrc_cnstr(i).num_force_weight,F_names);
+            obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(obj.fsrc_cnstr(i).num_force_weight,1),inf(obj.fsrc_cnstr(i).num_force_weight,1)),reshape(obj.F_idx{j}{end},[],1));
+            obj.num_force_weight = obj.num_force_weight+obj.fsrc_cnstr(i).num_force_weight;
           end
         end
       end
@@ -173,7 +173,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         for j = 1:length(obj.F_idx{i})
           obj.A_newton((i-1)*3+(1:3),obj.F_idx{i}{j}(:)) = repmat(obj.A_force{obj.F2fsrc_map{i}(j)},1,size(obj.F_idx{i}{j},2));
           fsrc_idx = obj.F2fsrc_map{i}(j);
-          num_force_weight_ij = obj.fsrc_cnstr{fsrc_idx}.num_force_weight;
+          num_force_weight_ij = obj.fsrc_cnstr(fsrc_idx).num_force_weight;
           obj.A_margin(force_weight_count+(1:num_force_weight_ij),obj.F_idx{i}{j}(:)) = -eye(num_force_weight_ij);
           obj.A_margin(force_weight_count+(1:num_force_weight_ij),obj.margin_idx(i)) = 1;
           force_weight_count = force_weight_count+num_force_weight_ij;
@@ -242,7 +242,7 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         for i = 1:obj.nT
           for j = 1:length(obj.F2fsrc_map{i})
             fsrc_idx = obj.F2fsrc_map{i}(j);
-            F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)}];
+            F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr(fsrc_idx).num_edges,obj.fsrc_cnstr(fsrc_idx).num_contact_pts)}];
           end
         end
 %         else
@@ -259,19 +259,19 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
       % @param com    A 3 x obj.nT matrix. The CoM position
       % @param foot_pos   A 2 x obj.num_fsrc_cnstr matrix.
       % @param F     A 1 x obj.nT cell, F{i}{j} is the force weights for
-      % obj.fsrc_cnstr{i}{j}
+      % obj.fsrc_cnstr(obj.F2fsrc_map{i}(j))
       % @param H0    A 3 x 1 vector. The initial angular momentum
       foot_contact_pos = cell(1,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
-        foot_contact_pos{i} = bsxfun(@times,ones(1,obj.fsrc_cnstr{i}.num_contact_pts),...
-          obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i))+obj.rotmat(:,:,i)*obj.fsrc_cnstr{i}.body_contact_pts;
+        foot_contact_pos{i} = bsxfun(@times,ones(1,obj.fsrc_cnstr(i).num_contact_pts),...
+          obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i))+obj.rotmat(:,:,i)*obj.fsrc_cnstr(i).body_contact_pts;
       end
       Hdot = zeros(3,obj.nT);
       for i = 1:obj.nT
         for j = 1:length(obj.F2fsrc_map{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
           force = obj.A_force{fsrc_idx}*F{i}{j};
-          Hdot(:,i) = Hdot(:,i)+sum(cross(foot_contact_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts)),force),2);
+          Hdot(:,i) = Hdot(:,i)+sum(cross(foot_contact_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr(fsrc_idx).num_contact_pts)),force),2);
         end
       end
       dt = diff(obj.t_knot);

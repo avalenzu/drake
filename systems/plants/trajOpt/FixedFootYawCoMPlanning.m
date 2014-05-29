@@ -13,13 +13,13 @@ classdef FixedFootYawCoMPlanning
   
   properties(SetAccess = protected)
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
-    fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
+    fsrc_cnstr % An array of FootStepRegionContactConstraint object
     F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_tspan % A obj.num_fsrc_cnstr x 2 double matrix. fsrc_tspan(i,:) is the time span for the i'th knot points
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
-    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
-    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
+    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
+    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
     lambda % A 3 x 3 Hurwitz matrix
     t_knot % The time knots
     nT % The total number of knot points
@@ -39,7 +39,7 @@ classdef FixedFootYawCoMPlanning
       % @param t             The time knot for planning. 
       % @properties fsrc_cnstr    A cell of FootStepRegionContactConstraint
       % @param yaw      A double vector. yaw(i) is the yaw angle of the body in
-      % fsrc_cnstr{i}
+      % fsrc_cnstr(i)
       % @param com_traj_order    The order of polynomial to interpolate the CoM
       % trajectory. Currently accept 3 or 4
       if(~isnumeric(robot_mass))
@@ -63,8 +63,8 @@ classdef FixedFootYawCoMPlanning
       end
       obj.t_knot = reshape(unique(t),1,[]);
       for i = 1:length(fsrc_cnstr)
-        t_diff = bsxfun(@minus,obj.t_knot,fsrc_cnstr{i}.foot_step_region_cnstr.tspan');
-        obj.t_knot = unique([obj.t_knot(all(abs(t_diff)>1e-5,1)) fsrc_cnstr{i}.foot_step_region_cnstr.tspan]);
+        t_diff = bsxfun(@minus,obj.t_knot,fsrc_cnstr(i).foot_step_region_cnstr.tspan');
+        obj.t_knot = unique([obj.t_knot(all(abs(t_diff)>1e-5,1)) fsrc_cnstr(i).foot_step_region_cnstr.tspan]);
       end
       obj.nT = length(obj.t_knot);
       obj.g = 9.81;
@@ -117,19 +117,19 @@ classdef FixedFootYawCoMPlanning
       obj.rotmat = zeros(3,3,obj.num_fsrc_cnstr);
       num_force_weight = 0;
       for i = 1:obj.num_fsrc_cnstr
-        if(~isa(obj.fsrc_cnstr{i},'FootStepRegionContactConstraint'))
+        if(~isa(obj.fsrc_cnstr(i),'FootStepRegionContactConstraint'))
           error('Drake:FixedFootYawCoMPlanningPosition:The input should be a FootStepRegionContactConstraint');
         end
         if(~isnumeric(obj.yaw(i)))
           error('Drake:FixedFootYawCoMPlanningPosition:The input yaw angle should be a double');
         end
-        obj.A_force{i} = obj.fsrc_cnstr{i}.force(yaw(i));
-        [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = obj.fsrc_cnstr{i}.foot_step_region_cnstr.bodyTransform(obj.yaw(i));
+        obj.A_force{i} = obj.fsrc_cnstr(i).force(yaw(i));
+        [obj.rotmat(:,:,i),obj.A_xy(:,:,i),obj.b_xy(:,:,i)] = obj.fsrc_cnstr(i).foot_step_region_cnstr.bodyTransform(obj.yaw(i));
         for j = 1:obj.nT
-          if(obj.fsrc_cnstr{i}.foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
+          if(obj.fsrc_cnstr(i).foot_step_region_cnstr.isTimeValid(obj.t_knot(j)))
             obj.fsrc_knot_active_idx{i} = [obj.fsrc_knot_active_idx{i} j];
             obj.F2fsrc_map{j} = [obj.F2fsrc_map{j} i];
-            num_force_weight = num_force_weight+obj.fsrc_cnstr{i}.num_force_weight;
+            num_force_weight = num_force_weight+obj.fsrc_cnstr(i).num_force_weight;
             is_fsrc_active = true;
           end
         end
@@ -146,7 +146,7 @@ classdef FixedFootYawCoMPlanning
       obj.com_frame = CoordinateFrame('com',3,[],{'com_x';'com_y';'com_z'});
       obj.fsrc_frame = cell(obj.num_fsrc_cnstr,1);
       for i = 1:obj.num_fsrc_cnstr
-        obj.fsrc_frame{i} = CoordinateFrame('fsrc',3+obj.fsrc_cnstr{i}.num_contact_pts*3,[]);
+        obj.fsrc_frame{i} = CoordinateFrame('fsrc',3+obj.fsrc_cnstr(i).num_contact_pts*3,[]);
       end
       obj.zmp_frame = CoordinateFrame('zmp',2,[],{'zmp_x','zmp_y'});
       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
@@ -219,13 +219,20 @@ classdef FixedFootYawCoMPlanning
 %       end
 %       bilinear_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-r');
 %       plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'or');
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e6);
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',200);
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
-%       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
+      
       display('nlp step');
       tic;
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e3);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',50);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
       [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
+      if(INFO == 31)
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e7);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',1e4);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-6);
+        [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
+      end
       toc;
       checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
       nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
@@ -298,11 +305,11 @@ classdef FixedFootYawCoMPlanning
     end
     
     function obj = addCoMFootPolygon(obj,fsrc_idx,vertices)
-      % add a CoMFootStepPolygon on the CoM and the body in obj.fsrc_cnstr{fsrc_idx}
+      % add a CoMFootStepPolygon on the CoM and the body in obj.fsrc_cnstr(fsrc_idx)
       % @param fsrc_idx   An integer. The index of the FootStepRegionContactConstraint
       % @param vertices   A 3 x n matrix. vertices(:,i) is the coordinate of the i'th
       % vertex in the body frame
-      com_foot_polygon = CoMFootStepPolygon(obj.fsrc_cnstr{fsrc_idx}.foot_step_region_cnstr,vertices);
+      com_foot_polygon = CoMFootStepPolygon(obj.fsrc_cnstr(fsrc_idx).foot_step_region_cnstr,vertices);
       [A,b] = com_foot_polygon.halfspace(obj.yaw(fsrc_idx));
       for i = 1:length(obj.fsrc_knot_active_idx{fsrc_idx})
         t_idx = obj.fsrc_knot_active_idx{fsrc_idx}(i);
@@ -321,7 +328,8 @@ classdef FixedFootYawCoMPlanning
       % FootStepRegionContactConstraint. The polygon is defined as A_polygon*[x;y] <=
       % b_polygon
       % @param fsrc_idx An integer vector. The kinematic constraint is on the
-      % bodies in obj.fsrc_cnstr{fsrc_idx(1)} obj.fsrc_cnstr{fsrc_idx(2)} and obj.fsrc_cnstr{fsrc_idx(N)}
+      % bodies in obj.fsrc_cnstr(fsrc_idx(1)) obj.fsrc_cnstr(fsrc_idx(2)) and
+      % obj.fsrc_cnstr(fsrc_idx(N))
       % @param A_polygon    A n x (2*length(fsrc_idx)) matrix.
       % @param b_polygon    A n x 1 vector
       if(~isnumeric(fsrc_idx))
@@ -369,7 +377,7 @@ classdef FixedFootYawCoMPlanning
       foot_contact_pts_pos = cell(1,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
         foot_contact_pts_pos{i} = bsxfun(@times,obj.A_xy(:,:,i)*foot_pos(:,i)+obj.b_xy(:,:,i),...
-          ones(1,obj.fsrc_cnstr{i}.num_contact_pts))+obj.rotmat(:,:,i)*obj.fsrc_cnstr{i}.body_contact_pts;
+          ones(1,obj.fsrc_cnstr(i).num_contact_pts))+obj.rotmat(:,:,i)*obj.fsrc_cnstr(i).body_contact_pts;
       end
       cop = zeros(2,obj.nT);
       tau_oi = zeros(3,obj.nT);
@@ -380,7 +388,7 @@ classdef FixedFootYawCoMPlanning
           fsrc_idx = obj.F2fsrc_map{i}(j);
           F_ij = obj.A_force{fsrc_idx}*F{i}{j};
           F_i = F_i+sum(F_ij,2);
-          foot_contact_pts_CoM = foot_contact_pts_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts));
+          foot_contact_pts_CoM = foot_contact_pts_pos{fsrc_idx}-bsxfun(@times,com(:,i),ones(1,obj.fsrc_cnstr(fsrc_idx).num_contact_pts));
           tau_i = tau_i+sum(cross(foot_contact_pts_CoM,F_ij),2);
           tau_oi(:,i) = tau_oi(:,i)+sum(cross(foot_contact_pts_pos{fsrc_idx},F_ij),2);
           cop(1,i) = cop(1,i)+sum(F_ij(3,:).*foot_contact_pts_pos{fsrc_idx}(1,:)-F_ij(1,:).*foot_contact_pts_pos{fsrc_idx}(3,:));
@@ -462,7 +470,7 @@ classdef FixedFootYawCoMPlanning
       force = cell(obj.num_fsrc_cnstr,1);
       force_stack = cell(obj.num_fsrc_cnstr,1);
       for i = 1:obj.num_fsrc_cnstr
-        force{i} = zeros(3,obj.fsrc_cnstr{i}.num_contact_pts,length(obj.fsrc_knot_active_idx{i}));
+        force{i} = zeros(3,obj.fsrc_cnstr(i).num_contact_pts,length(obj.fsrc_knot_active_idx{i}));
       end
       for i = 1:obj.nT
         for j = 1:length(obj.F2fsrc_map{i})
@@ -471,7 +479,7 @@ classdef FixedFootYawCoMPlanning
         end
       end
       for i = 1:obj.num_fsrc_cnstr
-        force_stack{i} = zeros(3*obj.fsrc_cnstr{i}.num_contact_pts,obj.nT);
+        force_stack{i} = zeros(3*obj.fsrc_cnstr(i).num_contact_pts,obj.nT);
         force_stack{i}(:,obj.fsrc_knot_active_idx{i}) = reshape(force{i},[],length(obj.fsrc_knot_active_idx{i}));
         force_traj{i} = PPTrajectory(foh(obj.t_knot(obj.fsrc_knot_active_idx{i}),force{i}));
         force_traj_stack{i} = PPTrajectory(foh(obj.t_knot,force_stack{i}));

@@ -13,16 +13,16 @@ classdef AngularMomentumCost < NonlinearConstraint
     lambda % A 3 x 3 Hurwitz matrix
     
     num_fsrc_cnstr  % A scalar. The total number of FootStepRegionContactConstraint
-    fsrc_cnstr % A cell array. All the FootStepRegionContactConstraint object
+    fsrc_cnstr % An array of FootStepRegionContactConstraint object
     fsrc_body_pos_idx % A 2 x length(fsrc_cnstr) matrix. x(obj.fsrc_body_pos_idx(:,i)) is the body position for the i'th FootStepRegionContactConstraint in the decision variables.
-    F2fsrc_map % A cell array. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    F2fsrc_map % A cell array. obj.fsrc_cnstr(F2fsrc_map{i}(j)) is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
-    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
+    yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
   end
   
   properties(Access = protected)
-    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
-    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
+    A_force % A cell array.  A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+    A_xy,b_xy,rotmat  % A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
     num_force_weight % A scalar. The total number of force weights.
   end
   
@@ -34,11 +34,12 @@ classdef AngularMomentumCost < NonlinearConstraint
       % @param g   The gravitational acceleration
       % @param lambda   A 3 x 3 Hurwitz matrix
       % @param num_force_weight   The total number of force weights
-      % @param fsrc_cnstr  A cell array. All the FootStepRegionContactConstraint object
+      % @param fsrc_cnstr  An array of the FootStepRegionContactConstraint object
       % @param fsrc_knot_active_idx   A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
-      % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr{i}
-      % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr{i}.bodyTransform(obj.yaw(i)); 
-      % @param A_force    A_force{i} = obj.fsrc_cnstr{i}.force, which is a 3 x obj.fsrc_cnstr[i}.num_edges matrix
+      % @param yaw     A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for
+      % obj.fsrc_cnstr(i)
+      % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
+      % @param A_force    A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
       obj = obj@NonlinearConstraint(-inf,inf,num_force_weight+3+3*length(t_knot)+2*length(fsrc_cnstr));
       obj.robot_mass = robot_mass;
       obj.robot_dim = robot_dim;
@@ -68,8 +69,8 @@ classdef AngularMomentumCost < NonlinearConstraint
         obj.F_idx{i} = cell(1,length(obj.F2fsrc_map{i}));
         for j = 1:length(obj.F2fsrc_map{i})          
           fsrc_idx = obj.F2fsrc_map{i}(j);
-          obj.F_idx{i}{j} =  var_count+reshape((1:obj.fsrc_cnstr{fsrc_idx}.num_force_weight),obj.fsrc_cnstr{fsrc_idx}.num_edges,obj.fsrc_cnstr{fsrc_idx}.num_contact_pts);
-          var_count = var_count+obj.fsrc_cnstr{fsrc_idx}.num_force_weight;
+          obj.F_idx{i}{j} =  var_count+reshape((1:obj.fsrc_cnstr(fsrc_idx).num_force_weight),obj.fsrc_cnstr(fsrc_idx).num_edges,obj.fsrc_cnstr(fsrc_idx).num_contact_pts);
+          var_count = var_count+obj.fsrc_cnstr(fsrc_idx).num_force_weight;
         end
       end
     end
@@ -88,15 +89,15 @@ classdef AngularMomentumCost < NonlinearConstraint
         F{i} = cell(1,length(obj.F_idx{i}));
         for j = 1:length(obj.F_idx{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
-          num_contact_pts_ij = obj.fsrc_cnstr{fsrc_idx}.num_contact_pts;
-          num_edges_ij = obj.fsrc_cnstr{fsrc_idx}.num_edges;
+          num_contact_pts_ij = obj.fsrc_cnstr(fsrc_idx).num_contact_pts;
+          num_edges_ij = obj.fsrc_cnstr(fsrc_idx).num_edges;
           F{i}{j} = reshape(x(obj.F_idx{i}{j}),num_edges_ij,num_contact_pts_ij);
           force_ij = obj.A_force{fsrc_idx}*F{i}{j};
           dforce_ij_row = reshape(bsxfun(@plus,reshape(bsxfun(@times,(1:3)',ones(1,num_edges_ij)),[],1),3*(0:num_contact_pts_ij-1)),[],1);
-          dforce_ij_col = reshape(bsxfun(@times,1:obj.fsrc_cnstr{fsrc_idx}.num_force_weight,ones(3,1)),[],1);
+          dforce_ij_col = reshape(bsxfun(@times,1:obj.fsrc_cnstr(fsrc_idx).num_force_weight,ones(3,1)),[],1);
           dforce_ij_val = reshape(bsxfun(@times,reshape(obj.A_force{fsrc_idx},[],1),ones(1,num_contact_pts_ij)),[],1);
-          dforce_ij = sparse(dforce_ij_row,dforce_ij_col,dforce_ij_val,3*num_contact_pts_ij,obj.fsrc_cnstr{fsrc_idx}.num_force_weight);
-          contact_pos = obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr{fsrc_idx}.body_contact_pts+bsxfun(@times,ones(1,num_contact_pts_ij),obj.A_xy(:,:,fsrc_idx)*foot_pos(:,fsrc_idx)+obj.b_xy(:,:,fsrc_idx));
+          dforce_ij = sparse(dforce_ij_row,dforce_ij_col,dforce_ij_val,3*num_contact_pts_ij,obj.fsrc_cnstr(fsrc_idx).num_force_weight);
+          contact_pos = obj.rotmat(:,:,fsrc_idx)*obj.fsrc_cnstr(fsrc_idx).body_contact_pts+bsxfun(@times,ones(1,num_contact_pts_ij),obj.A_xy(:,:,fsrc_idx)*foot_pos(:,fsrc_idx)+obj.b_xy(:,:,fsrc_idx));
           dcontact_pos = obj.A_xy(:,:,fsrc_idx);
           contact_pos_CoM = contact_pos-bsxfun(@times,com(:,i),ones(1,num_contact_pts_ij));
           Hdot(:,i) = Hdot(:,i)+sum(cross(contact_pos_CoM,force_ij),2);
