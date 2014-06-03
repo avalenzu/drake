@@ -55,14 +55,10 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
       %idx_neg = 1:numel(dist);
       cost = zeros(size(dist));
       dcost_ddist = zeros(numel(dist));
-      cost(idx_neg) = dist(idx_neg).^2;
-      dcost_ddist(sub2ind(size(dcost_ddist),idx_neg,idx_neg)) = 2*dist(idx_neg);
-      %cost(idx_neg) = dist(idx_neg).^4;
-      %dcost_ddist(sub2ind(size(dcost_ddist),idx_neg,idx_neg)) = 4*dist(idx_neg).^3;
-      %cost(idx_neg) = dist(idx_neg).^8;
-      %dcost_ddist(sub2ind(size(dcost_ddist),idx_neg,idx_neg)) = 8*dist(idx_neg).^7;
-      %cost(idx_neg) = exp(-dist(idx_neg));
-      %dcost_ddist(sub2ind(size(dcost_ddist),idx_neg,idx_neg)) = -exp(-dist(idx_neg));
+      exp_recip_dist = exp(dist(idx_neg).^(-1));
+      cost(idx_neg) = -dist(idx_neg).*exp_recip_dist;
+      dcost_ddist(sub2ind(size(dcost_ddist),idx_neg,idx_neg)) = ...
+        exp_recip_dist.*(dist(idx_neg).^(-1) - 1);
     end
 
     function num = getNumConstraint(obj,t)
