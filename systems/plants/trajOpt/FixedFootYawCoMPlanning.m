@@ -4,8 +4,8 @@ classdef FixedFootYawCoMPlanning
   % contact forces.
   properties
     seed_step  % A FixedFootYawCoMPlanningSeed object
-    f_step  % A FixedFootYawCoMPlanningForce object
-    p_step  % A FixedFootYawCoMPlanningPosition object
+%     f_step  % A FixedFootYawCoMPlanningForce object
+%     p_step  % A FixedFootYawCoMPlanningPosition object
     nlp_step % A FixedFootYawCoMPlanningNLP object
     com_traj_order % An integer. The order of the polynomial to interpolate CoM. Acceptable orders are cubic or quartic
     visualizer % A FixedFootYawCoMPlanningVisualizer object
@@ -14,7 +14,7 @@ classdef FixedFootYawCoMPlanning
   properties(SetAccess = protected)
     num_fsrc_cnstr % An integer. The total number of FootStepRegionContactConstraint
     fsrc_cnstr % An array of FootStepRegionContactConstraint object
-    F2fsrc_map % A cell arry. obj..fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
+    F2fsrc_map % A cell arry. obj.fsrc_cnstr{F2fsrc_map{i}(j)} is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_tspan % A obj.num_fsrc_cnstr x 2 double matrix. fsrc_tspan(i,:) is the time span for the i'th knot points
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
@@ -26,6 +26,7 @@ classdef FixedFootYawCoMPlanning
     robot_mass % The mass of the robot
     g % gravitational acceleration
     robot_dim % A estimation of the dimension of robot in meters
+    robot_inertia % An estimation of the inertia of the robot
     
     com_frame;
     fsrc_frame;
@@ -34,9 +35,10 @@ classdef FixedFootYawCoMPlanning
   end
   
   methods
-    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,t,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,com_traj_order)
+    function obj = FixedFootYawCoMPlanning(robot_mass,robot_dim,robot_inertia,t,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,com_traj_order)
       % @param robot_mass    The mass of the robot
       % @param robot_dim     The estimated robot dimension in meters
+      % @param robot_inertia  The estimated robot inertia
       % @param t             The time knot for planning. 
       % @properties fsrc_cnstr    A cell of FootStepRegionContactConstraint
       % @param yaw      A double vector. yaw(i) is the yaw angle of the body in
@@ -59,6 +61,11 @@ classdef FixedFootYawCoMPlanning
         error('Drake:FixedFootYawCoMPlanning:robot dimension should be positive');
       end
       obj.robot_dim = robot_dim;
+      sizecheck(robot_inertia,[3,3]);
+      if(any(eig(robot_inertia)<=0))
+        error('Drake:FixedFootYawCoMPlanning:robot inertia should be positive definite');
+      end
+      obj.robot_inertia = robot_inertia;
       if(~isnumeric(t))
         error('Drake:FixedFootYawCoMPlanning:t should be numeric');
       end
@@ -143,27 +150,34 @@ classdef FixedFootYawCoMPlanning
       else
         error('Unsupported order of polynoimal to interpolate com trajectory');
       end
-      
+      % compute a reference z-axis angular momentum profile
+      body_yaw = zeros(1,obj.nT);
+      for i = 1:obj.nT
+        body_yaw(i) = mean(obj.yaw(obj.F2fsrc_map{i}));
+      end
+      body_yaw_rate = diff(body_yaw)./diff(obj.t_knot);
+      body_yaw_rate = [body_yaw_rate(1) body_yaw_rate];
+      H_des = obj.robot_inertia(3,3)*[zeros(2,obj.nT);body_yaw_rate];
       obj.com_frame = CoordinateFrame('com',3,[],{'com_x';'com_y';'com_z'});
       obj.fsrc_frame = cell(obj.num_fsrc_cnstr,1);
       for i = 1:obj.num_fsrc_cnstr
         obj.fsrc_frame{i} = CoordinateFrame('fsrc',3+obj.fsrc_cnstr(i).num_contact_pts*3,[]);
       end
       obj.zmp_frame = CoordinateFrame('zmp',2,[],{'zmp_x','zmp_y'});
-      obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
-      obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,...
-        obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+%       obj.p_step = FixedFootYawCoMPlanningPosition(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,Q_comddot,obj.fsrc_cnstr,...
+%         obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
+%       obj.f_step = FixedFootYawCoMPlanningForce(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,...
+%         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
       obj.seed_step = FixedFootYawCoMPlanningSeed(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,...
         obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
       obj.nlp_step = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,obj.t_knot,obj.g,lambda,c_margin,Q_comddot,obj.fsrc_cnstr,...
-        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order);
+        obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,obj.com_traj_order,H_des);
       obj.fsrc_tspan = zeros(obj.num_fsrc_cnstr,2);
       for i = 1:obj.num_fsrc_cnstr
         obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
       end
       obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame);
-      obj.visualize_flag = false;
+      obj.visualize_flag = true;
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F,foot_position_cnstr,foot_quat_cnstr] = solve(obj,robot,H0)
@@ -284,7 +298,7 @@ classdef FixedFootYawCoMPlanning
       sizecheck(com_ub,[3,num_idx]);
       bnds = BoundingBoxConstraint(com_lb(:),com_ub(:));
       obj.seed_step = obj.seed_step.addBoundingBoxConstraint(bnds,reshape(obj.seed_step.com_idx(:,com_idx),[],1));
-      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.com_idx(:,com_idx),[],1));
+%       obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.com_idx(:,com_idx),[],1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(bnds,reshape(obj.nlp_step.com_idx(:,com_idx),[],1));
     end
     
@@ -294,18 +308,18 @@ classdef FixedFootYawCoMPlanning
       sizecheck(H0_ub,[3,1]);
       scaling_factor = obj.robot_dim*obj.robot_mass*obj.g;
       bnds = BoundingBoxConstraint(H0_lb/scaling_factor,H0_ub/scaling_factor);
-      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,obj.p_step.H_idx(:,1));
-      obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,obj.f_step.H_idx(:,1));
+%       obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,obj.p_step.H_idx(:,1));
+%       obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,obj.f_step.H_idx(:,1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(bnds,obj.nlp_step.H0_idx);
     end
     
-    function obj = addHBounds(obj,t_idx,H_lb,H_ub)
-      % add the bounds on the angular momentum for the bilinear alternation
-      bnds = BoundingBoxConstraint(H_lb,H_ub);
-      obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.H_idx(:,t_idx),[],1));
-      obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,reshape(obj.f_step.H_idx(:,t_idx),[],1));
-    end
-    
+%     function obj = addHBounds(obj,t_idx,H_lb,H_ub)
+%       add the bounds on the angular momentum for the bilinear alternation
+%       bnds = BoundingBoxConstraint(H_lb,H_ub);
+%       obj.p_step = obj.p_step.addBoundingBoxConstraint(bnds,reshape(obj.p_step.H_idx(:,t_idx),[],1));
+%       obj.f_step = obj.f_step.addBoundingBoxConstraint(bnds,reshape(obj.f_step.H_idx(:,t_idx),[],1));
+%     end
+%     
     function obj = addCoMdotBounds(obj,comdot_idx,comdot_lb,comdot_ub)
       % set the bounds on the com velocity
       % @param comdot_idx  A 1 x n vector. comdot(:,comdot_idx) will be bounded
@@ -315,7 +329,7 @@ classdef FixedFootYawCoMPlanning
       sizecheck(comdot_lb,[3,num_idx]);
       sizecheck(comdot_ub,[3,num_idx]);
       obj.seed_step = obj.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.seed_step.comdot_idx(:,comdot_idx),[],1));
-      obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.p_step.comdot_idx(:,comdot_idx),[],1));
+%       obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.p_step.comdot_idx(:,comdot_idx),[],1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(comdot_lb,comdot_ub),reshape(obj.nlp_step.comdot_idx(:,comdot_idx),[],1));
     end
     
@@ -328,7 +342,7 @@ classdef FixedFootYawCoMPlanning
       sizecheck(comddot_lb,[3,num_idx]);
       sizecheck(comddot_ub,[3,num_idx]);
       obj.seed_step = obj.seed_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.seed_step.comddot_idx(:,comddot_idx),[],1));
-      obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.p_step.comddot_idx(:,comddot_idx),[],1));
+%       obj.p_step = obj.p_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.p_step.comddot_idx(:,comddot_idx),[],1));
       obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(BoundingBoxConstraint(comddot_lb,comddot_ub),reshape(obj.nlp_step.comddot_idx(:,comddot_idx),[],1));
     end
     
@@ -344,8 +358,8 @@ classdef FixedFootYawCoMPlanning
         con_name = repmat({sprintf('polygon constraint between fsrc%d and com at t[%d]',fsrc_idx,t_idx)},length(b),1);
         obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
           [obj.seed_step.com_idx(:,t_idx);obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
-        obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
-          [obj.p_step.com_idx(:,t_idx);obj.p_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
+%         obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
+%           [obj.p_step.com_idx(:,t_idx);obj.p_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
         obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(length(b),1),b,A),...
           [obj.nlp_step.com_idx(:,t_idx);obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx)],con_name);
       end
@@ -376,7 +390,7 @@ classdef FixedFootYawCoMPlanning
       A_kin_new = sparse(iA,jA,A_polygon(:),num_cnstr,2*length(fsrc_idx));
       A_kin_name = repmat({sprintf('polygon region on fsrc %d',fsrc_idx)},num_cnstr,1);
       obj.seed_step = obj.seed_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
-      obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.p_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
+%       obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.p_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
       obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
     end
     
@@ -389,11 +403,11 @@ classdef FixedFootYawCoMPlanning
       end
       if(isa(constraint,'LinearConstraint'))
         obj.seed_step = obj.seed_step.addLinearConstraint(constraint,obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx));
-        obj.p_step = obj.p_step.addLinearConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
+%         obj.p_step = obj.p_step.addLinearConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
         obj.nlp_step = obj.nlp_step.addLinearConstraint(constraint,obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx));
       elseif(isa(constraint,'BoundingBoxConstraint'))
         obj.seed_step = obj.seed_step.addBoundingBoxConstraint(constraint,obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx));
-        obj.p_step = obj.p_step.addBoundingBoxConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
+%         obj.p_step = obj.p_step.addBoundingBoxConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
         obj.nlp_step = obj.nlp_step.addBoundingBoxConstraint(constraint,obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx));
       else
         error('Drake:FixedFootYawCoMPlanning: unsupported constraint');
@@ -412,7 +426,7 @@ classdef FixedFootYawCoMPlanning
       for i = 1:obj.nT
         F_i = zeros(3,1);
         tau_i = zeros(3,1);
-        for j = 1:length(obj.f_step.F_idx{i})
+        for j = 1:length(obj.F2fsrc_map{i})
           fsrc_idx = obj.F2fsrc_map{i}(j);
           F_ij = obj.A_force{fsrc_idx}*F{i}{j};
           F_i = F_i+sum(F_ij,2);

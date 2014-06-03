@@ -9,7 +9,7 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
   end
   
   methods
-    function obj = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order)
+    function obj = FixedFootYawCoMPlanningNLP(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order,H_des)
       % @param robot_mass  The mass of the robot
       % @param robot_dim    An estimation of the dimension of the robot in meters.
       % @param t   The time knot for planning. 
@@ -25,11 +25,12 @@ classdef FixedFootYawCoMPlanningNLP < FixedFootYawCoMPlanningSeed
       % obj.fsrc_cnstr(i)
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+      % @param H_des    A 3 x obj.nT matrix. The desired angular momentum
       obj = obj@FixedFootYawCoMPlanningSeed(robot_mass,robot_dim,t,g,lambda,c_margin,Q_comddot,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,com_traj_order);
       obj.H0_idx = obj.num_vars+(1:3)';
       H0_name = {'H0_x';'H0_y';'H0_z'};
       obj = obj.addDecisionVariable(3,H0_name);
-      obj.angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,obj.t_knot,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat);
+      obj.angular_cost = AngularMomentumCost(obj.robot_mass,obj.robot_dim,obj.t_knot,obj.g,obj.lambda,obj.num_force_weight,obj.fsrc_cnstr,obj.yaw,obj.F2fsrc_map,obj.fsrc_knot_active_idx,obj.A_force,obj.A_xy,obj.b_xy,obj.rotmat,H_des);
       obj.F_idx_all = zeros(obj.num_force_weight,1);
       F_count = 0;
       for i = 1:obj.nT

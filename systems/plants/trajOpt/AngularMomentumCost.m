@@ -18,6 +18,7 @@ classdef AngularMomentumCost < NonlinearConstraint
     F2fsrc_map % A cell array. obj.fsrc_cnstr(F2fsrc_map{i}(j)) is the FootStepContactRegionConstraint corresponds to the force x(obj.F_idx{i}{j})
     fsrc_knot_active_idx % A cell array. fsrc_knot_active_idx{i} is the indices of the knots that are active for i'th FootStepRegionContactConstraint
     yaw % A 1 x num_fsrc_cnstr double vector. yaw(i) is the yaw angle for obj.fsrc_cnstr(i)
+    H_des  % A 3 x obj.nT matrix. The desired angular momentum
   end
   
   properties(Access = protected)
@@ -27,7 +28,7 @@ classdef AngularMomentumCost < NonlinearConstraint
   end
   
   methods
-    function obj = AngularMomentumCost(robot_mass,robot_dim,t_knot,g,lambda,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat)
+    function obj = AngularMomentumCost(robot_mass,robot_dim,t_knot,g,lambda,num_force_weight,fsrc_cnstr,yaw,F2fsrc_map,fsrc_knot_active_idx,A_force,A_xy,b_xy,rotmat,H_des)
       % @param robot_mass  The mass of the robot
       % @param robot_dim    An estimation of the dimension of the robot in meters.
       % @param t_knot   The time knots
@@ -40,6 +41,7 @@ classdef AngularMomentumCost < NonlinearConstraint
       % obj.fsrc_cnstr(i)
       % @param A_xy,b_xy,rotmat   A_xy is 3 x 2 x obj.num_fsrc_cnstr matrix. b_xy is 3 x 1 x obj.num_fsrc_cnstr matrix. rotmat is 3 x 3 x obj.num_fsrc_cnstr matrix. [rotmat(:,:,i),A_xy(:,:,i),b_xy(:,:,i)] = obj.fsrc_cnstr(i).bodyTransform(obj.yaw(i)); 
       % @param A_force    A_force{i} = obj.fsrc_cnstr(i).force, which is a 3 x obj.fsrc_cnstr(i).num_edges matrix
+      % @param H_des   A 3 x obj.nT matrix. The desired angular momentum
       obj = obj@NonlinearConstraint(-inf,inf,num_force_weight+3+3*length(t_knot)+2*length(fsrc_cnstr));
       obj.robot_mass = robot_mass;
       obj.robot_dim = robot_dim;
@@ -56,6 +58,7 @@ classdef AngularMomentumCost < NonlinearConstraint
       obj.A_xy = A_xy;
       obj.b_xy = b_xy;
       obj.rotmat = rotmat;
+      obj.H_des = H_des;
       
       var_count = 0;
       obj.com_idx = var_count+reshape(1:3*obj.nT,3,obj.nT);
@@ -119,7 +122,8 @@ classdef AngularMomentumCost < NonlinearConstraint
       dt = diff(obj.t_knot);
       Hbar = cumsum([H0bar Hdot_bar(:,2:end).*bsxfun(@times,ones(3,1),dt)],2);
       dHbar = reshape(cumsum(reshape(([dH0bar;dHdot_bar(4:end,:).*bsxfun(@times,ones(1,obj.xdim),reshape(bsxfun(@times,ones(3,1),dt),[],1))])',3,obj.xdim,obj.nT),3),obj.xdim,3*obj.nT)';      
-      epsilon = obj.lambda*Hbar-Hdot_bar;
+      Hbar_des = obj.H_des/scaling_factor;
+      epsilon = obj.lambda*(Hbar-Hbar_des)-Hdot_bar;
       depsilon = sparse(reshape(bsxfun(@plus,[1;2;3;1;2;3;1;2;3],3*(0:obj.nT-1)),[],1),...
         reshape(bsxfun(@times,(1:3*obj.nT),ones(3,1)),[],1),reshape(bsxfun(@times,obj.lambda(:),ones(1,obj.nT)),[],1),...
         3*obj.nT,3*obj.nT)*dHbar-dHdot_bar;
