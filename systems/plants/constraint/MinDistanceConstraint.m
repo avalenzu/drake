@@ -1,5 +1,5 @@
 classdef MinDistanceConstraint < SingleTimeKinematicConstraint
-  % Constraining the closest distance between all bodies to be greater
+  % Constrains the closest distance any pair of bodies to be greater
   % than  min_distance
   % @param min_distance    -- a scalar, the lower bound of the distance
   % @param tspan   -- a 1x2 vector, the time span of the constraint being
@@ -30,7 +30,6 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
 
   methods
     function obj = MinDistanceConstraint(robot,min_distance,tspan)
-    %function obj = IntegratedClosestDistanceConstraint(robot,t,min_distance,num_intermediate_points,q0,tspan)
       if(nargin == 2)
         tspan = [-inf inf];
       end
@@ -46,13 +45,11 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
     function [scaled_dist,dscaled_dist_ddist] = scaleDistance(obj,dist)
       recip_min_dist = 1/obj.min_distance;
       scaled_dist = recip_min_dist*dist - 1;
-      %scaled_dist = recip_min_dist*dist - 2;
       dscaled_dist_ddist = recip_min_dist*eye(size(dist,1));
     end
 
     function [cost, dcost_ddist] = penalty(obj,dist)
       idx_neg = find(dist < 0);
-      %idx_neg = 1:numel(dist);
       cost = zeros(size(dist));
       dcost_ddist = zeros(numel(dist));
       exp_recip_dist = exp(dist(idx_neg).^(-1));
