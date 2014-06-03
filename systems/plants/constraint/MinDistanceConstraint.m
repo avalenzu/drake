@@ -40,6 +40,7 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
       obj.type = RigidBodyConstraint.MinDistanceConstraintType;
       obj.min_distance = min_distance;
       obj.mex_ptr = ptr;
+      obj.num_constraint = 1;
     end
 
     function [scaled_dist,dscaled_dist_ddist] = scaleDistance(obj,dist)
