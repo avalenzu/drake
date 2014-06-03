@@ -30,6 +30,7 @@ classdef FixedFootYawCoMPlanning
     com_frame;
     fsrc_frame;
     zmp_frame;
+    visualize_flag;
   end
   
   methods
@@ -162,11 +163,29 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
       end
       obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame);
+      obj.visualize_flag = false;
     end
     
-    function [com,comdot,comddot,foot_pos,Hdot,H,F] = solve(obj,H0)
-      % @param sdot0  A 1 x obj.nT vector. sdot(i) is the time derivative of the scaling
-      % function s at i'th knot. This is used as a initial guess
+    function [com,comdot,comddot,foot_pos,Hdot,H,F,foot_position_cnstr,foot_quat_cnstr] = solve(obj,robot,H0)
+      % @param robot  A RigidBodyManipulator object
+      % @param H0   A 3 x 1 vector. The guess of the initial angular momentum
+      % @retval com  A 3 x obj.nT matrix. com(:,i) is the com position at i'th knot point
+      % @retval comdot  A 3 x obj.nT matrix. comdot(:,i) is the com velocity at i'th knot
+      % point
+      % @retval comddot  A 3 x obj.nT matrix. comdot(:,i) is the com acceleration at i'th knot
+      % point
+      % @retval foot_pos A 2 x obj.num_fsrc_cnstr matrix. foot_pos(:,i) is the foot xy
+      % position of the i'th FootStepRegionContactConstraint
+      % @retval Hdot  A 3 x obj.nT matrix. Hdot(:,i) is the rate of the angular momentum
+      % at the i'th knot point
+      % @retval H    A 3 x obj.nT matrix. H(:,i) is the angular momentum
+      % at the i'th knot point
+      % @retval foot_position_cnstr  An array of WorldPositionConstraint.
+      % foot_position_cnstr(i) encodes the position constraint for i'th
+      % FootStepRegionContactConstraint
+      % @retval foot_quat_cnstr  An array of WorldQuatConstraint.
+      % foot_quat_cnstr(i) encodes the orientation constraint for i'th
+      % FootStepRegionContactConstraint
       tic
       display('initial QP');
       [com,comdot,comddot,foot_pos,F,margin] = obj.seed_step.solve();
@@ -177,12 +196,14 @@ classdef FixedFootYawCoMPlanning
       sigma_sol = zeros(1,2*max_iter);
       iter = 0;
       INFO = 1;
-      obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
-      figure;
-      qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
-      hold on;
-      
-      plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
+      if(obj.visualize_flag)
+        obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
+        figure;
+        qp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-');
+        hold on;
+
+        plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'o');
+      end
 %       while(iter<max_iter && INFO == 1)
 %         iter = iter+1;
 %         display(sprintf('\nP step, iter %d',iter));
@@ -225,26 +246,33 @@ classdef FixedFootYawCoMPlanning
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e3);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',50);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
+%       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
       [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       if(INFO == 31)
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e7);
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',1e4);
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-6);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',40);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
         [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       end
       toc;
       checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
-      nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
-      plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'og');
-      legend([qp_com_handle nlp_com_handle],'initial guess without optimizing angular momentum','NLP')
-      title('COM trajectory')
-      axis equal
-      figure;
-      plot(obj.t_knot,H'/(obj.robot_mass*obj.robot_dim));
-      title('angular momentum nomalized by mass times robot length');
-      legend('x','y','z');
-      obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
+      foot_position_cnstr = WorldPositionConstraint.empty(obj.num_fsrc_cnstr,0);
+      foot_quat_cnstr = WorldQuatConstraint.empty(obj.num_fsrc_cnstr,0);
+      for i = 1:obj.num_fsrc_cnstr
+        [foot_position_cnstr(i),foot_quat_cnstr(i)] = obj.fsrc_cnstr(i).foot_step_region_cnstr.generateFixedPosConstraint(robot,foot_pos(:,i),obj.yaw(i));
+      end
+      if(obj.visualize_flag)
+        nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
+        plot3(foot_pos(1,:),foot_pos(2,:),zeros(1,size(foot_pos,2)),'og');
+        legend([qp_com_handle nlp_com_handle],'initial guess without optimizing angular momentum','NLP')
+        title('COM trajectory')
+        axis equal
+        figure;
+        plot(obj.t_knot,H'/(obj.robot_mass*obj.robot_dim));
+        title('angular momentum nomalized by mass times robot length');
+        legend('x','y','z');
+        obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
+      end
     end
     
     function obj = addCoMBounds(obj,com_idx,com_lb,com_ub)
