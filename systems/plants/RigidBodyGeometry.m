@@ -4,6 +4,7 @@ classdef RigidBodyGeometry
     pts = getPoints(obj);             % returned in body coordinates
     pts = getBoundingBoxPoints(obj);  % returned in body coordinates
     lcmt_viewer_geometry_data = serializeToLCM(obj);
+    toLCMGL(obj,lcmgl);
   end
   
   methods

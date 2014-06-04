@@ -75,6 +75,33 @@ classdef RigidBodyBox < RigidBodyGeometry
       td=td-1; tabprintf(fp,'}\n'); % end Transform {
     end
 
+    function toLCMGL(obj,lcmgl,alpha)
+      % toLCMGL(obj,lcmgl) sends the box to LCMGL. This method assumes
+      %   that the current LCMGL frame is the body-frame of the body to
+      %   which this geometry is attached.
+      %
+      % toLCMGL(obj,lcmgl,alpha) is the same as before, but uses the
+      %   specified transparency value, alpha.
+      if nargin < 3, alpha = 1; end;
+
+      % Set color
+      lcmgl.glColor4f(obj.c(1),obj.c(2),obj.c(3),alpha);
+
+      % Move to geometry frame;
+      xyz = obj.T(1:3,4);
+      aa = rotmat2axis(obj.T(1:3,1:3));
+      lcmgl.glTranslated(xyz(1),xyz(2),xyz(3));
+      lcmgl.glRotated(aa(4)*180/pi,aa(1),aa(2),aa(3));
+
+      % Draw the box
+      lcmgl.box([0;0;0],obj.size);
+
+      % Leave things the way we found them
+      lcmgl.glColor3f(0.5,0.5,0.5);
+      lcmgl.glRotated(-aa(4)*180/pi,aa(1),aa(2),aa(3));
+      lcmgl.glTranslated(-xyz(1),-xyz(2),-xyz(3));
+    end
+
   end
   
   properties
