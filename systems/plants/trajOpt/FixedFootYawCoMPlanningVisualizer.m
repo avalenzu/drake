@@ -18,7 +18,7 @@ classdef FixedFootYawCoMPlanningVisualizer < MultiVisualizer
       force_normalizer = robot_mass*g;
       fsrc_visualizer = cell(length(fsrc_cnstr),1);
       for i = 1:length(fsrc_cnstr)
-        fsrc_visualizer{i} = FootStepRegionContactVisualizer(fsrc_cnstr(i),force_normalizer,fsrc_tspan(i,:),fsrc_frame{i});
+        fsrc_visualizer{i} = FootStepRegionContactVisualizer(fsrc_cnstr(i),force_normalizer,fsrc_tspan(i,:),fsrc_frame{i},sprintf('step%d_body%d',i,fsrc_cnstr(i).foot_step_region_cnstr.body));
       end
       zmp_visualizer = ZMPVisualizer(zmp_frame);
       obj = obj@MultiVisualizer([{com_visualizer};fsrc_visualizer;{zmp_visualizer}]);

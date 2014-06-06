@@ -155,8 +155,10 @@ classdef FixedFootYawCoMPlanning
       for i = 1:obj.nT
         body_yaw(i) = mean(obj.yaw(obj.F2fsrc_map{i}));
       end
-      body_yaw_rate = diff(body_yaw)./diff(obj.t_knot);
-      body_yaw_rate = [body_yaw_rate(1) body_yaw_rate];
+%       body_yaw_rate = diff(body_yaw)./diff(obj.t_knot);
+%       body_yaw_rate = [body_yaw_rate(1) body_yaw_rate];
+      body_yaw_spline = PPTrajectory(spline(obj.t_knot,[0 body_yaw 0]));
+      body_yaw_rate = body_yaw_spline.deriv(obj.t_knot);
       H_des = obj.robot_inertia(3,3)*[zeros(2,obj.nT);body_yaw_rate];
       obj.com_frame = CoordinateFrame('com',3,[],{'com_x';'com_y';'com_z'});
       obj.fsrc_frame = cell(obj.num_fsrc_cnstr,1);
@@ -177,7 +179,7 @@ classdef FixedFootYawCoMPlanning
         obj.fsrc_tspan(i,:) = [obj.t_knot(obj.fsrc_knot_active_idx{i}(1)) obj.t_knot(obj.fsrc_knot_active_idx{i}(end))];
       end
       obj.visualizer = FixedFootYawCoMPlanningVisualizer(robot_mass,obj.g,obj.fsrc_cnstr,obj.fsrc_tspan,obj.com_frame,obj.fsrc_frame,obj.zmp_frame);
-      obj.visualize_flag = true;
+      obj.visualize_flag = false;
     end
     
     function [com,comdot,comddot,foot_pos,Hdot,H,F,foot_position_cnstr,foot_quat_cnstr] = solve(obj,robot,H0)
@@ -206,10 +208,10 @@ classdef FixedFootYawCoMPlanning
       toc
       [H,Hdot,sigma,epsilon] = obj.seed_step.angularMomentum(com,foot_pos,F,H0);
       checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
-      max_iter = 10;
-      sigma_sol = zeros(1,2*max_iter);
-      iter = 0;
-      INFO = 1;
+%       max_iter = 10;
+%       sigma_sol = zeros(1,2*max_iter);
+%       iter = 0;
+%       INFO = 1;
       if(obj.visualize_flag)
         obj.visualize(com,comdot,comddot,foot_pos,F,Hdot);
         figure;
@@ -257,6 +259,7 @@ classdef FixedFootYawCoMPlanning
       
       display('nlp step');
       tic;
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','superbasicslimit',2000);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e3);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',50);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
@@ -264,7 +267,7 @@ classdef FixedFootYawCoMPlanning
       [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       if(INFO == 31)
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e7);
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',40);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',100);
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
         [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       end
@@ -366,9 +369,10 @@ classdef FixedFootYawCoMPlanning
     end
     
     function obj = addFootPolygon(obj,fsrc_idx,A_polygon,b_polygon)
-      % add a polygonal constraint on the relative position between two
-      % FootStepRegionContactConstraint. The polygon is defined as A_polygon*[x;y] <=
-      % b_polygon
+      % add a polygonal constraint on the relative position between several
+      % FootStepRegionContactConstraint. The polygon is defined as A_polygon*[x1;y1;x2;y2;...;xN;yN] <=
+      % b_polygon, where [xi;yi] is the xy position of the i'th
+      % FootStepRegionContactConstraint
       % @param fsrc_idx An integer vector. The kinematic constraint is on the
       % bodies in obj.fsrc_cnstr(fsrc_idx(1)) obj.fsrc_cnstr(fsrc_idx(2)) and
       % obj.fsrc_cnstr(fsrc_idx(N))
@@ -393,6 +397,25 @@ classdef FixedFootYawCoMPlanning
 %       obj.p_step = obj.p_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.p_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
       obj.nlp_step = obj.nlp_step.addLinearConstraint(LinearConstraint(-inf(num_cnstr,1),b_polygon,A_kin_new),obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx),A_kin_name);
     end
+    
+    function obj = addFootPolygon3D(obj,fsrc_idx,A_polygon,b_polygon)
+      % add a 3D polygon constraint on the relative position between several
+      % FootStepRegionContactConstraints. The polygon is defined as
+      % A_polygon*[x1;y1;z1;x2;y2;z2;...;xN;yN;zN]<=b_polygon
+      % @param fsrc_idx An integer vector. The kinematic constraint is on the
+      % bodies in obj.fsrc_cnstr(fsrc_idx(1)) obj.fsrc_cnstr(fsrc_idx(2)) and
+      % obj.fsrc_cnstr(fsrc_idx(N))
+      % @param A_polygon    A n x (3*length(fsrc_idx)) matrix.
+      % @param b_polygon    A n x 1 vector 
+      num_fsrc = numel(fsrc_idx);
+      A_xy_diag_row = reshape(repmat(reshape(1:3*num_fsrc,3,num_fsrc),2,1),[],1);
+      A_xy_diag_col = reshape(bsxfun(@times,ones(3,1),1:2*num_fsrc),[],1);
+      A_xy_diag_val = reshape(obj.A_xy(:,:,fsrc_idx),[],1);
+      A_polygon2D = A_polygon*sparse(A_xy_diag_row,A_xy_diag_col,A_xy_diag_val,3*num_fsrc,2*num_fsrc);
+      b_polygon2D = b_polygon-A_polygon*reshape(obj.b_xy(:,:,fsrc_idx),[],1);
+      obj = obj.addFootPolygon(fsrc_idx,A_polygon2D,b_polygon2D);
+    end
+    
     
     function obj = addFootPositionConstraint(obj,fsrc_idx,constraint)
       % Add a BoundingBoxConstraint or a LinearConstraint on the foot position

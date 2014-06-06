@@ -67,8 +67,8 @@ for i = 1:num_steps
   planning = planning.addCoMFootPolygon(i,com_lfoot_vertices);
 end
 planning.nlp_step = planning.nlp_step.setSolverOptions('snopt','superbasicslimit',3000);
-r2l_xy_polygon = RelativeFootPositionPolygon([0.6 0.6 0.2 0.2;-0.1 -0.4 -0.1 -0.4]);
-[A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw);
+r2l_xy_polygon = RelativeFootPositionPolygon(struct('V',[[0.6 0.6 0.2 0.2;-0.1 -0.4 -0.1 -0.4;0.1*ones(1,4)] [0.6 0.6 0.2 0.2;-0.1 -0.4 -0.1 -0.4;-0.1*ones(1,4)]]));
+[A_polygon,b_polygon] = r2l_xy_polygon.halfspace(lfoot_yaw,rfoot_yaw);
 for i = 1:num_steps-1
 planning = planning.addFootPolygon([i num_steps+i+1],A_polygon,b_polygon);
 end

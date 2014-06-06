@@ -14,11 +14,13 @@ classdef FootStepRegionContactVisualizer < Visualizer
   end
   
   methods
-    function obj = FootStepRegionContactVisualizer(fsrc_cnstr,force_normalizer,tspan,frame)
+    function obj = FootStepRegionContactVisualizer(fsrc_cnstr,force_normalizer,tspan,frame,lcmgl_name)
       % @param fsrc_cnstr   A FootStepRegionContactConstraint object
       % @param force_normalizer  A positive scaler. 
       % @param tspan    A 1 x 2 double vector. The time span of this constraint being
       % active
+      % @param lcmgl_name   A string, the name of the lcmgl object. This should be unique
+      % for each visualizer
       if(~isa(fsrc_cnstr,'FootStepRegionContactConstraint'))
         error('Drake:FootStepRegionContactVisualizer: The input should be a FootStepRegionContactConstraint');
       end
@@ -31,6 +33,9 @@ classdef FootStepRegionContactVisualizer < Visualizer
       if(~isa(frame,'CoordinateFrame'))
         error('Drake:FootStepRegionContactVisualizer:the input should be a CoordinateFrame');
       end
+      if(~ischar(lcmgl_name))
+        error('Drake:FootStepRegionContactVisualizer: the input should be a string');
+      end
       obj = obj@Visualizer(frame);
      
       obj.fsrc_cnstr = fsrc_cnstr;
@@ -38,7 +43,7 @@ classdef FootStepRegionContactVisualizer < Visualizer
       obj.tspan = tspan;
       obj.yaw_cache = inf;
       
-      obj.lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,sprintf('foot%d',obj.fsrc_cnstr.foot_step_region_cnstr.body));
+      obj.lcmgl = drake.util.BotLCMGLClient(lcm.lcm.LCM.getSingleton,lcmgl_name);
       
     end
     
@@ -67,7 +72,6 @@ classdef FootStepRegionContactVisualizer < Visualizer
           obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
             force_normalized(1,conv_hull_idx(i))+foot_contact_pos(1,conv_hull_idx(i)),force_normalized(2,conv_hull_idx(i))+foot_contact_pos(2,conv_hull_idx(i)),force_normalized(3,conv_hull_idx(i))+foot_contact_pos(3,conv_hull_idx(i)));
         end
-        
       end
       obj.lcmgl.switchBuffers;
     end
