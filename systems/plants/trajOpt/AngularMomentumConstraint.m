@@ -7,7 +7,7 @@ classdef AngularMomentumConstraint < NonlinearConstraint
     nT
   end
   methods
-    function obj = AngularMomentumConstraint(r,t,H_nom,ub)
+    function obj = AngularMomentumConstraint(r,t,H_nom_traj,ub)
       % obj = AngularMomentumConstraint(rbm,lb,ub)
       % @param r      -- RigidBodyManipulator object
       % @param t      -- Vector of knot-point times
@@ -16,9 +16,6 @@ classdef AngularMomentumConstraint < NonlinearConstraint
       %                  @default [0;0;0]
       % @param ub     -- The upper bound of the constraint (optional)
       %                  @default 0
-      if nargin < 3
-        H_nom = [0;0;0];
-      end
       if nargin < 4
         ub = 0;
       end
@@ -28,7 +25,11 @@ classdef AngularMomentumConstraint < NonlinearConstraint
       nT = numel(t);
       obj = obj@NonlinearConstraint(lb,ub,(nq+nv)*nT);
       obj.robot = r;
-      obj.H_nom = H_nom;
+      if nargin < 3
+        obj.H_nom = [0;0;0];
+      else
+        obj.H_nom = H_nom_traj.eval(t);
+      end
       obj.nq = nq;
       obj.nv = nv;
       obj.nT = nT;
@@ -60,7 +61,7 @@ classdef AngularMomentumConstraint < NonlinearConstraint
       end
       for i = 1:obj.nT 
         q_idx = (i-1)*obj.nq + (1:obj.nq);
-        v_idx = (i-1)*obj.nq + (1:obj.nq);
+        v_idx = obj.nT*obj.nq + (i-1)*obj.nv + (1:obj.nv);
         q = x(q_idx);
         v = x(v_idx);
         if compute_first_derivative
@@ -69,12 +70,16 @@ classdef AngularMomentumConstraint < NonlinearConstraint
           A = obj.robot.getCMMdA(q);
         end
         A = A(1:3,:);
-        Herr = (A*v-obj.H_nom);
+        Herr = (A*v-obj.H_nom(:,i));
         c = c + Herr'*Herr;
         if compute_first_derivative
           dc(q_idx) = dc(q_idx) + 2*Herr'*eye(3,6)*matGradMult(dAdq,v);
           dc(v_idx) = dc(v_idx) + 2*Herr'*A;
         end
+      end
+      c = c/obj.nT;
+      if compute_first_derivative
+        dc = dc/obj.nT;
       end
     end
   end
