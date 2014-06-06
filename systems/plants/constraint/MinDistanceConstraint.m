@@ -22,9 +22,9 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
      c = sum(pairwise_costs);
      dcost_dscaled_dist = sum(dpairwise_cost_dscaled_dist,1);
      dc = dcost_dscaled_dist*dscaled_dist_ddist*ddist_dq;
-     if c > 1e-12
-       fprintf('%6.3e\n',c);
-     end
+     %if c > 1e-6
+       %fprintf('%6.3e\n',c);
+     %end
     end
   end
 
