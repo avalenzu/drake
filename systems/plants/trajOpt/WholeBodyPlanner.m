@@ -2,6 +2,7 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
   properties
     nv
     q_idx
+    v_idx
     qsc_weight_idx
     Q
     Qv
@@ -23,7 +24,19 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.robot.getNumDOF();
       obj.q_idx = reshape((1:obj.nq*obj.nT),obj.nq,obj.nT);
+      v_name = cell(obj.nv,obj.nT-1);
+      for j = 1:(obj.nT-1)
+        for i = 1:obj.nq
+          v_name{i,j} = sprintf('v%d[%d]',i,j);
+        end
+      end
+      v_name = reshape(v_name,obj.nv*(obj.nT-1),1);
+      obj.v_idx = reshape(obj.num_vars+(1:obj.nv*(obj.nT-1)), ...
+                            obj.nv,obj.nT-1);
+                  
+      obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),v_name);
       obj = obj.setFixInitialState(fix_initial_state,x0);
+      obj = obj.setLinearDynamics();
       obj.q_nom_traj = q_nom_traj;
       obj.v_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
 
@@ -110,7 +123,7 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
           obj = obj.addLinearConstraint(cnstr{1},reshape(obj.q_idx(:,t_start:end),[],1));
         end
       end
-      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
+      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-6);
       obj = obj.setSolverOptions('snopt','superbasicslimit',2000);
       obj = obj.setSolverOptions('snopt','majorfeasibilitytolerance',1e-6);
       obj = obj.setSolverOptions('snopt','iterationslimit',10000);
@@ -119,9 +132,9 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
 
     function obj = setLinearDynamics(obj)
       obj.dynamics_constraint = ...
-        LinearDynamics(obj.t_knot,obj.nq, 1:obj.nq*obj.nT, ...
-                       obj.nq*obj.nT+(1:obj.nq*obj.nT));
-      xind = [obj.q_idx(:);obj.qd_idx(:)];
+        LinearDynamics(obj.t_knot,obj.nq, obj.nv, 1:obj.nq*obj.nT, ...
+                       obj.nq*obj.nT+(1:obj.nv*(obj.nT-1)));
+      xind = [obj.q_idx(:);obj.v_idx(:)];
       obj = obj.addLinearConstraint(obj.dynamics_constraint,xind);
     end
 
@@ -139,20 +152,18 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       %v_nom_traj = PPTrajectory(foh(obj.t_knot,0*obj.q_nom));
       obj.position_error = WeightedSquaredError(obj.t_knot, obj.Q, ...
                                                 obj.q_nom_traj);
-      obj.velocity_cost = WeightedSquaredFirstDiffError(obj.t_knot, ...
-                                                        obj.Qv, ...
-                                                        obj.v_nom_traj);
-      xind = obj.q_idx(:);
+      obj.velocity_cost = WeightedSquaredError(obj.t_knot(1:end-1),obj.Qv, ...
+        obj.v_nom_traj);
       if isempty(obj.cost)
-        obj = obj.addCost(ConstraintSum(obj.position_error,obj.velocity_cost),[],xind,xind);
+        obj = obj.addCost(obj.position_error,[],obj.q_idx(:),obj.q_idx(:));
       else
-        obj = obj.replaceCost(ConstraintSum(obj.position_error,obj.velocity_cost),1,[],xind,xind);
+        obj = obj.replaceCost(obj.position_error,1,[],obj.q_idx(:),obj.q_idx(:));
       end
-      %if numel(obj.cost) < 2
-        %obj = obj.addCost(obj.velocity_cost,[],xind,xind);
-      %else
-        %obj = obj.replaceCost(obj.velocity_cost,2,[],xind,xind);
-      %end
+      if numel(obj.cost) < 2
+        obj = obj.addCost(obj.velocity_cost,[],obj.v_idx(:),obj.v_idx(:));
+      else
+        obj = obj.replaceCost(obj.velocity_cost,2,[],obj.v_idx(:),obj.v_idx(:));
+      end
     end
 
     function obj = setFixInitialState(obj,flag,x0)

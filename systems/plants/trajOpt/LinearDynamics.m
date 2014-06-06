@@ -1,6 +1,6 @@
 classdef LinearDynamics < LinearConstraint
   methods
-    function obj = LinearDynamics(t,nq,q_idx,qd_idx)
+    function obj = LinearDynamics(t,nq,nv,q_idx,qd_idx)
       % obj = LinearPostureError(q_idx,qd_idx) constructs a LinearPostureError
       % object
       %
@@ -17,13 +17,13 @@ classdef LinearDynamics < LinearConstraint
       A = zeros(nq*(nT-1),2*nq*nT);
 
       q_idx         = reshape(q_idx,nq,nT);
-      qd_idx        = reshape(qd_idx,nq,nT);
+      qd_idx        = reshape(qd_idx,nv,nT-1);
       q_minus_idx   = reshape(q_idx(:,1:(nT-1)),1,nq*(nT-1));
       q_plus_idx    = reshape(q_idx(:,2:nT),1,nq*(nT-1));
       q_minus_idx   = sub2ind(size(A),1:nq*(nT-1),q_minus_idx);
       q_plus_idx    = sub2ind(size(A),1:nq*(nT-1),q_plus_idx);
       qd_minus_idx  = reshape(qd_idx(:,1:(nT-1)),1,nq*(nT-1));
-      qd_plus_idx   = reshape(qd_idx(:,2:nT),1,nq*(nT-1));
+      qd_plus_idx   = reshape(qd_idx(:,1:(nT-1)),1,nq*(nT-1));
       qd_minus_idx  = sub2ind(size(A),1:nq*(nT-1),qd_minus_idx);
       qd_plus_idx   = sub2ind(size(A),1:nq*(nT-1),qd_plus_idx);
 
