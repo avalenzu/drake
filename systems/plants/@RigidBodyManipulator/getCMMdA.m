@@ -26,7 +26,7 @@ else
   compute_first_derivative = (nargout > 1);
 
   if compute_first_derivative
-    dA = zeros(6,nq,nq);
+    dA = zeros(6,nq,nq) + 0*q(1);
     dXup_dq = cell(m.NB,1);
     dXworld_dq = cell(m.NB,1);
     [com, Jcom] = getCOM(model,kinsol);
@@ -42,8 +42,8 @@ else
   
   for i = 1:m.NB
     Ic{i} = m.I{i};
-    dIc{i} = zeros(6,6);
-    dIc_dq{i} = zeros(36,nq);
+    dIc{i} = zeros(6,6) + 0*q(1);
+    dIc_dq{i} = zeros(36,nq) + 0*q(1);
   end
   
   for i = m.NB:-1:1
@@ -52,7 +52,7 @@ else
     Xup{i} = Xi * m.Xtree{i} + 0*q(n);
   
     if compute_first_derivative
-      dXi_dq = zeros(36,nq);
+      dXi_dq = zeros(36,nq) + 0*q(1);
       dXi_dq(:,n) = reshape(djcalc(m.pitch(i), q(n)),36,1);
       %dXup_dq{i} = zeros(36,nq);
       %dXup_dq{i}(:,n) = reshape(dXidq * m.Xtree{i},36,1);
