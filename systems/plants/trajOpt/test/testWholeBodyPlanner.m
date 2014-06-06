@@ -48,7 +48,7 @@ v.draw(0,[q_end;0*q_end]);
 
 q_nom_traj = PPTrajectory(foh(tspan, [q0,q_end]));
 
-prog_reach = WholeBodyPlanner(r,t,q_nom_traj,false,x0,grasp,initial_pos_constraint);
+prog_reach = WholeBodyPlanner(r,t,q_nom_traj,[],false,x0,grasp,initial_pos_constraint);
 prog_reach = prog_reach.setTrackingError(diag([1,1]),diag([1,1]));
 prog_reach = setCheckGrad(prog_reach,true);
 [x_traj_reach,F_reach,info_reach,infeasible_constraint_reach] = solve(prog_reach,q_nom_traj);

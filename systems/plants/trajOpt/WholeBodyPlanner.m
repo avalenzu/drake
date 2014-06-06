@@ -1,6 +1,8 @@
 classdef WholeBodyPlanner < NonlinearProgramWKinsol
   properties
     nv
+    nT_v
+    nT_vd
     q_idx
     v_idx
     vd_idx
@@ -8,73 +10,72 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
     Q
     Qv
     Qa
+    Q_H
     t_knot
     fix_initial_state
     dynamics_constraint;
     position_error;
     velocity_cost;
     acceleration_cost;
+    angular_momentum_cost;
     q_nom_traj;
     v_nom_traj;
     vd_nom_traj;
+    H_nom_traj;
   end
   methods
-    function obj = WholeBodyPlanner(robot,t,q_nom_traj, ...
+    function obj = WholeBodyPlanner(robot,t,q_nom_traj, H_nom_traj,...
                                     fix_initial_state,x0,varargin)
       t = unique(t(:)');
       obj = obj@NonlinearProgramWKinsol(robot,numel(t));
       obj.t_knot = t;
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.robot.getNumDOF();
+      obj.nT_v = obj.nT-1;
+      obj.nT_vd = obj.nT-2;
       obj.q_idx = reshape((1:obj.nq*obj.nT),obj.nq,obj.nT);
 
-      v_name = cell(obj.nv,obj.nT-1);
-      for j = 1:(obj.nT-1)
-        for i = 1:obj.nq
+      v_name = cell(obj.nv,obj.nT_v);
+      for j = 1:obj.nT_v
+        for i = 1:obj.nv
           v_name{i,j} = sprintf('v%d[%d]',i,j);
         end
       end
-      v_name = reshape(v_name,obj.nv*(obj.nT-1),1);
-      obj.v_idx = reshape(obj.num_vars+(1:obj.nv*(obj.nT-1)), ...
-                            obj.nv,obj.nT-1);
-      obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),v_name);
+      v_name = reshape(v_name,obj.nv*obj.nT_v,1);
+      obj.v_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_v), ...
+                            obj.nv,obj.nT_v);
+      obj = obj.addDecisionVariable(obj.nv*obj.nT_v,v_name);
 
-      vd_name = cell(obj.nv,obj.nT-2);
-      for j = 1:(obj.nT-2)
-        for i = 1:obj.nq
+      vd_name = cell(obj.nv,obj.nT_vd);
+      for j = 1:obj.nT_vd
+        for i = 1:obj.nv
           vd_name{i,j} = sprintf('v%d[%d]',i,j);
         end
       end
-      vd_name = reshape(vd_name,obj.nv*(obj.nT-2),1);
-      obj.vd_idx = reshape(obj.num_vars+(1:obj.nv*(obj.nT-2)), ...
-                            obj.nv,obj.nT-2);
-      obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),vd_name);
+      vd_name = reshape(vd_name,obj.nv*obj.nT_vd,1);
+      obj.vd_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_vd), ...
+                            obj.nv,obj.nT_vd);
+      obj = obj.addDecisionVariable(obj.nv*obj.nT_vd,vd_name);
 
       obj = obj.setFixInitialState(fix_initial_state,x0);
       obj = obj.setLinearDynamics();
       obj.q_nom_traj = q_nom_traj;
       obj.v_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
       obj.vd_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
+      if ~isempty(H_nom_traj)
+        obj.H_nom_traj = H_nom_traj;
+      else
+        obj.H_nom_traj = ConstantTrajectory(zeros(3,1));
+      end
 
-      %qd_name = cell(obj.nq,obj.nT-2);
-      %for j = 1:(obj.nT-2)
-        %for i = 1:obj.nq
-          %qd_name{i,j} = sprintf('qd%d[%d]',i,j+1);
-        %end
-      %end
-      %qd_name = reshape(qd_name,obj.nq*(obj.nT-2),1);
-      %obj.qd_idx = [obj.qd0_idx, ...
-                    %reshape(obj.num_vars+(1:obj.nq*(obj.nT-2)), ...
-                            %obj.nq,obj.nT-2), ...
-                    %obj.qdf_idx];
-      %obj = obj.addDecisionVariable(obj.nq*(obj.nT-2),qd_name);
-      %obj = obj.setLinearDynamics();
       obj.Q = eye(obj.nq);
       obj.Qv = eye(obj.nq);
-      obj.Qa = 0*eye(obj.nq);
-      obj = obj.setTrackingError(obj.Q,obj.Qv);
+      obj.Qa = eye(obj.nq);
+      obj.Q_H = eye(3);
+      obj = obj.setTrackingError();
+      obj = obj.setAngularMomentumError();
       obj.qsc_weight_idx = cell(1,obj.nT);
-      num_rbcnstr = nargin-5;
+      num_rbcnstr = nargin-6;
       [q_lb,q_ub] = obj.robot.getJointLimits();
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint( ...
         reshape(bsxfun(@times,q_lb,ones(1,obj.nT)),[],1),...
@@ -149,13 +150,13 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
     function obj = setLinearDynamics(obj)
       obj.dynamics_constraint{1} = ...
         LinearDynamics(obj.t_knot,obj.nq, obj.nv, 1:obj.nq*obj.nT, ...
-                       obj.nq*obj.nT+(1:obj.nv*(obj.nT-1)));
+                       obj.nq*obj.nT+(1:obj.nv*obj.nT_v));
       xind = [obj.q_idx(:);obj.v_idx(:)];
       obj = obj.addLinearConstraint(obj.dynamics_constraint{1},xind);
       t_mid = (obj.t_knot(1:end-1)+obj.t_knot(2:end))/2;
       obj.dynamics_constraint{2} = ...
-        LinearDynamics(t_mid,obj.nv, obj.nv, 1:obj.nv*(obj.nT-1), ...
-                       obj.nv*(obj.nT-1)+(1:obj.nv*(obj.nT-2)));
+        LinearDynamics(t_mid,obj.nv, obj.nv, 1:obj.nv*obj.nT_v, ...
+                       obj.nv*obj.nT_v+(1:obj.nv*obj.nT_vd));
       xind = [obj.v_idx(:);obj.vd_idx(:)];
       obj = obj.addLinearConstraint(obj.dynamics_constraint{2},xind);
     end
@@ -174,10 +175,10 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       %v_nom_traj = PPTrajectory(foh(obj.t_knot,0*obj.q_nom));
       obj.position_error = WeightedSquaredError(obj.t_knot, obj.Q, ...
                                                 obj.q_nom_traj);
-      obj.velocity_cost = WeightedSquaredError(obj.t_knot(1:end-1),obj.Qv, ...
+      obj.velocity_cost = WeightedSquaredError(obj.t_knot(1:obj.nT_v),obj.Qv, ...
         obj.v_nom_traj);
 
-      obj.acceleration_cost = WeightedSquaredError(obj.t_knot(1:end-2),obj.Qa, ...
+      obj.acceleration_cost = WeightedSquaredError(obj.t_knot(1:obj.nT_vd),obj.Qa, ...
         obj.v_nom_traj);
       if isempty(obj.cost)
         obj = obj.addCost(obj.position_error,[],obj.q_idx(:),obj.q_idx(:));
@@ -193,6 +194,19 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
         obj = obj.addCost(obj.acceleration_cost,[],obj.vd_idx(:),obj.vd_idx(:));
       else
         obj = obj.replaceCost(obj.acceleration_cost,3,[],obj.vd_idx(:),obj.vd_idx(:));
+      end
+    end
+
+    function obj = setAngularMomentumError(obj,Q_H)
+      if nargin > 1 && ~isempty(Q_H)
+        obj.Q_H = Q_H;
+      end
+      obj.angular_momentum_cost = ...
+        AngularMomentumConstraint(obj.robot,obj.t_knot,obj.H_nom_traj);
+      if numel(obj.cost) < 4
+        obj = obj.addCost(obj.angular_momentum_cost,[],[obj.q_idx(:);obj.v_idx(:)]);
+      else
+        obj = obj.replaceCost(obj.angular_momentum_cost,4,[],[obj.q_idx(:);obj.v_idx(:)]);
       end
     end
 
