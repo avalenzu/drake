@@ -37,7 +37,6 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       v_name = reshape(v_name,obj.nv*(obj.nT-1),1);
       obj.v_idx = reshape(obj.num_vars+(1:obj.nv*(obj.nT-1)), ...
                             obj.nv,obj.nT-1);
-                  
       obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),v_name);
 
       vd_name = cell(obj.nv,obj.nT-2);
@@ -49,9 +48,8 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       vd_name = reshape(vd_name,obj.nv*(obj.nT-2),1);
       obj.vd_idx = reshape(obj.num_vars+(1:obj.nv*(obj.nT-2)), ...
                             obj.nv,obj.nT-2);
-                  
-      obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),v_name);
       obj = obj.addDecisionVariable(obj.nv*(obj.nT-1),vd_name);
+
       obj = obj.setFixInitialState(fix_initial_state,x0);
       obj = obj.setLinearDynamics();
       obj.q_nom_traj = q_nom_traj;
