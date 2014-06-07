@@ -212,13 +212,14 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       db = -drotmat*obj.body_pt;
     end
     
-    function [position_cnstr,quat_cnstr] = generateFixedPosConstraint(obj,robot,xy,yaw)
+    function [foot_xyzrpy,position_cnstr,quat_cnstr] = generateFixedPosConstraint(obj,robot,xy,yaw)
       % generate a WorldPositionConstraint and a WorldQuatConstraint with given xy
       % position and yaw angles
       % @param xy  A 2 x 1 vector. The xy position of the foot
       % @param yaw  A double. The yaw angle of the foot
       [rotmat,A_xy,b_xy] = obj.bodyTransform(yaw);
       position = A_xy*xy+b_xy;
+      foot_xyzrpy = [position;rotmat2rpy(rotmat)];
       position_cnstr = WorldPositionConstraint(robot,obj.body,[0;0;0],position,position,obj.tspan);
       quat_cnstr = WorldQuatConstraint(robot,obj.body,rotmat2quat(rotmat),0,obj.tspan);
     end

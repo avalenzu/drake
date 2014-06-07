@@ -79,7 +79,7 @@ lfoot_pos_end = com1-com0+lfoot_pos_star(1:3);
 rfoot_pos_end = com1-com0+rfoot_pos_star(1:3);
 planning = planning.addFootPositionConstraint(num_steps,BoundingBoxConstraint(lfoot_pos_end(1:2),lfoot_pos_end(1:2)));
 planning = planning.addFootPositionConstraint(2*num_steps,BoundingBoxConstraint(rfoot_pos_end(1:2),rfoot_pos_end(1:2)));
-[com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,H_sol,F_sol,foot_position_cnstr,foot_quat_cnstr] = planning.solve(robot,zeros(3,1));
+[com_sol,comp_sol,compp_sol,foot_pos_sol,Hdot_sol,H_sol,F_sol,com_traj,foot_xyzrpy,foot_position_cnstr,foot_quat_cnstr] = planning.solve(robot,zeros(3,1));
 
 end
 

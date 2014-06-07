@@ -182,7 +182,7 @@ classdef FixedFootYawCoMPlanning
       obj.visualize_flag = false;
     end
     
-    function [com,comdot,comddot,foot_pos,Hdot,H,F,foot_position_cnstr,foot_quat_cnstr] = solve(obj,robot,H0)
+    function [com,comdot,comddot,foot_pos,Hdot,H,F,com_traj,foot_xyzrpy,foot_position_cnstr,foot_quat_cnstr] = solve(obj,robot,H0)
       % @param robot  A RigidBodyManipulator object
       % @param H0   A 3 x 1 vector. The guess of the initial angular momentum
       % @retval com  A 3 x obj.nT matrix. com(:,i) is the com position at i'th knot point
@@ -260,23 +260,25 @@ classdef FixedFootYawCoMPlanning
       display('nlp step');
       tic;
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','superbasicslimit',2000);
-      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e3);
+      obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e2);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',50);
       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
 %       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
       [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       if(INFO == 31)
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e7);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',100);
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',100);
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
         [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       end
       toc;
       checkSolution(obj,com,comdot,comddot,foot_pos,F,Hdot,H,epsilon);
+      com_traj = obj.CoMPPTraj(com,comdot,comddot);
       foot_position_cnstr = WorldPositionConstraint.empty(obj.num_fsrc_cnstr,0);
       foot_quat_cnstr = WorldQuatConstraint.empty(obj.num_fsrc_cnstr,0);
+      foot_xyzrpy = zeros(6,obj.num_fsrc_cnstr);
       for i = 1:obj.num_fsrc_cnstr
-        [foot_position_cnstr(i),foot_quat_cnstr(i)] = obj.fsrc_cnstr(i).foot_step_region_cnstr.generateFixedPosConstraint(robot,foot_pos(:,i),obj.yaw(i));
+        [foot_xyzrpy(:,i),foot_position_cnstr(i),foot_quat_cnstr(i)] = obj.fsrc_cnstr(i).foot_step_region_cnstr.generateFixedPosConstraint(robot,foot_pos(:,i),obj.yaw(i));
       end
       if(obj.visualize_flag)
         nlp_com_handle = plot3(com(1,:),com(2,:),com(3,:),'x-g');
