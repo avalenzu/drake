@@ -23,14 +23,14 @@ classdef LinearDynamics < LinearConstraint
       q_minus_idx   = sub2ind(size(A),1:nq*(nT-1),q_minus_idx);
       q_plus_idx    = sub2ind(size(A),1:nq*(nT-1),q_plus_idx);
       qd_minus_idx  = reshape(qd_idx(:,1:(nT-1)),1,nq*(nT-1));
-      qd_plus_idx   = reshape(qd_idx(:,1:(nT-1)),1,nq*(nT-1));
+      %qd_plus_idx   = reshape(qd_idx(:,1:(nT-1)),1,nq*(nT-1));
       qd_minus_idx  = sub2ind(size(A),1:nq*(nT-1),qd_minus_idx);
-      qd_plus_idx   = sub2ind(size(A),1:nq*(nT-1),qd_plus_idx);
+      %qd_plus_idx   = sub2ind(size(A),1:nq*(nT-1),qd_plus_idx);
 
       A(q_minus_idx) = -1;
       A(q_plus_idx) = 1;
-      A(qd_minus_idx) = 0.5*dt(:);
-      A(qd_plus_idx) = 0.5*dt(:);
+      A(qd_minus_idx) = -dt(:);
+      %A(qd_plus_idx) = 0.5*dt(:);
       obj = obj@LinearConstraint(zeros(nq*(nT-1),1),zeros(nq*(nT-1),1),A);
     end
   end

@@ -142,7 +142,7 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-6);
       obj = obj.setSolverOptions('snopt','superbasicslimit',2000);
       obj = obj.setSolverOptions('snopt','majorfeasibilitytolerance',1e-6);
-      obj = obj.setSolverOptions('snopt','iterationslimit',10000);
+      obj = obj.setSolverOptions('snopt','iterationslimit',1e5);
       obj = obj.setSolverOptions('snopt','majoriterationslimit',200);
     end
 
