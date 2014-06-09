@@ -35,30 +35,30 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       obj.nT_vd = obj.nT-2;
       obj.q_idx = reshape((1:obj.nq*obj.nT),obj.nq,obj.nT);
 
-      v_name = cell(obj.nv,obj.nT_v);
-      for j = 1:obj.nT_v
-        for i = 1:obj.nv
-          v_name{i,j} = sprintf('v%d[%d]',i,j);
-        end
-      end
-      v_name = reshape(v_name,obj.nv*obj.nT_v,1);
-      obj.v_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_v), ...
-                            obj.nv,obj.nT_v);
-      obj = obj.addDecisionVariable(obj.nv*obj.nT_v,v_name);
+      %v_name = cell(obj.nv,obj.nT_v);
+      %for j = 1:obj.nT_v
+        %for i = 1:obj.nv
+          %v_name{i,j} = sprintf('v%d[%d]',i,j);
+        %end
+      %end
+      %v_name = reshape(v_name,obj.nv*obj.nT_v,1);
+      %obj.v_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_v), ...
+                            %obj.nv,obj.nT_v);
+      %obj = obj.addDecisionVariable(obj.nv*obj.nT_v,v_name);
 
-      vd_name = cell(obj.nv,obj.nT_vd);
-      for j = 1:obj.nT_vd
-        for i = 1:obj.nv
-          vd_name{i,j} = sprintf('v%d[%d]',i,j);
-        end
-      end
-      vd_name = reshape(vd_name,obj.nv*obj.nT_vd,1);
-      obj.vd_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_vd), ...
-                            obj.nv,obj.nT_vd);
-      obj = obj.addDecisionVariable(obj.nv*obj.nT_vd,vd_name);
+      %vd_name = cell(obj.nv,obj.nT_vd);
+      %for j = 1:obj.nT_vd
+        %for i = 1:obj.nv
+          %vd_name{i,j} = sprintf('v%d[%d]',i,j);
+        %end
+      %end
+      %vd_name = reshape(vd_name,obj.nv*obj.nT_vd,1);
+      %obj.vd_idx = reshape(obj.num_vars+(1:obj.nv*obj.nT_vd), ...
+                            %obj.nv,obj.nT_vd);
+      %obj = obj.addDecisionVariable(obj.nv*obj.nT_vd,vd_name);
 
       obj = obj.setFixInitialState(fix_initial_state,x0);
-      obj = obj.setLinearDynamics();
+      %obj = obj.setLinearDynamics();
       obj.q_nom_traj = q_nom_traj;
       obj.v_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
       obj.vd_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
@@ -173,41 +173,45 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       end
       %q_nom_traj = PPTrajectory(foh(obj.t_knot,obj.q_nom));
       %v_nom_traj = PPTrajectory(foh(obj.t_knot,0*obj.q_nom));
-      obj.position_error = WeightedSquaredError(obj.t_knot, obj.Q, ...
-                                                obj.q_nom_traj);
-      obj.velocity_cost = WeightedSquaredError(obj.t_knot(1:obj.nT_v),obj.Qv, ...
-        obj.v_nom_traj);
+      q_nom = obj.q_nom_traj.eval(obj.t_knot);
+      obj.position_error = QuadraticSumConstraint(0,0,obj.Q,q_nom);
 
-      obj.acceleration_cost = WeightedSquaredError(obj.t_knot(1:obj.nT_vd),obj.Qa, ...
-        obj.v_nom_traj);
+      e = ones(obj.nq*(obj.nT-1),1);
+      first_diff_mat = spdiags([e,-e],[0,obj.nq],obj.nq*(obj.nT-1),obj.nq*obj.nT);
+      Qv = first_diff_mat'*kron(eye(obj.nT-1),obj.Qv)*first_diff_mat;
+      obj.velocity_cost = QuadraticConstraint(0,0,Qv,zeros(obj.nq*obj.nT,1));
+
+      e = ones(obj.nq*(obj.nT-2),1);
+      second_diff_mat = spdiags([e,-2*e,e],[-obj.nq,0,obj.nq],obj.nq*(obj.nT-2),obj.nq*obj.nT);
+      Qa = second_diff_mat'*kron(eye(obj.nT-2),obj.Qv)*second_diff_mat;
+      obj.acceleration_cost = QuadraticConstraint(0,0,Qa,zeros(obj.nq*obj.nT,1));
+
       if isempty(obj.cost)
         obj = obj.addCost(obj.position_error,[],obj.q_idx(:),obj.q_idx(:));
       else
         obj = obj.replaceCost(obj.position_error,1,[],obj.q_idx(:),obj.q_idx(:));
       end
       if numel(obj.cost) < 2
-        obj = obj.addCost(obj.velocity_cost,[],obj.v_idx(:),obj.v_idx(:));
+        obj = obj.addCost(obj.velocity_cost,[],obj.q_idx(:),obj.q_idx(:));
       else
-        obj = obj.replaceCost(obj.velocity_cost,2,[],obj.v_idx(:),obj.v_idx(:));
+        obj = obj.replaceCost(obj.velocity_cost,2,[],obj.q_idx(:),obj.q_idx(:));
       end
       if numel(obj.cost) < 3
-        obj = obj.addCost(obj.acceleration_cost,[],obj.vd_idx(:),obj.vd_idx(:));
+        obj = obj.addCost(obj.acceleration_cost,[],obj.q_idx(:),obj.q_idx(:));
       else
-        obj = obj.replaceCost(obj.acceleration_cost,3,[],obj.vd_idx(:),obj.vd_idx(:));
+        obj = obj.replaceCost(obj.acceleration_cost,3,[],obj.q_idx(:),obj.q_idx(:));
       end
     end
 
-    function obj = setAngularMomentumError(obj,Q_H)
-      if nargin > 1 && ~isempty(Q_H)
-        obj.Q_H = Q_H;
-      end
+    function obj = setAngularMomentumError(obj)
       obj.angular_momentum_cost = ...
-        AngularMomentumConstraint(obj.robot,obj.t_knot,obj.H_nom_traj);
-      if numel(obj.cost) < 4
-        obj = obj.addCost(obj.angular_momentum_cost,[],[obj.q_idx(:);obj.v_idx(:)]);
-      else
-        obj = obj.replaceCost(obj.angular_momentum_cost,4,[],[obj.q_idx(:);obj.v_idx(:)]);
-      end
+        AngularMomentumConstraint2(obj.robot,obj.t_knot,obj.H_nom_traj);
+      obj = obj.addNonlinearConstraint(obj.angular_momentum_cost,[],obj.q_idx(:),obj.q_idx(:));
+      %if numel(obj.cost) < 4
+        %obj = obj.addCost(obj.angular_momentum_cost,[],obj.q_idx(:));
+      %else
+        %obj = obj.replaceCost(obj.angular_momentum_cost,4,[],obj.q_idx(:));
+      %end
     end
 
     function obj = setFixInitialState(obj,flag,x0)

@@ -23,7 +23,7 @@ classdef AngularMomentumConstraint < NonlinearConstraint
       nq = r.getNumDOF();
       nv = r.getNumDOF();
       nT = numel(t);
-      obj = obj@NonlinearConstraint(lb,ub,(nq+nv)*nT);
+      obj = obj@NonlinearConstraint(lb,ub,nq*nT);
       obj.robot = r;
       if nargin < 3
         obj.H_nom = [0;0;0];
@@ -57,7 +57,7 @@ classdef AngularMomentumConstraint < NonlinearConstraint
       compute_first_derivative = nargout > 1;
       c = 0*x(1);
       if compute_first_derivative
-        dc = zeros(1,(obj.nq+obj.nv)*obj.nT)*x(1);
+        dc = zeros(1,obj.nq*obj.nT)*x(1);
       end
       for i = 1:obj.nT-1
         q_minus_idx = (i-1)*obj.nq + (1:obj.nq);
@@ -65,8 +65,8 @@ classdef AngularMomentumConstraint < NonlinearConstraint
         v_idx = obj.nT*obj.nq + (i-1)*obj.nv + (1:obj.nv);
         q_minus = x(q_minus_idx);
         q_plus = x(q_plus_idx);
-        v = x(v_idx);
         q = (q_minus+q_plus)/2;
+        v = (q_plus-q_minus)/2;
         if compute_first_derivative
           [A,dAdq] = obj.robot.getCMMdA(q);
           dq_dq_minus = 0.5*eye(obj.nq);
@@ -81,7 +81,8 @@ classdef AngularMomentumConstraint < NonlinearConstraint
           dci_dq = 2*Herr'*eye(3,6)*matGradMult(dAdq,v);
           dc(q_minus_idx) = dc(q_minus_idx) + dci_dq*dq_dq_minus;
           dc(q_plus_idx) = dc(q_plus_idx) + dci_dq*dq_dq_plus;
-          dc(v_idx) = dc(v_idx) + 2*Herr'*A;
+          dc(q_minus_idx) = dc(q_minus_idx) - 2*Herr'*A;
+          dc(q_plus_idx) = dc(q_plus_idx) + 2*Herr'*A;
         end
       end
       c = c/obj.nT;
