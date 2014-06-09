@@ -464,7 +464,7 @@ classdef FixedFootYawCoMPlanning
         cop(:,i) = cop(:,i)/F_i(3);
         F_i(3) = F_i(3)-obj.robot_mass*obj.g;
         mcomddot = obj.robot_mass*comddot(:,i);
-        valuecheck(F_i,mcomddot,1e-3);
+        valuecheck(F_i,mcomddot,3e-3);
         valuecheck(tau_i,Hdot(:,i),1e-3);
       end
       zmp = [(-Hdot(2,:)+obj.robot_mass*obj.g*com(1,:)-obj.robot_mass*com(3,:).*comddot(1,:)+obj.robot_mass*com(1,:).*comddot(3,:))./(obj.robot_mass*comddot(3,:)+obj.robot_mass*obj.g);...
