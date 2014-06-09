@@ -266,8 +266,8 @@ classdef FixedFootYawCoMPlanning
 %       obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','print','nlp.out');
       [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       if(INFO == 31)
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e4);
-        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',100);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','iterationslimit',1e5);
+        obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoriterationslimit',200);
         obj.nlp_step = obj.nlp_step.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
         [com,comdot,comddot,foot_pos,F,Hdot,H,epsilon,sigma,INFO] = obj.nlp_step.solve(com,comdot,comddot,foot_pos,F,margin,H(:,1));
       end
