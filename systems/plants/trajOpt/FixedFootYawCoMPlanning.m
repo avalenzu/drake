@@ -553,6 +553,42 @@ classdef FixedFootYawCoMPlanning
       end
     end
     
+    
+    function [force,normal_torque,body_name] = wrenchTrajectory(obj,F)
+      % return the force on each foot and the torque normal to the foot
+      bodies = [];
+      for i = 1:obj.num_fsrc_cnstr
+        bodies = [bodies obj.fsrc_cnstr(i).foot_step_region_cnstr.body];
+      end
+      [unique_bodies,fsrc_idx, unique_bodies_idx] = unique(bodies);
+      force = zeros(3,obj.nT,length(unique_bodies));
+      normal_torque = zeros(1,obj.nT,length(unique_bodies));
+      body_name = cell(1,length(unique_bodies));
+      for i = 1:length(unique_bodies)
+        body_name{i} = obj.fsrc_cnstr(fsrc_idx(i)).foot_step_region_cnstr.body_name;
+      end
+      for i = 1:obj.nT
+        for j = 1:length(obj.F2fsrc_map{i})
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          force_ij = obj.A_force{fsrc_idx}*F{i}{j};
+          force_ij_sum = sum(force_ij,2);
+          force(1:3,i,unique_bodies_idx(fsrc_idx)) = force_ij_sum;
+          num_contact_pts_ij = obj.fsrc_cnstr(fsrc_idx).num_contact_pts;
+          force_ij_body_frame = obj.rotmat(:,:,fsrc_idx)'*force_ij;
+          cop_tmp = sum(cross([obj.fsrc_cnstr(fsrc_idx).body_contact_pts(1:2,:);zeros(1,num_contact_pts_ij)],...
+            [zeros(2,num_contact_pts_ij);force_ij_body_frame(3,:)],1),2);
+          cop = zeros(3,1);
+          force_i_sum_body_frame = sum(force_ij_body_frame,2);
+          cop(1) = -cop_tmp(2)/force_i_sum_body_frame(3);
+          cop(2) = cop(1)/force_i_sum_body_frame(3);
+          contact_pts_to_cop = obj.fsrc_cnstr(fsrc_idx).body_contact_pts-bsxfun(@times,cop,ones(1,num_contact_pts_ij));
+          contact_pts_to_cop(3,:) = 0;
+          torque_ij_body = sum(cross(contact_pts_to_cop,[force_ij_body_frame(1:2,:);zeros(1,num_contact_pts_ij)],1),2);
+          normal_torque(1,i,unique_bodies_idx(fsrc_idx)) = torque_ij_body(3);
+        end
+      end
+    end
+    
     function visualize(obj,com,comdot,comddot,foot_pos,F,Hdot,H)
       com_traj = obj.CoMPPTraj(com,comdot,comddot);
       [~,force_traj_stack] = obj.forceTrajectory(F);
