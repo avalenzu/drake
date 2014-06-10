@@ -553,7 +553,7 @@ classdef FixedFootYawCoMPlanning
       end
     end
     
-    function visualize(obj,com,comdot,comddot,foot_pos,F,Hdot)
+    function visualize(obj,com,comdot,comddot,foot_pos,F,Hdot,H)
       com_traj = obj.CoMPPTraj(com,comdot,comddot);
       [~,force_traj_stack] = obj.forceTrajectory(F);
       visualizer_traj = com_traj;
@@ -570,7 +570,7 @@ classdef FixedFootYawCoMPlanning
       obj.visualizer.viz{end} = obj.visualizer.viz{end}.setZMPSamples(zmp);
       obj.visualizer.playback(visualizer_traj,struct('slider',true));
       figure;
-      plot(com_foot_plan.t_knot,H','LineWidth',3)
+      plot(obj.t_knot,H','LineWidth',3)
       title('Angular momentum','Fontsize',20);
       legend('x','y','z')
       xlabel('time(seconds)','Fontsize',16)
