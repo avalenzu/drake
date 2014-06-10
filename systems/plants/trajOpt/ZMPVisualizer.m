@@ -14,7 +14,8 @@ classdef ZMPVisualizer < Visualizer
     end
     
     function draw(obj,t,y)
-      obj.lcmgl_traj.glColor3f(0,0,1);
+      obj.lcmgl_traj.glColor3f(0.5,0.5,0);
+      obj.lcmgl_traj.glLineWidth(4);
       obj.lcmgl_traj.plot3(obj.zmp_samples(1,:),obj.zmp_samples(2,:),zeros(1,size(obj.zmp_samples,2)));
       obj.lcmgl_traj.switchBuffers();
       obj.lcmgl_pt.glColor3f(1,0,0);

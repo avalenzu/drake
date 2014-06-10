@@ -104,13 +104,14 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         obj.fsrc_body_pos_idx(:,i) = fsrc_pos_idx;
         A_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.A;
         b_iris_i = obj.fsrc_cnstr(i).foot_step_region_cnstr.b;
+        [A_iris_i,b_iris_i] = obj.fsrc_cnstr(i).foot_step_region_cnstr.generateIRISpolygonForOrigin(obj.yaw(i));
         iA_iris_i = num_halfspace_iris+reshape([(1:size(A_iris_i,1))' (1:size(A_iris_i,1))'],[],1);
         jA_iris_i = [(obj.num_vars+1)*ones(size(A_iris_i,1),1);(obj.num_vars+2)*ones(size(A_iris_i,1),1)];
-        Aval_iris_i = reshape(A_iris_i(:,1:2),[],1);
+        Aval_iris_i = reshape(A_iris_i,[],1);
         iA_iris = [iA_iris;iA_iris_i];
         jA_iris = [jA_iris;jA_iris_i];
         Aval_iris = [Aval_iris;Aval_iris_i];
-        obj.b_iris = [obj.b_iris;b_iris_i-obj.yaw(i)*A_iris_i(:,3)];
+        obj.b_iris = [obj.b_iris;b_iris_i];
         num_halfspace_iris = num_halfspace_iris+size(A_iris_i,1);
         foot_pos_names = {sprintf('Foot x position for %d''th FootStepRegionContactConstraint',i);...
           sprintf('Foot y position for %d''th FootStepRegionContactConstraint',i)};

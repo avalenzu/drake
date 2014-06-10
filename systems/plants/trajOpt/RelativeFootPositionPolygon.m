@@ -3,8 +3,10 @@ classdef RelativeFootPositionPolygon < NonlinearConstraint
   % bodyB in the bodyA's coordinate.
   properties(SetAccess = protected)
     twoD_flag % A boolean. True if the polygon is in 2D, false if it is in 3D.
-    A_body % A obj.num_vertices x 2 matrix
-    b_body % A obj.num_vertices x 1 matrix. A_body*[x;y]<= b_body indicates point [x;y] is in the admissible polygon, where [x;y] is in the bodyA frame.
+    A_body % For 2D, A n x 3 matrix. For 3D, A n x 6 matrix
+    b_body % A n x 1 matrix. For 2D, A_body*[x;y;yaw]<= b_body indicates bodyB, with pose [x;y;yaw] in the bodyA frame, satisfies the polygon constraint
+           % For 3D, A_body*[x;y;z;roll;pitch;yaw]<=b_body indicates bodyB, with pose
+           % [x;y;z;roll;pitch;yaw] in bodyA frame, satisfies the polytope constraint
   end
   
   methods

@@ -1,7 +1,7 @@
 classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
   % Based on the constraint on the robot x,y and yaw, transcribe it to full body kinematic
   % constraint.
-  % @param A,b,C,d are the constraints on the x,y and yaw of the foot. A is a m x 3
+  % @param A,b,C,d are the constraints on the x,y and yaw of the foot body_pt. A is a m x 3
   % matrix, b is m x 1 vector. C is a 3 x 3 positive definite matrix, d is a 3 x 1 vector. 
   % A[x;y;yaw] <= b is the half-space constraint on x,y and yaw.
   % ([x;y;yaw]-d)'(C^-T*C^-1)([x;y;yaw]-d) <= 1 is the ellipsoidal inner approximation of
@@ -38,7 +38,7 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
   
   methods
     function obj = FootStepRegionConstraint(robot,A,b,C,d,body,body_pt,z_offset,ground_normal,ground_pt,tspan)
-      % @param A,b,C,d are the constraints on the x,y and yaw of the foot. A is a m x 3
+      % @param A,b,C,d are the constraints on the x,y and yaw of the body_pt of the foot. A is a m x 3
       % matrix, b is m x 1 vector. C is a 3 x 3 positive definite matrix, d is a 3 x 1 vector. 
       % A[x;y;yaw] <= b is the half-space constraint on x,y and yaw.
       % ([x;y;yaw]-d)'(C^-T*C^-1)([x;y;yaw]-d) <= 1 is the ellipsoidal inner approximation of
@@ -184,7 +184,7 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
     end
     
     function [rotmat,A,b,drotmat,dA,db] = bodyTransform(obj,yaw)
-      % Given the x,y position of obj.body_pt and yaw angle of the foot. The world
+      % Given the x,y position of the origin and yaw angle of the foot. The world
       % coordinate of a point P is P_w = A*[x;y]+b+rotmat*P_b, where P_b is the coordinate
       % of P in the body frame.
       % @retval rotmat   A 3 x 3 rotation matrix
@@ -204,17 +204,17 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       end
       rotmat2 = axis2rotmat([0;0;1;yaw]);
       drotmat2 = [-sin(yaw) -cos(yaw) 0;cos(yaw) -sin(yaw) 0;0 0 0];
-      rotmat = rotmat1*rotmat2;
+      rotmat = rotmat2*rotmat1;
       drotmat = rotmat1*drotmat2;
       A = [1 0;0 1;-obj.ground_normal(1:2)'/obj.ground_normal(3)];
       dA = zeros(3,2);
-      b = [0;0;(obj.z_offset+obj.ground_normal'*obj.ground_pt)/obj.ground_normal(3)]-rotmat*obj.body_pt;
-      db = -drotmat*obj.body_pt;
+      b = [0;0;(obj.z_offset-obj.ground_normal'*(rotmat*obj.body_pt-obj.ground_pt))/obj.ground_normal(3)];
+      db = -obj.ground_normal'*drotmat*obj.body_pt;
     end
     
     function [foot_xyzrpy,position_cnstr,quat_cnstr] = generateFixedPosConstraint(obj,robot,xy,yaw)
       % generate a WorldPositionConstraint and a WorldQuatConstraint with given xy
-      % position and yaw angles
+      % position of the origin and yaw angles
       % @param xy  A 2 x 1 vector. The xy position of the foot
       % @param yaw  A double. The yaw angle of the foot
       [rotmat,A_xy,b_xy] = obj.bodyTransform(yaw);
@@ -222,6 +222,14 @@ classdef FootStepRegionConstraint < SingleTimeKinematicConstraint
       foot_xyzrpy = [position;rotmat2rpy(rotmat)];
       position_cnstr = WorldPositionConstraint(robot,obj.body,[0;0;0],position,position,obj.tspan);
       quat_cnstr = WorldQuatConstraint(robot,obj.body,rotmat2quat(rotmat),0,obj.tspan);
+    end
+    
+    function [A_iris_origin,b_iris_origin] = generateIRISpolygonForOrigin(obj,yaw)
+      % For a given yaw angle, A_iris_orign*[x_orig;y_orig]<= b_iris_origin encodes the
+      % IRIS constraint obj.A*[x_pt;y_pt;yaw]<=obj.b
+      [rotmat,A_xy,b_xy] = obj.bodyTransform(yaw);
+      A_iris_origin = obj.A(:,1:2)*[eye(2) zeros(2,1)]*A_xy;
+      b_iris_origin = obj.b-obj.A(:,3)*yaw-obj.A(:,1:2)*[eye(2) zeros(2,1)]*(b_xy+rotmat*obj.body_pt);
     end
   end
   

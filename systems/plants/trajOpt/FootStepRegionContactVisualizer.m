@@ -66,7 +66,8 @@ classdef FootStepRegionContactVisualizer < Visualizer
         force = reshape(y(4:end),3,obj.fsrc_cnstr.num_contact_pts);
         force_normalized = force/obj.force_normalizer;         
         for i = 1:obj.fsrc_cnstr.num_contact_pts
-          obj.lcmgl.glColor3f(0,0,1);
+          obj.lcmgl.glColor3f(0,1,0);
+          obj.lcmgl.glLineWidth(2);
           obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...
             foot_contact_pos(1,conv_hull_idx(i+1)),foot_contact_pos(2,conv_hull_idx(i+1)),foot_contact_pos(3,conv_hull_idx(i+1)));
           obj.lcmgl.line3(foot_contact_pos(1,conv_hull_idx(i)),foot_contact_pos(2,conv_hull_idx(i)),foot_contact_pos(3,conv_hull_idx(i)),...

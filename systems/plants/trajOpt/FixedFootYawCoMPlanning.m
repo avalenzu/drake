@@ -426,7 +426,7 @@ classdef FixedFootYawCoMPlanning
       if(~isnumeric(fsrc_idx) || numel(fsrc_idx) ~= 1)
         error('Drake:FixedFootYawCoMPlanning: fsrc_idx should be a scaler');
       end
-      if(isa(constraint,'LinearConstraint'))
+      if(isa(constraint,'LinearConstraint')&&~isa(constraint,'BoundingBoxConstraint'))
         obj.seed_step = obj.seed_step.addLinearConstraint(constraint,obj.seed_step.fsrc_body_pos_idx(:,fsrc_idx));
 %         obj.p_step = obj.p_step.addLinearConstraint(constraint,obj.p_step.fsrc_body_pos_idx(:,fsrc_idx));
         obj.nlp_step = obj.nlp_step.addLinearConstraint(constraint,obj.nlp_step.fsrc_body_pos_idx(:,fsrc_idx));
@@ -569,6 +569,12 @@ classdef FixedFootYawCoMPlanning
       zmp = zmp_traj.eval(obj.t_knot);
       obj.visualizer.viz{end} = obj.visualizer.viz{end}.setZMPSamples(zmp);
       obj.visualizer.playback(visualizer_traj,struct('slider',true));
+      figure;
+      plot(com_foot_plan.t_knot,H','LineWidth',3)
+      title('Angular momentum','Fontsize',20);
+      legend('x','y','z')
+      xlabel('time(seconds)','Fontsize',16)
+      ylabel('angular momentum (N.m.s)','Fontsize',16)
     end
     
     function zmp_traj = ZMPTrajectory(obj,com,comddot,Hdot)

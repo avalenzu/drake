@@ -20,11 +20,13 @@ classdef CoMVisualizer < Visualizer
     
     function draw(obj,t,y)
       sizecheck(y,[3,1]);
-      obj.lcmgl_traj.glColor3f(0,0,1);
+      obj.lcmgl_traj.glColor3f(1,0,1);
+      obj.lcmgl_traj.glPointSize(0.3);
+      obj.lcmgl_traj.glLineWidth(2);
       obj.lcmgl_traj.plot3(obj.com_samples(1,:),obj.com_samples(2,:),obj.com_samples(3,:));
       obj.lcmgl_traj.switchBuffers();
       obj.lcmgl_pt.glColor3f(1,0,0);
-      obj.lcmgl_pt.sphere(y,0.03,20,20);
+      obj.lcmgl_pt.sphere(y,0.05,20,20);
       obj.lcmgl_pt.switchBuffers();
     end
   end
