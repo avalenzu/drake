@@ -69,11 +69,11 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
       end
 
       obj.Q = eye(obj.nq);
-      obj.Qv = eye(obj.nq);
-      obj.Qa = eye(obj.nq);
+      obj.Qv = 1e-3*eye(obj.nq);
+      obj.Qa = 1e-4*eye(obj.nq);
       obj.Q_H = eye(3);
       obj = obj.setTrackingError();
-      obj = obj.setAngularMomentumError();
+%       obj = obj.setAngularMomentumError();
       obj.qsc_weight_idx = cell(1,obj.nT);
       num_rbcnstr = nargin-6;
       [q_lb,q_ub] = obj.robot.getJointLimits();
@@ -140,7 +140,7 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
           obj = obj.addLinearConstraint(cnstr{1},reshape(obj.q_idx(:,t_start:end),[],1));
         end
       end
-      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-6);
+      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
       obj = obj.setSolverOptions('snopt','superbasicslimit',2000);
       obj = obj.setSolverOptions('snopt','majorfeasibilitytolerance',1e-6);
       obj = obj.setSolverOptions('snopt','iterationslimit',1e5);
