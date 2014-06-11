@@ -5,9 +5,10 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
     nq
     nv
     nT
+    ub_idx
   end
   methods
-    function obj = AngularMomentumConstraint2(r,t,H_nom_traj,ub)
+    function obj = AngularMomentumConstraint2(r,t,H_nom_traj,ub_idx)
       % obj = AngularMomentumConstraint(rbm,lb,ub)
       % @param r      -- RigidBodyManipulator object
       % @param t      -- Vector of knot-point times
@@ -17,22 +18,25 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
       % @param ub     -- The upper bound of the constraint (optional)
       %                  @default 0
       nT = numel(t);
-      if nargin < 4
-        ub = 1e-2*ones(3*(nT-1),1);
-      end
-      lb = -ub;
+      %if nargin < 4
+        %ub = 1e-2*ones(3*(nT-1),1);
+      %end
+      ub = 0;
+      lb = -Inf;
       nq = r.getNumDOF();
       nv = r.getNumDOF();
 
-      obj = obj@NonlinearConstraint(lb,ub,nq*nT);
+      obj = obj@NonlinearConstraint(lb,ub,nq*nT+1);
 
       idx = logical(kron(eye(nT-1)+diag(ones(nT-2,1),1),ones(3,nq)));
       %idx = idx | logical(kron(diag(ones(nT-2,1),1),ones(3,nq)));
-      [I,J] = ndgrid(1:3*(nT-1),1:nq*nT);
+      [I,J] = ndgrid(1:3*(nT-1),[1:nq*nT,ub_idx]);
       sizecheck(I,double(idx));
-      iCfun = I(idx);
-      jCvar = J(idx);
+      iCfun = [I(idx),1:3*(nT-1)];
+      jCvar = [J(idx),repmat(ub_idx,1,1:3*(nT-1))];
       obj = obj.setSparseStructure(iCfun,jCvar);
+
+      obj.ub_idx = ub_idx;
 
       obj.robot = r;
       if nargin < 3
@@ -98,7 +102,7 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
           dc(rows_i,q_plus_idx) = dc(rows_i,q_plus_idx) + A*dv_dq_plus;
         end
       end
-      c = c/obj.nT;
+      c = c/obj.nT - obj.ub_idx;
       if compute_first_derivative
         dc = dc/obj.nT;
       end
