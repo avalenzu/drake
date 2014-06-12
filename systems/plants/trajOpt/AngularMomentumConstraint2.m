@@ -5,10 +5,9 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
     nq
     nv
     nT
-    ub_idx
   end
   methods
-    function obj = AngularMomentumConstraint2(r,t,H_nom_traj,ub_idx)
+    function obj = AngularMomentumConstraint2(r,t,H_nom_traj)
       % obj = AngularMomentumConstraint(rbm,lb,ub)
       % @param r      -- RigidBodyManipulator object
       % @param t      -- Vector of knot-point times
@@ -21,22 +20,20 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
       %if nargin < 4
         %ub = 1e-2*ones(3*(nT-1),1);
       %end
-      ub = 0;
-      lb = -Inf;
+      ub = zeros(3*(nT-1),1);
+      lb = -Inf(3*(nT-1),1);
       nq = r.getNumDOF();
       nv = r.getNumDOF();
 
       obj = obj@NonlinearConstraint(lb,ub,nq*nT+1);
 
-      idx = logical(kron(eye(nT-1)+diag(ones(nT-2,1),1),ones(3,nq)));
+      idx = logical(kron(eye(nT-1,nT)+circshift(eye(nT-1,nT),[0,1]),ones(3,nq)));
       %idx = idx | logical(kron(diag(ones(nT-2,1),1),ones(3,nq)));
-      [I,J] = ndgrid(1:3*(nT-1),[1:nq*nT,ub_idx]);
+      [I,J] = ndgrid(1:3*(nT-1),[1:nq*nT+1]);
       sizecheck(I,double(idx));
-      iCfun = [I(idx),1:3*(nT-1)];
-      jCvar = [J(idx),repmat(ub_idx,1,1:3*(nT-1))];
+      iCfun = [I(idx);(1:3*(nT-1))'];
+      jCvar = [J(idx);repmat(nq*nT+1,3*(nT-1),1)];
       obj = obj.setSparseStructure(iCfun,jCvar);
-
-      obj.ub_idx = ub_idx;
 
       obj.robot = r;
       if nargin < 3
@@ -71,7 +68,7 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
       compute_first_derivative = nargout > 1;
       c = 0*x(1);
       if compute_first_derivative
-        dc = zeros(3*(obj.nT-1),obj.nq*obj.nT)*x(1);
+        dc = zeros(obj.num_cnstr,obj.xdim)*x(1);
       end
       for i = 1:obj.nT-1
         rows_i = (i-1)*3 + (1:3);
@@ -102,9 +99,10 @@ classdef AngularMomentumConstraint2 < NonlinearConstraint
           dc(rows_i,q_plus_idx) = dc(rows_i,q_plus_idx) + A*dv_dq_plus;
         end
       end
-      c = c/obj.nT - obj.ub_idx;
+      c = c/obj.nT;% - x(end);
       if compute_first_derivative
         dc = dc/obj.nT;
+        %dc(:,end) = -1;
       end
     end
   end

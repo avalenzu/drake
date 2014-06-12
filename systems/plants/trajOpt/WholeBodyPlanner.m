@@ -204,10 +204,11 @@ classdef WholeBodyPlanner < NonlinearProgramWKinsol
     end
 
     function obj = setAngularMomentumError(obj)
-      obj = addDecisionVariable(obj,1,'Herr_ub');
+      obj = addDecisionVariable(obj,1,{'Herr_ub'});
       Herror_idx = obj.num_vars;
+      obj = obj.addLinearConstraint(LinearConstraint(0,Inf,1),Herror_idx);
       obj.angular_momentum_cost = ...
-        AngularMomentumConstraint2(obj.robot,obj.t_knot,obj.H_nom_traj,Herror_idx);
+        AngularMomentumConstraint2(obj.robot,obj.t_knot,obj.H_nom_traj);
       obj = obj.addNonlinearConstraint(obj.angular_momentum_cost,[],[obj.q_idx(:);Herror_idx],[obj.q_idx(:);Herror_idx]);
       if numel(obj.cost) < 4
         obj = obj.addCost(LinearConstraint(0,0,1),[],Herror_idx,Herror_idx);
