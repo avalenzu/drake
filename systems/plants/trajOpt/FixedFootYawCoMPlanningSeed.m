@@ -250,7 +250,23 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
 %           error('Backoff should always be feasible');
 %         end
       else
-        error('Initial seed is invalid.');
+        infeasible_flag = false;
+        x = solve@NonlinearProgramWConstraintObjects(randn(obj.num_vars,1));
+        if(any(x-obj.x_ub>1e-4))
+          infeasible_flag = true;
+        end
+        if(any(x-obj.x_lb<-1e-4))
+          infeasible_flag = true;
+        end
+        if(any(abs(obj.Aeq*x-obj.beq)>1e-4))
+          infeasible_flag = true;
+        end
+        if(any(obj.Ain*x-obj.bin>1e-4))
+          infeasible_flag = true;
+        end
+        if(infeasible_flag)
+          error('Initial seed is invalid.');
+        end
       end
     end
     
