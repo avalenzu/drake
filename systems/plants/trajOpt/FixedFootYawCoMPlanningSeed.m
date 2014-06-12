@@ -233,25 +233,9 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
 %         params = struct('OutputFlag',false);
 %         
 %         result = gurobi(model_backoff,params);
-      if(strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))
-        com = reshape(result.x(obj.com_idx),3,obj.nT);
-        comdot = reshape(result.x(obj.comdot_idx),3,obj.nT);
-        comddot = reshape(result.x(obj.comddot_idx),3,obj.nT);
-        foot_pos = reshape(result.x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
-        margin = result.x(obj.margin_idx);
-        F = cell(1,obj.nT);
-        for i = 1:obj.nT
-          for j = 1:length(obj.F2fsrc_map{i})
-            fsrc_idx = obj.F2fsrc_map{i}(j);
-            F{i} = [F{i},{reshape(result.x(obj.F_idx{i}{j}),obj.fsrc_cnstr(fsrc_idx).num_edges,obj.fsrc_cnstr(fsrc_idx).num_contact_pts)}];
-          end
-        end
-%         else
-%           error('Backoff should always be feasible');
-%         end
-      else
+      if(~((strcmp(result.status,'OPTIMAL')||strcmp(result.status,'SUBOPTIMAL'))))
         infeasible_flag = false;
-        x = solve@NonlinearProgramWConstraintObjects(randn(obj.num_vars,1));
+        x = solve@NonlinearProgramWConstraintObjects(obj,randn(obj.num_vars,1));
         if(any(x-obj.x_ub>1e-4))
           infeasible_flag = true;
         end
@@ -267,7 +251,24 @@ classdef FixedFootYawCoMPlanningSeed < NonlinearProgramWConstraintObjects
         if(infeasible_flag)
           error('Initial seed is invalid.');
         end
+      else
+        x = result.x;
       end
+      com = reshape(x(obj.com_idx),3,obj.nT);
+      comdot = reshape(x(obj.comdot_idx),3,obj.nT);
+      comddot = reshape(x(obj.comddot_idx),3,obj.nT);
+      foot_pos = reshape(x(obj.fsrc_body_pos_idx),2,obj.num_fsrc_cnstr);
+      margin = x(obj.margin_idx);
+      F = cell(1,obj.nT);
+      for i = 1:obj.nT
+        for j = 1:length(obj.F2fsrc_map{i})
+          fsrc_idx = obj.F2fsrc_map{i}(j);
+          F{i} = [F{i},{reshape(x(obj.F_idx{i}{j}),obj.fsrc_cnstr(fsrc_idx).num_edges,obj.fsrc_cnstr(fsrc_idx).num_contact_pts)}];
+        end
+      end
+%         else
+%           error('Backoff should always be feasible');
+%         end
     end
     
     function [H,Hdot,sigma,epsilon] = angularMomentum(obj,com,foot_pos,F,H0)
