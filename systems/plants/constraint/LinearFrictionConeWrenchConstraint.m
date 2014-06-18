@@ -4,11 +4,6 @@ classdef LinearFrictionConeWrenchConstraint < ContactWrenchConstraint
   % the K'th edge of the linearized friction cone, fK is the force paramter along the K'th
   % edge
   properties(SetAccess = protected)
-
-    body_pts % A 3 x num_pts double matrix, each column represents the coordinate
-             % of the contact point on the body frame. Every contact point shares the same friction
-             % cone.
-    num_pts % A scalar. The number of contact points
     num_edges % A scalar. The number of edges in one linearized friction cone
     FC_edge % A 3 x num_edge double matrix. FC_edge(:,i) is the i'th edge of
             % the linearized friction cone in the world frame.
@@ -27,13 +22,7 @@ classdef LinearFrictionConeWrenchConstraint < ContactWrenchConstraint
       if(nargin<5)
         tspan = [-inf,inf];
       end
-      obj = obj@ContactWrenchConstraint(robot,body,tspan);
-      body_pts_size = size(body_pts);
-      if(~isnumeric(body_pts) || length(body_pts_size) ~= 2 || body_pts_size(1) ~= 3)
-        error('Drake:LinearFrictionConeWrenchConstraint: body_pts should be 3 x num_pts double matrix');
-      end
-      obj.body_pts = body_pts;
-      obj.num_pts = body_pts_size(2);
+      obj = obj@ContactWrenchConstraint(robot,body,body_pts,tspan);
       FC_edge_size = size(FC_edge);
       if(~isnumeric(FC_edge_size) || length(FC_edge_size) ~= 2 || FC_edge_size(1) ~= 3)
         error('Drake:LinearFrictionConeWrenchConstraint: FC_edge should be a 3 x num_edges numeric matrix');

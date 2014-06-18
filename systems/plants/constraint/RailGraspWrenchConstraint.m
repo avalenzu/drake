@@ -7,7 +7,6 @@ classdef RailGraspWrenchConstraint < ContactWrenchConstraint
                     % the center of the grasping
     grasp_length % A non negative scalar. The length of the grasping region
                  % projected onto the rail
-    num_pts
     rail_axis % A 3 x 1 vector, the axis of the rail
     rail_radius % A non-negative scalar, the radius of the rail
     rail_fc_mu % A non-negative scalar, the friction coefficient on the rail
@@ -38,13 +37,9 @@ classdef RailGraspWrenchConstraint < ContactWrenchConstraint
       if(nargin<9)
         tspan = [-inf,inf];
       end
-      obj = obj@ContactWrenchConstraint(robot,body,tspan);
-      pt_size = size(grasp_center_pt);
-      if(~isnumeric(grasp_center_pt) || pt_size(1) ~= 3 || pt_size(2) ~= 1)
-        error('Drake:RailGraspWrenchConstraint: grasp_center_pt should be a 3 x 1 vector');
-      end
+      sizecheck(grasp_center_pt,[3,1]);
+      obj = obj@ContactWrenchConstraint(robot,body,grasp_center_pt,tspan);
       obj.grasp_center_pt = grasp_center_pt;
-      obj.num_pts = 1;
       if(~isnumeric(grasp_length) || numel(grasp_length) ~= 1 || grasp_length<0)
         error('Drake:RailGraspWrenchConstraint: grasp_length should be a non-negative scalar');
       end

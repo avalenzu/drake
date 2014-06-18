@@ -1,9 +1,7 @@
 classdef FrictionConeWrenchConstraint < ContactWrenchConstraint
   % constrain the friction force to be within a friction cone.
   properties(SetAccess = protected)
-    body_pts % A 3 x num_pts double matrix, each column represents the coordinate
-             % of the contact point on the body frame.
-    num_pts % The number of contact points
+    
     FC_mu % A 1 x num_pts double vector, FC_mu(i) is the friction coefficient
           % of the friction cone at contact point body_pts(:,i)
     FC_axis % A 3 x num_pts double matrix, FC_axis(:,i) is the axis of the
@@ -17,6 +15,8 @@ classdef FrictionConeWrenchConstraint < ContactWrenchConstraint
   
   methods
     function obj = FrictionConeWrenchConstraint(robot,body,body_pts,FC_mu,FC_axis,tspan)
+      % @param robot    A RigidBodyManipulator or a TimeSteppingRigidBodyManipulator
+      % object
       % @param body       -- The index of contact body on the robot
       % @param body_pts   -- A 3 x num_pts double matrix, each column represents the coordinate
       % of the contact point on the body frame.
@@ -29,13 +29,8 @@ classdef FrictionConeWrenchConstraint < ContactWrenchConstraint
       if(nargin<6)
         tspan = [-inf inf];
       end
-      obj = obj@ContactWrenchConstraint(robot,body,tspan);
-      body_pts_size = size(body_pts);
-      if(~isnumeric(body_pts) || length(body_pts_size) ~= 2 || body_pts_size(1) ~= 3)
-        error('Drake:FrictionConeWrenchConstraint: body_pts should be 3 x num_pts double matrix');
-      end
-      obj.body_pts = body_pts;
-      obj.num_pts = body_pts_size(2);
+      obj = obj@ContactWrenchConstraint(robot,body,body_pts,tspan);
+      
       mu_size = size(FC_mu);
       if(length(mu_size) == 2 && mu_size(1) == 1 && mu_size(2) == 1)
         FC_mu = FC_mu*ones(1,obj.num_pts);

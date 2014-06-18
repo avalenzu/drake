@@ -3,6 +3,9 @@ classdef ContactWrenchConstraint < RigidBodyConstraint
   properties(SetAccess = protected)
     body % The index of contact body on the robot
     body_name % The name of the body.
+    body_pts % A 3 x num_pts double matrix, each column represents the coordinate
+             % of the contact point on the body frame.
+    num_pts % The number of contact points
     num_constraint; % A scalar. The number of constraints. 
     F_size; % A 1 x 2 matrix. The size of the force parameter matrix.
     F_lb; % A double matrix of size F_size. The lower bound on the
@@ -12,7 +15,12 @@ classdef ContactWrenchConstraint < RigidBodyConstraint
   end
   
   methods
-    function obj = ContactWrenchConstraint(robot,body,tspan)
+    function obj = ContactWrenchConstraint(robot,body,body_pts,tspan)
+      % @param robot    A RigidBodyManipulator or a TimeSteppingRigidBodyManipulator
+      % object
+      % @param body       -- The index of contact body on the robot
+      % @param body_pts   -- A 3 x num_pts double matrix, each column represents the coordinate
+      % of the contact point on the body frame.
       obj = obj@RigidBodyConstraint(RigidBodyConstraint.ContactWrenchConstraintCategory,robot,tspan);
       body_size = size(body);
       if(~isnumeric(body) || length(body_size) ~= 2 || body_size(1) ~= 1 || body_size(2) ~= 1)
@@ -20,6 +28,12 @@ classdef ContactWrenchConstraint < RigidBodyConstraint
       end
       obj.body = body;
       obj.body_name = obj.robot.getBody(obj.body).linkname;
+      body_pts_size = size(body_pts);
+      if(~isnumeric(body_pts) || length(body_pts_size) ~= 2 || body_pts_size(1) ~= 3)
+        error('Drake:ContactWrenchConstraint: body_pts should be 3 x num_pts double matrix');
+      end
+      obj.body_pts = body_pts;
+      obj.num_pts = body_pts_size(2);
     end
     
     function tspan = getTspan(obj)
