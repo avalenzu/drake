@@ -168,6 +168,20 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       obj = obj.setSolverOptions('snopt','majoriterationslimit',300);
     end
 
+    function obj = addDynamicConstraints(obj,cnstr)
+      % obj = addDynamicConstraints(obj,cnstr) adds a dynamic constraint
+      % to the planner.
+      % @param cnstr  -- Dynamics constraint
+      N = obj.N;
+      
+      dyn_inds = cell(N-1,1);      
+      
+      for i=1:obj.N-1,        
+        dyn_inds{i} = {obj.h_inds(i);obj.x_inds(:,i);obj.x_inds(:,i+1);obj.u_inds(:,i)};
+        obj = obj.addNonlinearConstraint(cnstr, dyn_inds{i});
+      end
+    end
+
     function obj = setLinearDynamics(obj)
       obj.dynamics_constraint{1} = ...
         LinearDynamics(obj.t_seed,obj.nq, obj.nv, 1:obj.nq*obj.nT, ...
