@@ -12,28 +12,26 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
     q_nom_traj;
     v_nom_traj;
     vd_nom_traj;
-    dt_idx  % A 1 x obj.nT-1 array. x(dt_idx(i)) is the decision variable dt(i) = t(i+1)-t(i)
+    dt_idx  % A 1 x obj.N-1 array. x(dt_idx(i)) is the decision variable dt(i) = t(i+1)-t(i)
     unique_contact_bodies % A set of body indices, whose body has a ContactWrenchConstraint
     num_unique_contact_bodies % An integer. num_unique_contact_bodies = length(unique_contact_bodies)
-    F_idx % A cell array of size 1 x num_unique_contact_bodies, F_idx{i} is a F_size(1) x F_size(2) x obj.nT matrix
+    F_idx % A cell array of size 1 x num_unique_contact_bodies, F_idx{i} is a F_size(1) x F_size(2) x obj.N matrix
   end
   methods
-    function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,q_nom_traj, H_nom_traj,...
+    function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,q_nom_traj, ...
                                     fix_initial_state,x0,varargin)
       t_seed = unique(t_seed(:)');
       obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),[t_seed(1),t_seed(end)]);
       obj.t_seed = t_seed;
       sizecheck(fix_initial_state,[1,1]);
-      obj.nv = obj.robot.getNumDOF();
-      obj.nT_v = obj.nT-1;
-      obj.nT_vd = obj.nT-2;
-      obj.q_idx = reshape((1:obj.nq*obj.nT),obj.nq,obj.nT);
-      obj.dt_idx = obj.num_vars+(1:obj.nT-1);
-      x_name = cell(obj.nT-1,1);
-      for i = 1:obj.nT-1
+      obj.nv = obj.plant.getNumDOF();
+      obj.q_idx = reshape((1:obj.plant.getNumPositions()*obj.N),obj.plant.getNumPositions(),obj.N);
+      obj.dt_idx = obj.num_vars+(1:obj.N-1);
+      x_name = cell(obj.N-1,1);
+      for i = 1:obj.N-1
         x_name{i} = sprintf('dt[%d]',i);
       end
-      obj = obj.addDecisionVariables(obj.nT-1,x_name);
+      obj = obj.addDecisionVariable(obj.N-1,x_name);
       %v_name = cell(obj.nv,obj.nT_v);
       %for j = 1:obj.nT_v
         %for i = 1:obj.nv
@@ -57,28 +55,17 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       %obj = obj.addDecisionVariable(obj.nv*obj.nT_vd,vd_name);
 
       obj = obj.setFixInitialState(fix_initial_state,x0);
-      %obj = obj.setLinearDynamics();
       obj.q_nom_traj = q_nom_traj;
       obj.v_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
       obj.vd_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
-      if ~isempty(H_nom_traj)
-        obj.H_nom_traj = H_nom_traj;
-      else
-        obj.H_nom_traj = ConstantTrajectory(zeros(3,1));
-      end
 
-      obj.Q = eye(obj.nq);
-      obj.Qv = eye(obj.nq);
-      obj.Qa = eye(obj.nq);
-      obj.Q_H = eye(3);
-      obj = obj.setTrackingError();
-      obj = obj.setAngularMomentumError();
-      obj.qsc_weight_idx = cell(1,obj.nT);
+      obj.Q = eye(obj.plant.getNumPositions());
+      obj.qsc_weight_idx = cell(1,obj.N);
       num_rbcnstr = nargin-6;
-      [q_lb,q_ub] = obj.robot.getJointLimits();
+      [q_lb,q_ub] = obj.plant.getJointLimits();
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint( ...
-        reshape(bsxfun(@times,q_lb,ones(1,obj.nT)),[],1),...
-        reshape(bsxfun(@times,q_ub,ones(1,obj.nT)),[],1)),obj.q_idx(:));
+        reshape(bsxfun(@times,q_lb,ones(1,obj.N)),[],1),...
+        reshape(bsxfun(@times,q_ub,ones(1,obj.N)),[],1)),obj.q_idx(:));
       if(obj.fix_initial_state)
         t_start = 2;
       else
@@ -92,21 +79,21 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
                 'The input should be a RigidBodyConstraint');
         end
         if(isa(varargin{i},'SingleTimeKinematicConstraint'))
-          for j = t_start:obj.nT
+          for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
               obj = obj.addNonlinearConstraint(cnstr{1},j,[],obj.q_idx(:,j));
             end
           end
         elseif(isa(varargin{i},'PostureConstraint'))
-          for j = t_start:obj.nT
+          for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
               obj = obj.addBoundingBoxConstraint(cnstr{1},obj.q_idx(:,j));
             end
           end
         elseif(isa(varargin{i},'QuasiStaticConstraint'))
-          for j = t_start:obj.nT
+          for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)) && varargin{i}.active)
               if(~isempty(obj.qsc_weight_idx{j}))
                 error('Drake:InverseKinTraj:currently only support at most one QuasiStaticConstraint at an individual time');
@@ -124,7 +111,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
             end
           end
         elseif(isa(varargin{i},'SingleTimeLinearPostureConstraint'))
-          for j = t_start:obj.nT
+          for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
               obj = obj.addLinearConstraint(cnstr{1},obj.q_idx(:,j));
@@ -132,7 +119,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           end
         elseif(isa(varargin{i},'MultipleTimeKinematicConstraint'))
           valid_t_flag = varargin{i}.isTimeValid(obj.t_seed(t_start:end));
-          t_idx = (t_start:obj.nT);
+          t_idx = (t_start:obj.N);
           valid_t_idx = t_idx(valid_t_flag);
           cnstr = varargin{i}.generateConstraint(obj.t_seed(valid_t_idx));
           obj = obj.addNonlinearConstraint(cnstr{1},valid_t_idx,[],reshape(obj.q_idx(:,valid_t_idx),[],1));
@@ -144,9 +131,9 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           if(~any(varargin{i}.body == obj.unique_contact_bodies))
             obj.unique_contact_bodies = [obj.unique_contact_bodies varargin{i}.body];
             obj.num_unique_contact_bodies = obj.num_unique_contact_bodies+1;
-            obj.F_idx = [obj.F_idx,{zeros(varargin{i}.F_size(1),varargin{i}.F_size(2),obj.nT)}];
+            obj.F_idx = [obj.F_idx,{zeros(varargin{i}.F_size(1),varargin{i}.F_size(2),obj.N)}];
             num_F = prod(varargin{i}.F_size);
-            for j = 1:obj.nT
+            for j = 1:obj.N
               x_name = repmat({sprintf('%s_contact_F[%d]',varargin{i}.body_name,j)},num_F,1);
               obj.F_idx{end}(:,:,j) = obj.num_vars+reshape(num_F,varargin{i}.F_size(1),varargin{i}.F_size(2));
               obj = obj.addDecisionVariables(num_F,x_name);
@@ -168,138 +155,26 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       obj = obj.setSolverOptions('snopt','majoriterationslimit',300);
     end
 
-    function obj = addDynamicConstraints(obj,cnstr)
-      % obj = addDynamicConstraints(obj,cnstr) adds a dynamic constraint
-      % to the planner.
-      % @param cnstr  -- Dynamics constraint
-      N = obj.N;
-      
-      dyn_inds = cell(N-1,1);      
-      
-      for i=1:obj.N-1,        
-        dyn_inds{i} = {obj.h_inds(i);obj.x_inds(:,i);obj.x_inds(:,i+1);obj.u_inds(:,i)};
-        obj = obj.addNonlinearConstraint(cnstr, dyn_inds{i});
-      end
-    end
-
-    function obj = setLinearDynamics(obj)
-      obj.dynamics_constraint{1} = ...
-        LinearDynamics(obj.t_seed,obj.nq, obj.nv, 1:obj.nq*obj.nT, ...
-                       obj.nq*obj.nT+(1:obj.nv*obj.nT_v));
-      xind = [obj.q_idx(:);obj.v_idx(:)];
-      obj = obj.addLinearConstraint(obj.dynamics_constraint{1},xind);
-      t_mid = (obj.t_seed(1:end-1)+obj.t_seed(2:end))/2;
-      obj.dynamics_constraint{2} = ...
-        LinearDynamics(t_mid,obj.nv, obj.nv, 1:obj.nv*obj.nT_v, ...
-                       obj.nv*obj.nT_v+(1:obj.nv*obj.nT_vd));
-      xind = [obj.v_idx(:);obj.vd_idx(:)];
-      obj = obj.addLinearConstraint(obj.dynamics_constraint{2},xind);
-    end
-
-    function obj = setTrackingError(obj,Q,Qv,Qa)
-      if nargin > 1 && ~isempty(Q)
-        obj.Q = (Q+Q')/2;
-      end
-      if nargin > 2 && ~isempty(Qv)
-        obj.Qv = (Qv+Qv')/2;
-      end
-      if nargin > 3 && ~isempty(Qa)
-        obj.Qa = (Qa+Qa')/2;
-      end
-      %q_nom_traj = PPTrajectory(foh(obj.t_seed,obj.q_nom));
-      %v_nom_traj = PPTrajectory(foh(obj.t_seed,0*obj.q_nom));
-      q_nom = obj.q_nom_traj.eval(obj.t_seed);
-      obj.position_error = QuadraticSumConstraint(0,0,obj.Q,q_nom);
-
-      e = ones(obj.nq*(obj.nT-1),1);
-      first_diff_mat = spdiags([e,-e],[0,obj.nq],obj.nq*(obj.nT-1),obj.nq*obj.nT);
-      Qv = first_diff_mat'*kron(eye(obj.nT-1),obj.Qv)*first_diff_mat;
-      obj.velocity_cost = QuadraticConstraint(0,0,Qv,zeros(obj.nq*obj.nT,1));
-
-      e = ones(obj.nq*(obj.nT-2),1);
-      second_diff_mat = spdiags([e,-2*e,e],[-obj.nq,0,obj.nq],obj.nq*(obj.nT-2),obj.nq*obj.nT);
-      Qa = second_diff_mat'*kron(eye(obj.nT-2),obj.Qv)*second_diff_mat;
-      obj.acceleration_cost = QuadraticConstraint(0,0,Qa,zeros(obj.nq*obj.nT,1));
-
-      if isempty(obj.cost)
-        obj = obj.addCost(obj.position_error,[],obj.q_idx(:),obj.q_idx(:));
-      else
-        obj = obj.replaceCost(obj.position_error,1,[],obj.q_idx(:),obj.q_idx(:));
-      end
-      if numel(obj.cost) < 2
-        obj = obj.addCost(obj.velocity_cost,[],obj.q_idx(:),obj.q_idx(:));
-      else
-        obj = obj.replaceCost(obj.velocity_cost,2,[],obj.q_idx(:),obj.q_idx(:));
-      end
-      if numel(obj.cost) < 3
-        obj = obj.addCost(obj.acceleration_cost,[],obj.q_idx(:),obj.q_idx(:));
-      else
-        obj = obj.replaceCost(obj.acceleration_cost,3,[],obj.q_idx(:),obj.q_idx(:));
-      end
-    end
-
-    function obj = setAngularMomentumError(obj)
-      obj = addDecisionVariable(obj,1,{'Herr_ub'});
-      Herror_idx = obj.num_vars;
-      obj = obj.addLinearConstraint(LinearConstraint(0,Inf,1),Herror_idx);
-      obj.angular_momentum_cost = ...
-        AngularMomentumConstraint2(obj.robot,obj.t_seed,obj.H_nom_traj);
-      obj = obj.addNonlinearConstraint(obj.angular_momentum_cost,[],[obj.q_idx(:);Herror_idx],[obj.q_idx(:);Herror_idx]);
-      if numel(obj.cost) < 4
-        obj = obj.addCost(LinearConstraint(0,0,1),[],Herror_idx,Herror_idx);
-      else
-        obj = obj.replaceCost(LinearConstraint(0,0,1),4,[],Herror_idx,Herror_idx);
-      end
-      %if numel(obj.cost) < 4
-        %obj = obj.addCost(obj.angular_momentum_cost,[],obj.q_idx(:));
-      %else
-        %obj = obj.replaceCost(obj.angular_momentum_cost,4,[],obj.q_idx(:));
-      %end
-    end
-
     function obj = setFixInitialState(obj,flag,x0)
       % set obj.fix_initial_state = flag. If flag = true, then fix the initial state to x0
-      % @param x0   A 2*obj.nq x 1 double vector. x0 = [q0;qdot0]. The initial state
+      % @param x0   A 2*obj.plant.getNumPositions() x 1 double vector. x0 = [q0;qdot0]. The initial state
       sizecheck(flag,[1,1]);
       flag = logical(flag);
       if(isempty(obj.bbcon))
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.nq),x0(1:obj.nq)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_idx(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.nq,1),inf(obj.nq,1)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_idx(:,1));
         end
       elseif(obj.fix_initial_state ~= flag)
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.nq),x0(1:obj.nq)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_idx(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.nq,1),inf(obj.nq,1)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_idx(:,1));
         end
       end
-    end
-
-    function [xtraj,F,info,infeasible_constraint] = solve(obj,qtraj_seed)
-      % @param qtraj_seed.   A Trajectory object. The initial guess of posture trajectory.
-      % @retval xtraj.       A Cubic spline trajectory. The solution of state trajectory,
-      % x = [q;qdot]
-      q_seed = qtraj_seed.eval(obj.t_seed);
-      x0 = zeros(obj.num_vars,1);
-      x0(obj.q_idx(:)) = q_seed(:);
-      for i = 1:length(obj.qsc_weight_idx)
-        if(~isempty(obj.qsc_weight_idx{i}))
-          x0(obj.qsc_weight_idx{i}) = 1/length(obj.qsc_weight_idx{i});
-        end
-      end
-      [x,F,info] = solve@NonlinearProgramWConstraintObjects(obj,x0);
-      q_sol = x(obj.q_idx);
-      dt = reshape(diff(obj.t_seed),1,[]);
-      v_tmp = bsxfun(@rdivide,diff(q_sol,1,2),dt);
-      v_sol = (v_tmp(:,[1,1:end])+v_tmp(:,[1:end,end]))/2;
-      xtraj = PPTrajectory(foh(obj.t_seed, ...
-        [q_sol;v_sol]));
-      xtraj = xtraj.setOutputFrame(obj.robot.getStateFrame);
-      [info,infeasible_constraint] = infeasibleConstraintName(obj,x,info);
     end
   end
 end
