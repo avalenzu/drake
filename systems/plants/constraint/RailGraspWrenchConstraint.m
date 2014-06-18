@@ -2,36 +2,23 @@ classdef RailGraspWrenchConstraint < ContactWrenchConstraint
   % Constrain the force and torque at the contact point when the hand is grasping a rail. The force is subject
   % to magnitude constraint and friction cone constraint. The bounds on the torque is a
   % cylinder co-axial with the rail
-  % @param body               -- The index of contact body
-  % @param body_name          -- The name of the body
-  % @param grasp_center_pt     -- A 3 x 1 double matrix, a point on the body frame that is
-  % the center of the grasping
-  % @param grasp_length  -- A non negative scalar. The length of the grasping region
-  % projected onto the rail
-  % @param rail_axis   -- A 3 x 1 vector, the axis of the rail
-  % @param rail_radius -- A non-negative scalar, the radius of the rail
-  % @param rail_fc_mu  -- A non-negative scalar, the friction coefficient on the rail
-  % @param force_max    -- A positive scalar, the maximum maginitude the force
   properties(SetAccess = protected)
-    body
-    body_name
-    grasp_center_pt
-    grasp_length
+    grasp_center_pt % A 3 x 1 double matrix, a point on the body frame that is
+                    % the center of the grasping
+    grasp_length % A non negative scalar. The length of the grasping region
+                 % projected onto the rail
     num_pts
-    rail_axis
-    rail_radius
-    rail_fc_mu
-    force_ub;
-    force_max;
+    rail_axis % A 3 x 1 vector, the axis of the rail
+    rail_radius % A non-negative scalar, the radius of the rail
+    rail_fc_mu % A non-negative scalar, the friction coefficient on the rail
+    force_max; % A positive scalar, the maximum maginitude the force
   end
   
   properties(SetAccess = protected, GetAccess = protected)
-    % @param torque_bnd_height   -- A non-negative double scalar. The height of the
-    % cylinder that bounds the torque
-    % @param torque_bnd_radius   -- A non-negative double scalar. The radius of the
-    % cylinder that bounds the torque
-    torque_bnd_height
-    torque_bnd_radius
+    torque_bnd_height % A non-negative double scalar. The height of the
+                      % cylinder that bounds the torque
+    torque_bnd_radius % A non-negative double scalar. The radius of the
+                      % cylinder that bounds the torque
   end
   
   methods
@@ -51,13 +38,7 @@ classdef RailGraspWrenchConstraint < ContactWrenchConstraint
       if(nargin<9)
         tspan = [-inf,inf];
       end
-      obj = obj@ContactWrenchConstraint(robot,tspan);
-      body_size = size(body);
-      if(~isnumeric(body) || length(body_size) ~= 2 || body_size(1) ~= 1 || body_size(2) ~= 1)
-        error('Drake:RailGraspWrenchConstraint: body should be a numeric scalar');
-      end
-      obj.body = body;
-      obj.body_name = obj.robot.getBody(obj.body).linkname;
+      obj = obj@ContactWrenchConstraint(robot,body,tspan);
       pt_size = size(grasp_center_pt);
       if(~isnumeric(grasp_center_pt) || pt_size(1) ~= 3 || pt_size(2) ~= 1)
         error('Drake:RailGraspWrenchConstraint: grasp_center_pt should be a 3 x 1 vector');

@@ -1,21 +1,13 @@
 classdef FrictionConeWrenchConstraint < ContactWrenchConstraint
   % constrain the friction force to be within a friction cone.
-  % @param body       -- The index of contact body on the robot
-  % @param body_name  -- The name of the body.
-  % @param body_pts   -- A 3 x num_pts double matrix, each column represents the coordinate
-  % of the contact point on the body frame.
-  % @param num_pts    -- The number of contact points
-  % @param FC_mu      -- A 1 x num_pts double vector, FC_mu(i) is the friction coefficient
-  % of the friction cone at contact point body_pts(:,i)
-  % @param FC_axis    -- A 3 x num_pts double matrix, FC_axis(:,i) is the axis of the
-  % friction cone at the contact point body_pts(:,i). FC_axis(:,i) is in the world frame
   properties(SetAccess = protected)
-    body
-    body_name
-    body_pts
-    num_pts
-    FC_mu
-    FC_axis
+    body_pts % A 3 x num_pts double matrix, each column represents the coordinate
+             % of the contact point on the body frame.
+    num_pts % The number of contact points
+    FC_mu % A 1 x num_pts double vector, FC_mu(i) is the friction coefficient
+          % of the friction cone at contact point body_pts(:,i)
+    FC_axis % A 3 x num_pts double matrix, FC_axis(:,i) is the axis of the
+            % friction cone at the contact point body_pts(:,i). FC_axis(:,i) is in the world frame
   end
   
   properties(SetAccess = protected, GetAccess = protected)
@@ -37,13 +29,7 @@ classdef FrictionConeWrenchConstraint < ContactWrenchConstraint
       if(nargin<6)
         tspan = [-inf inf];
       end
-      obj = obj@ContactWrenchConstraint(robot,tspan);
-      body_size = size(body);
-      if(~isnumeric(body) || length(body_size) ~= 2 || body_size(1) ~= 1 || body_size(2) ~= 1)
-        error('Drake:FrictionConeWrenchConstraint: body should be a numeric scalar');
-      end
-      obj.body = body;
-      obj.body_name = obj.robot.getBody(obj.body).linkname;
+      obj = obj@ContactWrenchConstraint(robot,body,tspan);
       body_pts_size = size(body_pts);
       if(~isnumeric(body_pts) || length(body_pts_size) ~= 2 || body_pts_size(1) ~= 3)
         error('Drake:FrictionConeWrenchConstraint: body_pts should be 3 x num_pts double matrix');

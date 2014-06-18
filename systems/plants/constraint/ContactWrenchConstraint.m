@@ -1,21 +1,25 @@
 classdef ContactWrenchConstraint < RigidBodyConstraint
   % constrain the contact forces
-  % @param num_constraint   - A scalar. The number of constraints. 
-  % @param F_size       - A 1 x 2 matrix. The size of the force parameter matrix.
-  % @param F_lb         - A double matrix of size F_size. The lower bound on the
-  % force parameters
-  % @param F_ub         - A double matrix of size F_size. The upper bound on the
-  % force parameters
   properties(SetAccess = protected)
-    num_constraint;
-    F_size;
-    F_lb;
-    F_ub
+    body % The index of contact body on the robot
+    body_name % The name of the body.
+    num_constraint; % A scalar. The number of constraints. 
+    F_size; % A 1 x 2 matrix. The size of the force parameter matrix.
+    F_lb; % A double matrix of size F_size. The lower bound on the
+          % force parameters
+    F_ub; % A double matrix of size F_size. The upper bound on the
+          % force parameters
   end
   
   methods
-    function obj = ContactWrenchConstraint(robot,tspan)
+    function obj = ContactWrenchConstraint(robot,body,tspan)
       obj = obj@RigidBodyConstraint(RigidBodyConstraint.ContactWrenchConstraintCategory,robot,tspan);
+      body_size = size(body);
+      if(~isnumeric(body) || length(body_size) ~= 2 || body_size(1) ~= 1 || body_size(2) ~= 1)
+        error('Drake:ContactWrenchConstraint: body should be a numeric scalar');
+      end
+      obj.body = body;
+      obj.body_name = obj.robot.getBody(obj.body).linkname;
     end
     
     function tspan = getTspan(obj)
