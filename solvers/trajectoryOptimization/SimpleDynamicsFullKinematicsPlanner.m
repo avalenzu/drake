@@ -1,27 +1,17 @@
-classdef SimpleDynamicsFullKinematicsPlanner < NonlinearProgramWKinsol
+classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
   properties
     nv % number of velocities in state
-    nT_v
-    nT_vd
-    q_idx
-    v_idx
-    vd_idx
+    q_idx % An nq x obj.N matrix. x(q_idx(:,i)) is the posture at i'th knot
+    v_idx % An nv x obj.N matrix. x(v_idx(:,i)) is the velocity at i'th knot 
     qsc_weight_idx
     Q
-    Qv
-    Qa
-    Q_H
     t_seed
     fix_initial_state
     dynamics_constraint;
     position_error;
-    velocity_cost;
-    acceleration_cost;
-    angular_momentum_cost;
     q_nom_traj;
     v_nom_traj;
     vd_nom_traj;
-    H_nom_traj;
     dt_idx  % A 1 x obj.nT-1 array. x(dt_idx(i)) is the decision variable dt(i) = t(i+1)-t(i)
     unique_contact_bodies % A set of body indices, whose body has a ContactWrenchConstraint
     num_unique_contact_bodies % An integer. num_unique_contact_bodies = length(unique_contact_bodies)
@@ -31,7 +21,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < NonlinearProgramWKinsol
     function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,q_nom_traj, H_nom_traj,...
                                     fix_initial_state,x0,varargin)
       t_seed = unique(t_seed(:)');
-      obj = obj@NonlinearProgramWKinsol(robot,numel(t_seed));
+      obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),[t_seed(1),t_seed(end)]);
       obj.t_seed = t_seed;
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.robot.getNumDOF();
