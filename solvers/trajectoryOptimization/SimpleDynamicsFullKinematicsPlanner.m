@@ -6,7 +6,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
     qsc_weight_idx
     Q
     t_seed
-    fix_initial_state
+    fix_initial_state = false
     dynamics_constraint;
     position_error;
     q_nom_traj;
@@ -21,7 +21,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
     function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,q_nom_traj, ...
                                     fix_initial_state,x0,varargin)
       t_seed = unique(t_seed(:)');
-      obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),[t_seed(1),t_seed(end)]);
+      obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),[t_seed(1),10*t_seed(end)]);
       obj.t_seed = t_seed;
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.plant.getNumDOF();
@@ -105,7 +105,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
               end
               obj.qsc_weight_idx{j} = obj.num_vars+(1:varargin{i}.num_pts)';
               obj = obj.addDecisionVariable(varargin{i}.num_pts,qsc_weight_names);
-              obj = obj.addNonlinearConstraint(cnstr{1},j,obj.qsc_weight_idx{j},[obj.q_inds(:,j);obj.qsc_weight_idx{j}]);
+              obj = obj.addNonlinearConstraint(cnstr{1},{obj.q_inds(:,j);obj.qsc_weight_idx{j}});
               obj = obj.addLinearConstraint(cnstr{2},obj.qsc_weight_idx{j});
               obj = obj.addBoundingBoxConstraint(cnstr{3},obj.qsc_weight_idx{j});
             end
@@ -148,11 +148,11 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           end
         end
       end
-      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-4);
+      obj = obj.setSolverOptions('snopt','majoroptimalitytolerance',1e-5);
       obj = obj.setSolverOptions('snopt','superbasicslimit',2000);
       obj = obj.setSolverOptions('snopt','majorfeasibilitytolerance',1e-6);
       obj = obj.setSolverOptions('snopt','iterationslimit',1e5);
-      obj = obj.setSolverOptions('snopt','majoriterationslimit',300);
+      obj = obj.setSolverOptions('snopt','majoriterationslimit',500);
     end
 
     function obj = setFixInitialState(obj,flag,x0)
@@ -163,16 +163,16 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       if(isempty(obj.bbcon))
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_inds(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0,x0),obj.x_inds(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_inds(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumStates(),1),inf(obj.plant.getNumStates(),1)),obj.x_inds(:,1));
         end
       elseif(obj.fix_initial_state ~= flag)
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_inds(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0,x0),obj.x_inds(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_inds(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumStates(),1),inf(obj.plant.getNumStates(),1)),obj.x_inds(:,1));
         end
       end
     end
