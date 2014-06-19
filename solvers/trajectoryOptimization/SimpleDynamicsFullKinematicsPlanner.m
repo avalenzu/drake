@@ -1,7 +1,7 @@
 classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
   properties
     nv % number of velocities in state
-    q_idx % An nq x obj.N matrix. x(q_idx(:,i)) is the posture at i'th knot
+    q_inds % An nq x obj.N matrix. x(q_inds(:,i)) is the posture at i'th knot
     v_idx % An nv x obj.N matrix. x(v_idx(:,i)) is the velocity at i'th knot 
     qsc_weight_idx
     Q
@@ -25,7 +25,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       obj.t_seed = t_seed;
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.plant.getNumDOF();
-      obj.q_idx = reshape((1:obj.plant.getNumPositions()*obj.N),obj.plant.getNumPositions(),obj.N);
+      obj.q_inds = obj.x_inds(1:obj.plant.getNumPositions(),:);
       obj.dt_idx = obj.num_vars+(1:obj.N-1);
       x_name = cell(obj.N-1,1);
       for i = 1:obj.N-1
@@ -61,11 +61,11 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
 
       obj.Q = eye(obj.plant.getNumPositions());
       obj.qsc_weight_idx = cell(1,obj.N);
-      num_rbcnstr = nargin-6;
+      num_rbcnstr = nargin-5;
       [q_lb,q_ub] = obj.plant.getJointLimits();
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint( ...
         reshape(bsxfun(@times,q_lb,ones(1,obj.N)),[],1),...
-        reshape(bsxfun(@times,q_ub,ones(1,obj.N)),[],1)),obj.q_idx(:));
+        reshape(bsxfun(@times,q_ub,ones(1,obj.N)),[],1)),obj.q_inds(:));
       if(obj.fix_initial_state)
         t_start = 2;
       else
@@ -82,14 +82,14 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
-              obj = obj.addNonlinearConstraint(cnstr{1},j,[],obj.q_idx(:,j));
+              obj = obj.addManagedKinematicConstraint(cnstr{1},j);
             end
           end
         elseif(isa(varargin{i},'PostureConstraint'))
           for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
-              obj = obj.addBoundingBoxConstraint(cnstr{1},obj.q_idx(:,j));
+              obj = obj.addBoundingBoxConstraint(cnstr{1},obj.q_inds(:,j));
             end
           end
         elseif(isa(varargin{i},'QuasiStaticConstraint'))
@@ -105,7 +105,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
               end
               obj.qsc_weight_idx{j} = obj.num_vars+(1:varargin{i}.num_pts)';
               obj = obj.addDecisionVariable(varargin{i}.num_pts,qsc_weight_names);
-              obj = obj.addNonlinearConstraint(cnstr{1},j,obj.qsc_weight_idx{j},[obj.q_idx(:,j);obj.qsc_weight_idx{j}]);
+              obj = obj.addNonlinearConstraint(cnstr{1},j,obj.qsc_weight_idx{j},[obj.q_inds(:,j);obj.qsc_weight_idx{j}]);
               obj = obj.addLinearConstraint(cnstr{2},obj.qsc_weight_idx{j});
               obj = obj.addBoundingBoxConstraint(cnstr{3},obj.qsc_weight_idx{j});
             end
@@ -114,7 +114,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           for j = t_start:obj.N
             if(varargin{i}.isTimeValid(obj.t_seed(j)))
               cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
-              obj = obj.addLinearConstraint(cnstr{1},obj.q_idx(:,j));
+              obj = obj.addLinearConstraint(cnstr{1},obj.q_inds(:,j));
             end
           end
         elseif(isa(varargin{i},'MultipleTimeKinematicConstraint'))
@@ -122,10 +122,10 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
           t_idx = (t_start:obj.N);
           valid_t_idx = t_idx(valid_t_flag);
           cnstr = varargin{i}.generateConstraint(obj.t_seed(valid_t_idx));
-          obj = obj.addNonlinearConstraint(cnstr{1},valid_t_idx,[],reshape(obj.q_idx(:,valid_t_idx),[],1));
+          obj = obj.addNonlinearConstraint(cnstr{1},valid_t_idx,[],reshape(obj.q_inds(:,valid_t_idx),[],1));
         elseif(isa(varargin{i},'MultipleTimeLinearPostureConstraint'))
           cnstr = varargin{i}.generateConstraint(obj.t_seed(t_start:end));
-          obj = obj.addLinearConstraint(cnstr{1},reshape(obj.q_idx(:,t_start:end),[],1));
+          obj = obj.addLinearConstraint(cnstr{1},reshape(obj.q_inds(:,t_start:end),[],1));
         elseif(isa(varargin{i},'ContactWrenchConstraint'))
           % I am supposing that a body only has one type of contact.
           if(~any(varargin{i}.body == obj.unique_contact_bodies))
@@ -139,7 +139,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
               obj = obj.addDecisionVariables(num_F,x_name);
               if(varargin{i}.isTimeValid(obj.t_seed(j)))
                 cnstr = varargin{i}.generateConstraint(obj.t_seed(j));
-                obj = obj.addNonlinearConstraint(cnstr{1},[obj.q_idx(:,j);reshape(obj.F_idx{end}(:,:,j),[],1)]);
+                obj = obj.addNonlinearConstraint(cnstr{1},[obj.q_inds(:,j);reshape(obj.F_idx{end}(:,:,j),[],1)]);
                 obj = obj.addBoundingBoxConstraint(cnstr{2},reshape(obj.F_idx{end}(:,:,j),[],1));
               else
                 obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(zeros(num_F,1),zeros(num_F,1)),reshape(obj.F_idx{end}(:,:,j),[],1));
@@ -163,17 +163,45 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       if(isempty(obj.bbcon))
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_inds(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_inds(:,1));
         end
       elseif(obj.fix_initial_state ~= flag)
         obj.fix_initial_state = flag;
         if(obj.fix_initial_state)
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(x0(1:obj.plant.getNumPositions()),x0(1:obj.plant.getNumPositions())),obj.q_inds(:,1));
         else
-          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_idx(:,1));
+          obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint(-inf(obj.plant.getNumPositions(),1),inf(obj.plant.getNumPositions(),1)),obj.q_inds(:,1));
         end
+      end
+    end
+
+    function obj = addManagedKinematicConstraint(obj,constraint,time_index)
+      % Add a linear constraint that is a function of the state at the
+      % specified time or times.
+      % @param constraint  a ConstraintManager
+      % @param time_index   a cell array of time indices
+      %   ex1., time_index = {1, 2, 3} means the constraint is applied
+      %   individually to knot points 1, 2, and 3
+      %   ex2,. time_index = {[1 2], [3 4]} means the constraint is applied to knot
+      %   points 1 and 2 together (taking the combined state as an argument)
+      %   and 3 and 4 together.
+      if ~isa(constraint,'ConstraintManager')
+        constraint = ConstraintManager([],constraint);
+      end
+      if ~iscell(time_index)
+        time_index = {time_index};
+      end
+      for j=1:length(time_index),
+        cstr_inds = mat2cell(obj.q_inds(:,time_index{j}),size(obj.q_inds,1),ones(1,length(time_index{j})));
+        
+        % record constraint for posterity
+        obj.constraints{end+1}.constraint = constraint;
+        obj.constraints{end}.var_inds = cstr_inds;
+        obj.constraints{end}.time_index = time_index;
+        
+        obj = obj.addManagedConstraints(constraint,cstr_inds);
       end
     end
   end
