@@ -189,14 +189,14 @@ classdef ContactImplicitTrajectoryOptimization < DirectTrajectoryOptimization
     end
     
     function [xtraj,utraj,ltraj,ljltraj,z,F,info] = solveTraj(obj,t_init,traj_init)
-      [xtraj,utraj,z,F,info] = solveTraj@TrajectoryOptimization(obj,t_init,traj_init);
+      [xtraj,utraj,z,F,info] = solveTraj@DirectTrajectoryOptimization(obj,t_init,traj_init);
       t = [0; cumsum(z(obj.h_inds))];
       ltraj = PPTrajectory(foh(t,reshape(z(obj.l_inds),[],obj.N)));
       ljltraj = PPTrajectory(foh(t,reshape(z(obj.ljl_inds),[],obj.N)));
     end
     
     function obj = setupVariables(obj,N)
-      obj = setupVariables@TrajectoryOptimization(obj,N);
+      obj = setupVariables@DirectTrajectoryOptimization(obj,N);
       obj.nC = obj.plant.getNumContactPairs;
       [~,normal,d] = obj.plant.contactConstraints(zeros(obj.plant.getNumPositions,1));
       obj.nD = 2*length(d);
@@ -219,6 +219,8 @@ classdef ContactImplicitTrajectoryOptimization < DirectTrajectoryOptimization
       [jl_lb,jl_ub] = obj.plant.getJointLimits();
       obj.jl_lb_ind = find(jl_lb ~= -inf);
       obj.jl_ub_ind = find(jl_ub ~= inf);
+      
+      obj = obj.addDecisionVariable(N * obj.nJL);
     end
     
     % evaluates the initial trajectories at the sampled times and
@@ -245,11 +247,7 @@ classdef ContactImplicitTrajectoryOptimization < DirectTrajectoryOptimization
     
     function obj = addRunningCost(obj,running_cost)
       for i=1:obj.N-1,
-        h_ind = obj.h_inds(i);
-        x_ind = obj.x_inds(:,i);
-        u_ind = obj.u_inds(:,i);
-        
-        obj = obj.addCost(running_cost,{h_ind;x_ind;u_ind});
+        obj = obj.addCost(running_cost,{obj.h_inds(i);obj.x_inds(:,i);obj.u_inds(:,i)});
       end
     end
     
