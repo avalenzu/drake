@@ -18,10 +18,10 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
     F_idx % A cell array of size 1 x num_unique_contact_bodies, F_idx{i} is a F_size(1) x F_size(2) x obj.N matrix
   end
   methods
-    function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,q_nom_traj, ...
+    function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,tf_range,q_nom_traj, ...
                                     fix_initial_state,x0,varargin)
       t_seed = unique(t_seed(:)');
-      obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),[t_seed(1),10*t_seed(end)]);
+      obj = obj@DirectTrajectoryOptimization(robot,numel(t_seed),tf_range);
       obj.t_seed = t_seed;
       sizecheck(fix_initial_state,[1,1]);
       obj.nv = obj.plant.getNumDOF();
@@ -61,7 +61,7 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
 
       obj.Q = eye(obj.plant.getNumPositions());
       obj.qsc_weight_idx = cell(1,obj.N);
-      num_rbcnstr = nargin-5;
+      num_rbcnstr = nargin-6;
       [q_lb,q_ub] = obj.plant.getJointLimits();
       obj = obj.addBoundingBoxConstraint(BoundingBoxConstraint( ...
         reshape(bsxfun(@times,q_lb,ones(1,obj.N)),[],1),...
