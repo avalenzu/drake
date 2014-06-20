@@ -1,6 +1,9 @@
-function [xtraj,utraj,info,r,v,planner] = testKinematicPlanner(visualize)
+function [xtraj,utraj,info,r,v,planner] = testKinematicPlanner(visualize,nT)
   if nargin < 1
     visualize = false;
+  end
+  if nargin < 2
+    nT = 10;
   end
   options.floating = false;
   urdf = [getDrakePath(),'/examples/SimpleDoublePendulum/SimpleDoublePendulum.urdf'];
@@ -13,7 +16,6 @@ function [xtraj,utraj,info,r,v,planner] = testKinematicPlanner(visualize)
   else
     v = [];
   end
-  nT = 10;
   tspan = [0,2];
   t_seed = linspace(tspan(1),tspan(2),nT);
   nX = r.getNumStates();
@@ -46,19 +48,20 @@ function [xtraj,utraj,info,r,v,planner] = testKinematicPlanner(visualize)
 
   traj_init.x = x_nom_traj;
   traj_init.u = PPTrajectory(foh(t_seed,rand(nU,nT)));
-  planner = KinematicPlanner(r,t_seed,q_nom_traj,true,x0,grasp);
-  %planner = planner.addRunningCost(NonlinearConstraint(0,0,nX+nU+1,@squaredEffort));
-  %planner = planner.addManagedStateConstraint(ConstraintManager([],NonlinearConstraint(0,0,nX,@final_cost_fun)),nT);
+  planner = KinematicPlanner(r,t_seed,t_seed([1,end]),q_nom_traj,true,x0,grasp);
+  planner = planner.addRunningCost(NonlinearConstraint(0,0,nX+nU+1,@squaredEffort));
+  planner = planner.addManagedStateConstraint(ConstraintManager([],NonlinearConstraint(0,0,nX,@final_cost_fun)),nT);
   [xtraj,utraj,z,F,info] = solveTraj(planner,t_seed,traj_init);
   if visualize
     v.playback(xtraj);
+    t_data = xtraj.getBreaks();
     figure(77);
     subplot(2,1,1);
-    plot(t_seed,eval(xtraj,t_seed));
+    plot(t_data,eval(xtraj,t_data));
     xlabel('Time (s)');
     ylabel('State');
     subplot(2,1,2)
-    plot(t_seed,eval(utraj,t_seed));
+    plot(t_data,eval(utraj,t_data));
     xlabel('Time (s)');
     ylabel('Input');
   end
