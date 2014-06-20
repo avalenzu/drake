@@ -140,6 +140,9 @@ classdef QuasiStaticConstraint<RigidBodyConstraint
     end
     
     function [c,dc] = evalValidTime(obj,kinsol,weights)
+      if ~isstruct(kinsol)
+        kinsol = obj.robot.doKinematics(kinsol);
+      end
       [com,dcom] = obj.robot.getCOM(kinsol,obj.robotnum);
       contact_pos = zeros(3,obj.num_pts);
       dcontact_pos = zeros(3*obj.num_pts,obj.nq);
@@ -225,7 +228,7 @@ classdef QuasiStaticConstraint<RigidBodyConstraint
       % sum only, and a BoundingBoxConstraint on the weighted sum only
       if(obj.isTimeValid(t) && obj.active)
         name_str = obj.name(t);
-        cnstr = {NonlinearConstraint([0;0],[0;0],obj.nq+obj.num_pts,@obj.evalValidTime),...
+        cnstr = {NonlinearConstraint([0;0],[0;0],obj.nq+obj.num_pts,@(~,weights,kinsol) obj.evalValidTime(kinsol,weights)),...
           LinearConstraint(1,1,ones(1,obj.num_pts)),...
           BoundingBoxConstraint(zeros(obj.num_pts,1),ones(obj.num_pts,1))};
         cnstr{1} = cnstr{1}.setName(name_str(1:2));
