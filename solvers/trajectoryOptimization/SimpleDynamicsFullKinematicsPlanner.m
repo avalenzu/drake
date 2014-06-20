@@ -16,6 +16,10 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
     unique_contact_bodies % A set of body indices, whose body has a ContactWrenchConstraint
     num_unique_contact_bodies % An integer. num_unique_contact_bodies = length(unique_contact_bodies)
     F_idx % A cell array of size 1 x num_unique_contact_bodies, F_idx{i} is a F_size(1) x F_size(2) x obj.N matrix
+
+    % N-element vector of indices into the shared_data, where
+    % shared_data{kinsol_dataind(i)} is the kinsol for knot point i
+    kinsol_dataind 
   end
   methods
     function obj = SimpleDynamicsFullKinematicsPlanner(robot,t_seed,tf_range,q_nom_traj, ...
@@ -58,6 +62,14 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       obj.q_nom_traj = q_nom_traj;
       obj.v_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
       obj.vd_nom_traj = ConstantTrajectory(zeros(obj.nv,1));
+
+      % create shared data functions to calculate kinematics at the knot
+      % points
+      kinsol_dataind = zeros(obj.N,1);
+      for i=1:obj.N,
+        [obj,kinsol_dataind(i)] = obj.addSharedDataFunction(@obj.kinematicsData,{obj.q_inds(:,i)});
+      end
+      obj.kinsol_dataind = kinsol_dataind;
 
       obj.Q = eye(obj.plant.getNumPositions());
       obj.qsc_weight_idx = cell(1,obj.N);
@@ -154,6 +166,9 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
       obj = obj.setSolverOptions('snopt','iterationslimit',1e5);
       obj = obj.setSolverOptions('snopt','majoriterationslimit',500);
     end
+    function data = kinematicsData(obj,q)
+      data = doKinematics(obj.plant,q,false,false);
+    end
 
     function obj = setFixInitialState(obj,flag,x0)
       % set obj.fix_initial_state = flag. If flag = true, then fix the initial state to x0
@@ -194,14 +209,16 @@ classdef SimpleDynamicsFullKinematicsPlanner < DirectTrajectoryOptimization
         time_index = {time_index};
       end
       for j=1:length(time_index),
-        cstr_inds = mat2cell(obj.q_inds(:,time_index{j}),size(obj.q_inds,1),ones(1,length(time_index{j})));
+        kinsol_inds = obj.kinsol_dataind(time_index{j}); 
+        cnstr_inds = mat2cell(obj.q_inds(:,time_index{j}),size(obj.q_inds,1),ones(1,length(time_index{j})));
         
         % record constraint for posterity
         obj.constraints{end+1}.constraint = constraint;
-        obj.constraints{end}.var_inds = cstr_inds;
+        obj.constraints{end}.var_inds = cnstr_inds;
+        obj.constraints{end}.kinsol_inds = kinsol_inds;
         obj.constraints{end}.time_index = time_index;
         
-        obj = obj.addManagedConstraints(constraint,cstr_inds);
+        obj = obj.addManagedConstraints(constraint,cnstr_inds,kinsol_inds);
       end
     end
   end
