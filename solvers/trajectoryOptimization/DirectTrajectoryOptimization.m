@@ -4,13 +4,13 @@ classdef DirectTrajectoryOptimization < NonlinearProgramWConstraintObjects
   %
   % Generally considers cost functions of the form:
   % e(x0) + int(f(x(t),u(t)) + g(T,xf)
-  %
+  %    
   % Subclasses must implement the two abstract methods:
-  %  obj = setupCostFunction(obj,initial_cost,running_cost,final_cost);
+  %  obj = addRunningCost(obj,running_cost);
+  %     where running_cost is a NonlinearConstraint f(h,x,u)
   % and
-  %  [constraints,dyn_inds] = createDynamicConstraints(obj);
-  % which each determine how the dynamic constraints are evaluated and how
-  % the cost function is integrated.
+  %  obj = addDynamicConstraints(obj);
+  %   which add the constraints to enforce \dot x = f(x,u)
   %
   % This class assumes that there are a fixed number (N) time steps, and
   % that the trajectory is discreteized into timesteps h (N-1), state x
@@ -140,17 +140,42 @@ classdef DirectTrajectoryOptimization < NonlinearProgramWConstraintObjects
     end
     
     function obj = addBoundingBoxStateConstraint(obj,constraint,time_index)
-          % Add a boundingbox constraint that is a function of the state at the
-    % specified time or times.
-    % @param constraint  a BoundingBoxConstraint
-    % @param time_index   a cell array of time indices
-    %   ex1., time_index = {1, 2, 3} means the constraint is applied
-    %   individually to knot points 1, 2, and 3
-    %   ex2,. time_index = {[1 2], [3 4]} means the constraint is applied to knot
-    %   points 1 and 2 together (taking the combined state as an argument)
-    %   and 3 and 4 together.
-    %
+      % Add a boundingbox constraint that is a function of the state at the
+      % specified time or times.
+      % @param constraint  a BoundingBoxConstraint
+      % @param time_index   a cell array of time indices
+      %   ex1., time_index = {1, 2, 3} means the constraint is applied
+      %   individually to knot points 1, 2, and 3
+      %   ex2,. time_index = {[1 2], [3 4]} means the constraint is applied to knot
+      %   points 1 and 2 together (taking the combined state as an argument)
+      %   and 3 and 4 together.
+      %
       obj = obj.addManagedStateConstraint(ConstraintManager([],[],constraint),time_index);
+    end
+    
+    function obj = addStateConstraint(obj,constraint,time_index)
+      % Add a constraint that is a function of the state at the
+      % specified time or times.
+      % @param constraint  a NonlinearConstraint or ConstraintManager object
+      % @param time_index   a cell array of time indices
+      %   ex1., time_index = {1, 2, 3} means the constraint is applied
+      %   individually to knot points 1, 2, and 3
+      %   ex2,. time_index = {[1 2], [3 4]} means the constraint is applied to knot
+      %   points 1 and 2 together (taking the combined state as an argument)
+      %   and 3 and 4 together.
+      %
+      
+      if isa(constraint,'BoundingBoxConstraint')
+        obj = addBoundingBoxStateConstraint(obj,constraint,time_index);
+      elseif isa(constraint,'LinearConstraint')
+        obj = addLinearStateConstraint(obj,constraint,time_index);
+      elseif isa(constrain,'NonlinearConstraint')
+        obj = addNonlinearStateConstraint(obj,constraint,time_index);
+      elseif isa(constraint,'ConstraintManager')
+        obj = addManagedStateConstraint(obj,ConstraintManager,time_index);
+      else
+        error('Drake:DirectTrajectoryOptimization:UnsupportedStateConstraint','Unsupported state constraint type');
+      end
     end
     
     % Solve the nonlinear program and return resulting trajectory
@@ -176,8 +201,16 @@ classdef DirectTrajectoryOptimization < NonlinearProgramWConstraintObjects
       z0(obj.h_inds) = diff(t_init);
       
       for i=1:length(t_init),
-        z0(obj.x_inds(:,i)) = traj_init.x.eval(t_init(i));
         z0(obj.u_inds(:,i)) = traj_init.u.eval(t_init(i));
+        
+        if isfield(traj_init,'x')
+          z0(obj.x_inds(:,i)) = traj_init.x.eval(t_init(i));
+        else
+          %simulate
+          sys_ol = cascade(traj_init.u,obj.plant);
+          [~,x_sim] = sys_ol.simulate([t_init(1) t_init(end)]);
+          z0(obj.x_inds(:,i)) = x_sim.x.eval(t_init(i));
+        end
       end
     end
     
