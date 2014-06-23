@@ -83,9 +83,9 @@ classdef DirectTrajectoryOptimization < NonlinearProgramWConstraintObjects
       obj = obj.addBoundingBoxConstraint(control_limit,obj.u_inds(:));
       
       % add joint limits as bounding box constraints
-      [joint_lb,joint_ub] = plant.getJointLimits();
-      joint_limit = BoundingBoxConstraint(repmat(joint_lb,N,1),repmat(joint_ub,N,1));
-      obj = obj.addBoundingBoxConstraint(joint_limit,reshape(obj.x_inds(1:plant.getNumPositions,:),[],1));
+%       [joint_lb,joint_ub] = plant.getJointLimits();
+%       joint_limit = BoundingBoxConstraint(repmat(joint_lb,N,1),repmat(joint_ub,N,1));
+%       obj = obj.addBoundingBoxConstraint(joint_limit,reshape(obj.x_inds(1:plant.getNumPositions,:),[],1));
     end
     
     function obj = addManagedStateConstraint(obj,constraint,time_index)
@@ -221,7 +221,9 @@ classdef DirectTrajectoryOptimization < NonlinearProgramWConstraintObjects
       obj.N = N;
       x_names = cell(num_vars,1);
       for i = 1:N
-        x_names{i} = sprintf('h[%d]',i);
+        if(i<N)
+          x_names{i} = sprintf('h[%d]',i);
+        end
         for j = 1:nX
           x_names{nH+(i-1)*nX+j}=sprintf('x%d[%d]',j,i);
         end
