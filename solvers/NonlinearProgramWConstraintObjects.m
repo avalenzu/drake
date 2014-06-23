@@ -390,12 +390,8 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       obj.num_vars = obj.num_vars+num_new_vars;
       obj.x_lb = [obj.x_lb;-inf(num_new_vars,1)];
       obj.x_ub = [obj.x_ub;inf(num_new_vars,1)];
-      if(~isempty(obj.Aeq))
-        obj.Aeq = [obj.Aeq zeros(length(obj.beq),num_new_vars)];
-      end
-      if(~isempty(obj.Ain))
-        obj.Ain = [obj.Ain zeros(length(obj.bin),num_new_vars)];
-      end
+      obj.Aeq = [obj.Aeq zeros(length(obj.beq),num_new_vars)];
+      obj.Ain = [obj.Ain zeros(length(obj.bin),num_new_vars)];
       obj.x_name = [obj.x_name;var_names];
     end
     
