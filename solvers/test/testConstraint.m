@@ -1,12 +1,12 @@
 function testConstraint
-display('Check constructing constraint with anonymous function handle without gradient');
-cnstr1 = Constraint(0,1,@(x) x+1);
-cnstr1.grad_method = 'numerical';
-[c1,dc1] = cnstr1.eval(1);
-valuecheck(c1,2);
-valuecheck(dc1,1);
-valuecheck(cnstr1.lb,0);
-valuecheck(cnstr1.ub,1);
+% display('Check constructing constraint with anonymous function handle without gradient');
+% cnstr1 = Constraint(0,1,@(x) x+1);
+% cnstr1.grad_method = 'numerical';
+% [c1,dc1] = cnstr1.eval(1);
+% valuecheck(c1,2);
+% valuecheck(dc1,1);
+% valuecheck(cnstr1.lb,0);
+% valuecheck(cnstr1.ub,1);
 
 display('Check constructing constraint with function handle and 1st order gradient');
 cnstr2 = Constraint([0;1],[0;2],@cnstr_userfun2);
@@ -34,6 +34,11 @@ c4_val = cnstr4.eval([1;2;0]);
 valuecheck(c4,c4_val);
 cnstr4.checkGradient(1e-4,randn(3,1));
 
+display('Check NonlinearConstraint with overloading');
+cnstr_nlcon2 = NonlinearConstraint1();
+cnstr_nlcon2.checkGradient(1e-4,randn(2,1),randn(2,1));
+
+
 display('Check LinearConstraint')
 A = sparse([1;1;2;3;3;3],[1;4;2;1;2;3],randn(6,1));
 cnstr5 = LinearConstraint([0;0;0],[0;1;0],A);
@@ -50,6 +55,7 @@ display('Check BoundingBoxConstraint')
 cnstr6 = BoundingBoxConstraint([0;1;2;3],[1;2;2;3]);
 valuecheck(cnstr6.lb,[0;1;2;3]);
 valuecheck(cnstr6.ub,[1;2;2;3]);
+
 end
 
 function [c,dc] = cnstr_userfun2(x)
