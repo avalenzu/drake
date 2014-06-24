@@ -95,6 +95,7 @@ classdef ContactWrenchConstraint < RigidBodyConstraint
     function cnstr = generateConstraint(obj,t)
       % generate a NonlinearConstraint for 'eval' function, and a BoundingBoxConstraint
       % for F
+      if nargin < 2, t = obj.tspan(1); end;
       if(obj.isTimeValid(t))
         [lb,ub] = obj.bounds(t);
         cnstr = {NonlinearConstraint(lb,ub,obj.robot.getNumDOF+obj.pt_num_F*obj.num_pts,@(~,F,kinsol) obj.eval(t,kinsol,reshape(F,obj.pt_num_F,obj.num_pts))),...
