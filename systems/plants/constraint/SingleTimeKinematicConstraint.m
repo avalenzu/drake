@@ -51,6 +51,7 @@ classdef SingleTimeKinematicConstraint < RigidBodyConstraint
     
     function cnstr = generateConstraint(obj,t)
       % generate a FunctionHandleConstraint object if time is valid
+      if nargin < 2, t = obj.tspan(1); end;
       if(obj.isTimeValid(t))
         [lb,ub] = obj.bounds(t);
         cnstr = {FunctionHandleConstraint(lb,ub,obj.robot.getNumDOF,@(~,kinsol) obj.eval(t,kinsol))};
