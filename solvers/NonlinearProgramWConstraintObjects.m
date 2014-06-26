@@ -1,6 +1,16 @@
 classdef NonlinearProgramWConstraintObjects < NonlinearProgram
   % The constraint of this nonlinear program is specified using 'Constraint' class in
   % drake
+  %
+  % Generally speaking, this class manages the association between
+  % DifferentiableConstraint objects and NonlinearPrograms. With the goal
+  % of improved performance by avoiding redundant calculations, the
+  % DifferentiableConstraint eval function is assumed to be of the form
+  % eval(args{:},data{:}) where args are the standard, numerical valued
+  % arguments that are a subset of the NLP decision variables. data is a
+  % reference to shared data objects that are pre-computed once per
+  % iteration and can be shared between Constraint objects. See
+  % addSharedDataFunction() for more details
   
   properties(SetAccess = protected)
     x_name % A cell array of strings. x_name{i} is the name of the i'th decidion variable
@@ -83,15 +93,15 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       obj.cost_dataind = {};
     end
     
-    function obj = addManagedConstraints(obj,mgr,xind,data_ind)
-      % add a ConstraintManager to the object, change the constraint evalation of the
+    function obj = addCompositeConstraints(obj,cnstr,xind,data_ind)
+      % add a CompositeConstraint to the object, change the constraint evalation of the
       % program.
-      % @param mgr     -- A ConstraintManager object
+      % @param mgr     -- A CompositeConstraint object
       % @param xind      -- Optional argument. The x(xind) is the decision variables used
       % in evaluating the cnstr. Default value is (1:obj.num_vars)
       % @param data_ind  -- Optional argument. shared_data{data_ind} are the data objects used
-      if(~isa(mgr,'ConstraintManager'))
-        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addManagedConstraints expects a ConstraintManager object');
+      if(~isa(cnstr,'CompositeConstraint'))
+        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addCompositeConstraints expects a CompositeConstraint object');
       end
       if(nargin<3)
         xind = {(1:obj.num_vars)'};
@@ -105,36 +115,41 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       if size(xind,2) ~= 1
         error('Drake:NonlinearProgramWConstraint:InvalidArgument','xind must be a 1-D vector or 1-D cell array');
       end
-      if(nargin<4)
-        data_ind = [];
-      end
-      data_ind = data_ind(:);
 
       % add in slack variables to end, and adjust xind accordingly
-      n_slack = mgr.getNumSlackVariables();
+      n_slack = cnstr.n_slack;
       for i=1:length(xind)
         xind{i} = [xind{i};(obj.num_vars + 1 : obj.num_vars + n_slack)'];
       end
       obj = obj.addDecisionVariable(n_slack);
       
+      if nargin < 4
+        args = {xind};
+      else
+        args = {xind,data_ind};
+      end
+      
       % add constraints
-      lincon = mgr.getLinearConstraints();
-      for k=1:length(lincon),
-        obj = obj.addLinearConstraint(lincon{k}, xind);
-      end
-      
-      nlncon = mgr.getNonlinearConstraints();
-      for k=1:length(nlncon),
-        obj = obj.addNonlinearConstraint(nlncon{k}, xind, data_ind);
-      end
-      
-      bcon = mgr.getBoundingBoxConstraints();
-      for k=1:length(bcon),
-        obj = obj.addBoundingBoxConstraint(bcon{k}, xind);
+      for k=1:length(cnstr.constraints),
+        obj = obj.addConstraint(cnstr.constraints{k}, args{:});
+      end      
+    end
+    
+    function obj = addConstraint(obj,cnstr,varargin)
+      if isa(cnstr,'BoundingBoxConstraint')
+        obj = addBoundingBoxConstraint(obj,cnstr,varargin{:});
+      elseif isa(cnstr,'LinearConstraint')
+        obj = addLinearConstraint(obj,cnstr,varargin{:});
+      elseif isa(cnstr,'DifferentiableConstraint')
+        obj = addDifferentiableConstraint(obj,cnstr,varargin{:});
+      elseif isa(cnstr,'CompositeConstraint')
+        obj = addCompositeConstraints(obj,cnstr,varargin{:});
+      else
+        error('Drake:NonlinearProgramWConstraintObjects:UnsupportedConstraint','Unsupported constraint type');
       end
     end
     
-    function obj = addNonlinearConstraint(obj,cnstr,xind, data_ind)
+    function obj = addDifferentiableConstraint(obj,cnstr,xind, data_ind)
       % add a NonlinearConstraint to the object, change the constraint evalation of the
       % program. 
       % @param cnstr     -- A NonlinearConstraint object
@@ -151,7 +166,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
         xind = xind';
       end
       if size(xind,2) ~= 1
-        error('Drake:NonlinearProgramWConstraint:InvalidArgument','xind must be a 1-D vector or 1-D cell array');
+        error('Drake:NonlinearProgramWConstraintObjects:InvalidArgument','xind must be a 1-D vector or 1-D cell array');
       end
       
       xind_vec = cell2mat(xind);
@@ -161,11 +176,11 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       end
       data_ind = data_ind(:);
       
-      if(~isa(cnstr,'NonlinearConstraint'))
-        error('Drake:NonlinearProgramWConstraintObjects:UnsupportedConstraint','addNonlinearConstraint expects a NonlinearConstraint object');
+      if(~isa(cnstr,'DifferentiableConstraint'))
+        error('Drake:NonlinearProgramWConstraintObjects:UnsupportedConstraint','addNonlinearConstraint expects a DifferentiableConstraint object');
       end
       if length(xind_vec) ~= cnstr.xdim
-        error('Drake:NonlinearProgramWConstraint:InvalidArgument','the length of xind must match the x-dimension of the constraint');
+        error('Drake:NonlinearProgramWConstraintObjects:InvalidArgument','the length of xind must match the x-dimension of the constraint');
       end
       obj.nlcon = [obj.nlcon,{cnstr}];
       
@@ -224,7 +239,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       end
       obj.lcon = [obj.lcon,{cnstr}];
       
-      cnstr_A = sparse(cnstr.iAfun,xind(cnstr.jAvar),cnstr.A_val,cnstr.num_cnstr,obj.num_vars,cnstr.nnz);
+      cnstr_A = sparse(cnstr.iCfun,xind(cnstr.jCvar),cnstr.A_val,cnstr.num_cnstr,obj.num_vars,cnstr.nnz);
       cnstr_beq = (cnstr.lb(cnstr.ceq_idx)+cnstr.ub(cnstr.ceq_idx))/2;
       cnstr_Aeq = cnstr_A(cnstr.ceq_idx,:);
       cnstr_Ain = cnstr_A(cnstr.cin_idx,:);
@@ -281,20 +296,22 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
         data_ind = [];
       end
       data_ind = data_ind(:);
-      if(~isa(cnstr,'LinearConstraint') && ~isa(cnstr,'NonlinearConstraint'))
-        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addCost expects a LinearConstraint or NonlinearConstraint object');
+      if ~isa(cnstr,'DifferentiableConstraint')
+        error('Drake:NonlinearProgramWConstraint:UnsupportedConstraint','addCost expects a DifferentiableConstraint object');
       end
+      
       if(isa(cnstr,'LinearConstraint'))
+        % Treat linear constraints differently
         if(cnstr.num_cnstr ~= 1)
           error('Drake:NonlinearProgramWConstraint:WrongCost','addCost only accept scalar function');
         end
         obj.cost = [obj.cost,{cnstr}];
-        obj.cost_xind_cell{end+1} = {xind_vec(cnstr.jAvar);};
-        obj.cost_xind_stacked{end+1} = xind_vec(cnstr.jAvar);
+        obj.cost_xind_cell{end+1} = {xind_vec(cnstr.jCvar);};
+        obj.cost_xind_stacked{end+1} = xind_vec(cnstr.jCvar);
         obj.cost_dataind{end+1} = data_ind;
-        obj.jFvar = unique([obj.jFvar;xind_vec(cnstr.jAvar)]);
+        obj.jFvar = unique([obj.jFvar;xind_vec(cnstr.jCvar)]);
         obj.iFfun = ones(length(obj.jFvar),1);
-      elseif(isa(cnstr,'NonlinearConstraint'))
+      else
         if(cnstr.num_cnstr ~= 1)
           error('Drake:NonlinearProgramWConstraint:WrongCost','addCost only accept scalar function');
         end
@@ -336,8 +353,7 @@ classdef NonlinearProgramWConstraintObjects < NonlinearProgram
       dg = G(obj.nlcon_ineq_idx,:);
       dh = G(obj.nlcon_eq_idx,:);
     end
-    
-    
+     
     function [f,df] = objective(obj,x)
       shared_data = obj.evaluateSharedDataFunctions(x);
       f = 0;
