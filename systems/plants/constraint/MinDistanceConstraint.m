@@ -59,7 +59,11 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
     end
 
     function num = getNumConstraint(obj,t)
-      num = 1;
+      if obj.isTimeValid(t)
+        num = 1;
+      else
+        num = 0;
+      end
     end
 
     function obj = updateRobot(obj,robot)
@@ -68,8 +72,13 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
     end
 
     function [lb,ub] = bounds(obj,t)
-      lb = 0;
-      ub = 0;
+      if obj.isTimeValid(t)
+        lb = 0;
+        ub = 0;
+      else
+        lb = [];
+        ub = [];
+      end
     end
 
     function name_str = name(obj,t)
