@@ -3,7 +3,7 @@ function testKinCnst
 checkDependency('rigidbodyconstraint_mex');
 
 urdf = [getDrakePath,'/examples/Atlas/urdf/atlas_minimal_contact.urdf'];
-urdf_collision = [getDrakePath,'/examples/Atlas/urdf/atlas_chull.urdf'];
+urdf_collision = [getDrakePath,'/examples/Atlas/urdf/atlas_convex_hull.urdf'];
 aff_urdf = [getDrakePath,'/systems/plants/constraint/test/valve_task_wall.urdf'];
 
 options.floating = true;
@@ -196,8 +196,8 @@ testKinCnst_userfun(true,true,t_valid,q,q_aff,RigidBodyConstraint.AllBodiesClose
 testKinCnstInvalidTime_userfun(true,true,t_invalid,q,RigidBodyConstraint.AllBodiesClosestDistanceConstraintType,robot_collision,0.05,1e1,tspan0);
 
 display('Check minimum distance constraint');
-testKinCnst_userfun(true,true,t,q,q_aff,RigidBodyConstraint.MinDistanceConstraintType,robot_collision,robot_collision_aff,0.05,tspan0);
-testKinCnstInvalidTime_userfun(true,true,t_invalid,q,RigidBodyConstraint.MinDistanceConstraintType,robot_collision,0.05,1e1,tspan0);
+testKinCnst_userfun(true,true,t_valid,q,q_aff,RigidBodyConstraint.MinDistanceConstraintType,robot_collision,robot_collision_aff,0.05,tspan0);
+testKinCnstInvalidTime_userfun(true,true,t_invalid,q,RigidBodyConstraint.MinDistanceConstraintType,robot_collision,0.05,tspan0);
 
 display('Check point to point distance constraint');
 lhand_pts = rand(3,2);

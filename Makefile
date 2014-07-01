@@ -55,15 +55,19 @@ doc/drake.pdf :
 	cd doc && make -f ~/code/latex/makefile_tex drake.pdf
 
 doc/urdf/drakeURDF.html : doc/drakeURDF.xsd
-	# apologies for hard-coding this for my mac for now... - Russ
-	cd doc && /Applications/oxygen/schemaDocumentationMac.sh drakeURDF.xsd -cfg:oxygen_export_settings_html.xml
+	ifeq ($(shell uname -p),Darwin)
+	  cd doc && /Applications/oxygen/schemaDocumentationMac.sh drakeURDF.xsd -cfg:oxygen_export_settings_html.xml	
+	else
+	  # note that I manually installed oxygen to my home oxygen directory
+	  cd doc && $(HOME)/oxygen/schemaDocumentation.sh drakeURDF.xsd -cfg:oxygen_export_settings_html.xml	
+	endif 
 
 .PHONY: mlint
 mlint	:
 	matlab -nodisplay -r "addpath(fullfile(pwd,'thirdParty','runmlint')); runmlint('.mlintopts'); exit"
 
 test	:  configure
-	-@cd pod-build && ctest -D Experimental --output-on-failure --timeout 600
+	-@cd pod-build && ctest -D Experimental --output-on-failure --timeout 300
 
 test_continuous : configure
 	while true; do $(MAKE) Continuous; sleep 300; done

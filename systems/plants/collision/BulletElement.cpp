@@ -1,14 +1,19 @@
-#include "BulletElement.h"
+#include <iostream>
+
+#include "DrakeCollision.h"
 #include "BulletModel.h"
 
 using namespace std;
+using namespace Eigen;
 
 namespace DrakeCollision
 {
   BulletElement::BulletElement(const Matrix4d& T_elem_to_link, Shape shape, 
-                                const vector<double>& params)
-    : Element(T_elem_to_link, shape, params)
+                                const vector<double>& params,
+                                const string& group_name)
+    : T_elem_to_link(T_elem_to_link),shape(shape)
   {
+    setGroupName(group_name);
     //DEBUG
     //std::cout << "BulletElement::BulletElement: START" << std::endl;
     //END_DEBUG
@@ -93,14 +98,35 @@ namespace DrakeCollision
     //DEBUG
     //cout << "BulletElement::BulletElement: Setting world transform for bt_ob" << endl;
     //END_DEBUG
-    setWorldTransform(this->T_elem_to_world);
+    setWorldTransform(Matrix4d::Identity());
     //DEBUG
-    //std::cout << "BulletElement::BulletElement: END" << std::endl;
+    //cout << "BulletElement::BulletElement: END" << std::endl;
     //END_DEBUG
   }
+    
+  const Matrix4d& BulletElement::getWorldTransform() const
+  {
+    return T_elem_to_world;
+  }
+
+  const Matrix4d& BulletElement::getLinkTransform() const
+  {
+    return T_elem_to_link;
+  }
+
+  const Shape& BulletElement::getShape() const
+  {
+    return shape;
+  }
+
+  void BulletElement::updateWorldTransform(const Matrix4d& T_link_to_world)
+  {
+    setWorldTransform(T_link_to_world*(this->T_elem_to_link));
+  }
+    
   void BulletElement::setWorldTransform(const Matrix4d& T)
   {
-    Element::setWorldTransform(T);
+    this->T_elem_to_world = T_elem_to_world;
 
     btMatrix3x3 rot;
     btVector3 pos;
@@ -114,5 +140,15 @@ namespace DrakeCollision
     btT.setOrigin(pos);
 
     bt_obj->setWorldTransform(btT);
+  }
+
+  const string& BulletElement::getGroupName() const
+  {
+    return group_name;
+  }
+
+  void BulletElement::setGroupName(const string& group_name)
+  {
+    this->group_name = group_name;
   }
 }
