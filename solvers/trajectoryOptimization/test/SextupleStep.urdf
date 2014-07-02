@@ -1,0 +1,155 @@
+<?xml version="1.0" ?>
+
+<!--Reference: http://www.ninjafit.net/quad-steps-godantobi-american-ninja-warrior-obstacles/ -->
+<robot name="AngledSteps">
+  <material name="Blue">
+    <color rgba="0.2 0.2 0.9 1.0"/>
+  </material>
+  <material name="Green">
+    <color rgba="0.2 0.9 0.2 1.0"/>
+  </material>
+  <material name="Red">
+    <color rgba="0.9 0.2 0.2 1.0"/>
+  </material>
+
+
+
+
+  <link name="Course">
+    <inertial>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+      <origin xyz="0 0 0"/>
+    </inertial>
+    <!-- Visual Steps -->
+    <visual>
+      <origin xyz="1 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <visual>
+      <origin xyz="2.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <visual>
+      <origin xyz="4 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <visual>
+      <origin xyz="5.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <visual>
+      <origin xyz="7 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <visual>
+      <origin xyz="8.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+      <material name="Red"/>  
+    </visual>
+
+    <!-- Collision Steps -->
+    <collision group="first_step">
+      <origin xyz="1 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+    <collision>
+      <origin xyz="2.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+    <collision>
+      <origin xyz="4 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+    <collision>
+      <origin xyz="5.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+    <collision>
+      <origin xyz="7 1.5 1" rpy="-0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+    <collision>
+      <origin xyz="8.5 -1.5 1" rpy="0.785398163 0 0"/>
+      <geometry>
+        <box size="1 0.2 2.5"/>
+      </geometry>
+    </collision>
+
+  </link>
+
+  <!--<link name="StepGhost">-->
+    <!--<inertial>-->
+      <!--<mass value="100"/>-->
+      <!--<inertia ixx="0.000269283" ixy="-4.52571e-07" ixz="3.23662e-06" iyy="0.00037679" iyz="-9.93935e-07" izz="0.000360355"/>-->
+      <!--<origin xyz="-0.036208 8.31243e-05 -0.00126685"/>-->
+    <!--</inertial>-->
+    <!--<visual>-->
+      <!--<origin xyz="0 0 0" rpy="0 0 0"/>-->
+      <!--<geometry>-->
+        <!-- Step 1-->
+        <!--<box size="0.5 1 1.89"/>-->
+      <!--</geometry>-->
+      <!--<material name="Green"/>  -->
+    <!--</visual>-->
+    <!--<collision group="start">-->
+      <!--<origin xyz="0 0 0" rpy="0 0 0"/>-->
+      <!--<geometry>-->
+        <!-- Step 1-->
+        <!--<box size="0.5 1 1.89"/>-->
+      <!--</geometry>-->
+      <!--<material name="Green"/>  -->
+    <!--</collision>-->
+    
+  <!--</link>-->
+
+
+
+
+
+
+  <!--<joint name="FalseJoint" type="fixed">-->
+      <!--<origin rpy="0 -0 0" xyz="0.0137246 0.0 1.1092625"/>-->
+      <!--<parent link="Course"/>-->
+      <!--<child link="StepGhost"/>-->
+      <!--<axis xyz="0 0 1"/>-->
+      <!--<limit effort="10.0" lower="-1.5" upper="1.5" velocity="1.0"/>-->
+  <!--</joint>-->
+</robot>
