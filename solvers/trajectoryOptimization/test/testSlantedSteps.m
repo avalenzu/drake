@@ -104,8 +104,10 @@ function testSlantedSteps()
     contact_wrench_struct(i).active_knot = stance_knots{i};
   end
 
+  g = 9.81;
+  Q_contact_force = 10/(robot.getMass*g)^2*eye(3);
   % Find initial forces
-  start_force_prog = ComDynamicsFullKinematicsPlanner(robot,2,[1,1],Q_comddot,Qv,Q,q_nom(:,1:2),contact_wrench_struct);
+  start_force_prog = ComDynamicsFullKinematicsPlanner(robot,2,[1,1],Q_comddot,Qv,Q,q_nom(:,1:2),Q_contact_force,contact_wrench_struct);
   start_force_prog = start_force_prog.setSolverOptions('snopt','print',snopt_output_filename);
 
   start_force_prog = start_force_prog.addStateConstraint(ConstantConstraint(x0),{1,2});
@@ -135,7 +137,7 @@ function testSlantedSteps()
     contact_wrench_struct(i).active_knot = stance_knots{i};
   end
 
-  cdfkp = ComDynamicsFullKinematicsPlanner(robot,nT,tf_range,Q_comddot,Qv,Q,q_nom,contact_wrench_struct);
+  cdfkp = ComDynamicsFullKinematicsPlanner(robot,nT,tf_range,Q_comddot,Qv,Q,q_nom,Q_contact_force,contact_wrench_struct);
 
   % Stance constraints
   for i = 1:numel(stance_knots)
