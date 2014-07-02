@@ -6,6 +6,7 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
   %                   active
   properties
     min_distance
+    active_collision_options
   end
   
   methods(Access=protected)
@@ -16,7 +17,7 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
        q = kinsol;
      end
      kinsol = doKinematics(obj.robot,q,true);
-     [dist,ddist_dq] = closestDistance(obj.robot,kinsol);
+     [dist,ddist_dq] = closestDistance(obj.robot,kinsol,obj.active_collision_options);
      [scaled_dist,dscaled_dist_ddist] = scaleDistance(obj,dist);
      [pairwise_costs,dpairwise_cost_dscaled_dist] = penalty(obj,scaled_dist);
      c = sum(pairwise_costs);
@@ -29,10 +30,11 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
   end
 
   methods
-    function obj = MinDistanceConstraint(robot,min_distance,tspan)
-      if(nargin == 2)
+    function obj = MinDistanceConstraint(robot,min_distance,tspan,active_collision_options)
+      if(nargin < 3)
         tspan = [-inf inf];
       end
+      if nargin < 4, active_collision_options = struct(); end;
       sizecheck(min_distance,[1,1]);
       ptr = constructPtrRigidBodyConstraintmex(RigidBodyConstraint.MinDistanceConstraintType,robot.getMexModelPtr,min_distance,tspan);
       obj = obj@SingleTimeKinematicConstraint(robot,tspan);
@@ -40,6 +42,7 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
       obj.min_distance = min_distance;
       obj.mex_ptr = ptr;
       obj.num_constraint = 1;
+      obj.active_collision_options = active_collision_options;
     end
 
     function [scaled_dist,dscaled_dist_ddist] = scaleDistance(obj,dist)
