@@ -14,7 +14,6 @@ classdef InverseKin < NonlinearProgramWConstraintObjects
     q_idx   % q=x(q_idx), the robot posture
     qsc_weight_idx   % qsc_weight = x(qsc_weight_idx), the weight used in QuasiStaticConstraint
     nq
-    x_name
     robot
     kinsol_dataind
   end
@@ -124,7 +123,9 @@ classdef InverseKin < NonlinearProgramWConstraintObjects
       q = x(obj.q_idx);
       q = max([obj.x_lb(obj.q_idx) q],[],2);
       q = min([obj.x_ub(obj.q_idx) q],[],2);
-      [info,infeasible_constraint] = infeasibleConstraintName(obj,x,info);
+      if nargout > 3
+        [info,infeasible_constraint] = infeasibleConstraintName(obj,x,info);
+      end
     end
 
     function obj = addDecisionVariable(obj,num_new_vars,var_names)
