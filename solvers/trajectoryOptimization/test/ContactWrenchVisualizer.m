@@ -44,7 +44,7 @@ classdef ContactWrenchVisualizer < BotVisualizer
     
     function draw(obj,t,y)
       draw@BotVisualizer(obj,t,y);
-      t_ind = find(t<=obj.t_knot,1,'first');
+      t_ind = find(t>=obj.t_knot,1,'last');
       for i = 1:obj.num_contact_bodies
         pts_pos_i = obj.wrench_sol(i,t_ind).pts_pos;
         force_i = obj.wrench_sol(i,t_ind).force;

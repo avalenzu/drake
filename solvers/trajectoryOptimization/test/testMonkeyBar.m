@@ -770,7 +770,7 @@ if(mode == 6)
   cdfkp = cdfkp.addCost(QuadraticConstraint(-inf,inf,Q,-Q*qstar),cdfkp.q_inds(:,land_static_idx));
   
   % add a torso direction constraint
-  torso_dir_cnstr = WorldGazeDirConstraint(robot,utorso,[0;0;1],[0;0;1],0.25);
+  torso_dir_cnstr = WorldGazeDirConstraint(robot,utorso,[0;0;1],[0;0;1],0.15);
   cdfkp = cdfkp.addRigidBodyConstraint(torso_dir_cnstr,{land_static_idx});
   
   x_seed = zeros(cdfkp.num_vars,1);
