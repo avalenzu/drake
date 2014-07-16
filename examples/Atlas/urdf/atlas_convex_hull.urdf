@@ -158,7 +158,7 @@
         <mesh filename="meshes/GRIPPER_OPEN_chull.wrl" scale="1 1 1"/>
       </geometry>
     </visual>
-    <collision group="l_hand_extra">
+    <collision group="default">
       <origin rpy="-1.57079 -1.57079 0" xyz="0 0.29016 0.0112"/>
       <geometry>
         <mesh filename="meshes/GRIPPER_OPEN_chull.wrl" scale="1 1 1"/>
@@ -486,7 +486,7 @@
         <mesh filename="meshes/r_hand_chull.wrl" scale="1 1 1"/>
       </geometry>
     </visual>
-    <collision>
+    <collision group="default">
       <origin rpy="0 -0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="meshes/r_hand_chull.wrl" scale="1 1 1"/>
@@ -499,7 +499,7 @@
         <mesh filename="meshes/GRIPPER_OPEN_chull.wrl" scale="1 1 1"/>
       </geometry>
     </visual>
-    <collision group="r_hand_extra">
+    <collision group="default">
       <origin rpy="-1.57079 -1.57079 3.142" xyz="0 -0.29016 0.0112"/>
       <geometry>
         <mesh filename="meshes/GRIPPER_OPEN_chull.wrl" scale="1 1 1"/>
@@ -690,14 +690,14 @@
     <member link="r_uleg"/>
     <ignored_collision_filter_group collision_filter_group="core"/>
     <ignored_collision_filter_group collision_filter_group="r_uleg"/>
-    <ignored_collision_filter_group collision_filter_group="l_uleg"/>
+    <!--<ignored_collision_filter_group collision_filter_group="l_uleg"/>-->
   </collision_filter_group>
   <collision_filter_group name="l_uleg">
     <member link="l_uglut"/>
     <member link="l_lglut"/>
     <member link="l_uleg"/>
     <ignored_collision_filter_group collision_filter_group="core"/>
-    <ignored_collision_filter_group collision_filter_group="r_uleg"/>
+    <!--<ignored_collision_filter_group collision_filter_group="r_uleg"/>-->
     <ignored_collision_filter_group collision_filter_group="l_uleg"/>
   </collision_filter_group>
   <collision_filter_group name="r_leg">
