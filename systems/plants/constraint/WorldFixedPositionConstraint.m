@@ -52,7 +52,7 @@ classdef WorldFixedPositionConstraint < MultipleTimeKinematicConstraint
       if nargin == 3
         tspan = [-inf inf];
       end
-      mex_ptr = constructPtrRigidBodyConstraintmex(RigidBodyConstraint.WorldFixedPositionConstraintType,robot.getMexModelPtr,body,pts,tspan);
+      mex_ptr = []; %constructPtrRigidBodyConstraintmex(RigidBodyConstraint.WorldFixedPositionConstraintType,robot.getMexModelPtr,body,pts,tspan);
       obj = obj@MultipleTimeKinematicConstraint(robot,tspan);
       sizecheck(body,[1,1]);
       if(~isnumeric(body))

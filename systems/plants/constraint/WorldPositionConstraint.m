@@ -52,7 +52,7 @@ classdef WorldPositionConstraint < PositionConstraint
       obj.body_name = obj.robot.getBodyOrFrameName(obj.body);
       obj.type = RigidBodyConstraint.WorldPositionConstraintType;
       if robot.getMexModelPtr~=0 && exist('constructPtrRigidBodyConstraintmex','file')
-        obj.mex_ptr = constructPtrRigidBodyConstraintmex(RigidBodyConstraint.WorldPositionConstraintType,robot.getMexModelPtr,body,pts,lb,ub,tspan);
+%        obj.mex_ptr = constructPtrRigidBodyConstraintmex(RigidBodyConstraint.WorldPositionConstraintType,robot.getMexModelPtr,body,pts,lb,ub,tspan);
       end
     end
     
