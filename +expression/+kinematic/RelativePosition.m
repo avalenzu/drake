@@ -8,11 +8,17 @@ classdef RelativePosition < expression.kinematic.Base
 
   methods
     function obj = RelativePosition(rbm,frameA,frameB,pts_in_A)
+      if nargin < 4
+        pts_in_A = zeros(3,1);
+      end
       sizecheck(pts_in_A,[3,NaN]);
       n_pts = size(pts_in_A,2);
-      output_frame = CoordinateFrame('r',3*n_pts);
+      output_frame = MultiCoordinateFrame.constructFrame(repmat({expression.frames.R(3)},1,n_pts));
       obj = obj@expression.kinematic.Base(rbm,output_frame);
       obj.frameA = obj.rbm.parseBodyOrFrameID(frameA);
+      if obj.frameA == 0
+        valuecheck(pts_in_A,zeros(3,1));
+      end
       obj.frameB = obj.rbm.parseBodyOrFrameID(frameB);
       obj.pts_in_A = pts_in_A;
       obj.n_pts = n_pts;
@@ -20,7 +26,11 @@ classdef RelativePosition < expression.kinematic.Base
 
     function [pos,J] = fastEval(obj,q)
       kinsol = obj.rbm.doKinematics(q);
-      [pts_in_world,JA] = forwardKin(obj.rbm,kinsol,obj.frameA,obj.pts_in_A,0);
+      if obj.frameA == 0
+        [pts_in_world,JA] = getCOM(obj.rbm,kinsol);
+      else
+        [pts_in_world,JA] = forwardKin(obj.rbm,kinsol,obj.frameA,obj.pts_in_A,0);
+      end
       [T_B_to_world,dT_B_to_world] = forwardKin(obj.rbm,kinsol,obj.frameB,[0;0;0],2);
       [quat_world_to_B,dquat_world_to_B] = quatConjugate(T_B_to_world(4:7));
       dquat_world_to_B = dquat_world_to_B*dT_B_to_world(4:7,:);
