@@ -1,11 +1,7 @@
-classdef Identity < expression.Base
+classdef Identity < expression.Affine
   methods
     function obj = Identity(frame)
-      obj = obj@expression.Base(frame,frame);
-    end
-    function [f,df] = fastEval(obj,x)
-      f = x;
-      df = eye(numel(x));
+      obj = obj@expression.Affine(frame,frame,eye(frame.dim),zeros(frame.dim,1));
     end
   end
 end
