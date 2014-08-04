@@ -65,6 +65,22 @@ classdef Base
       import expression.*
       expr3 = VertCat(expr1,expr2);
     end
+
+    function input_frame = getInputFrame(obj)
+      input_frame = obj.input_frame;
+    end
+
+    function output_frame = getOutputFrame(obj)
+      output_frame = obj.output_frame;
+    end
+
+    function obj = setInputFrame(obj,input_frame)
+      obj.input_frame = input_frame;
+    end
+
+    function obj = setOutputFrame(obj,output_frame)
+      obj.output_frame = output_frame;
+    end
   end
   methods (Abstract)
     [f,df] = fastEval(obj,x);
