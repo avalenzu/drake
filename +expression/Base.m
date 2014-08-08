@@ -20,7 +20,7 @@ classdef Base
     
     function expr3 = plus(expr1, expr2)
       import expression.*
-      expr_cat = [expr1;expr2];
+      expr_cat = concatenate(expr1,expr2);
       expr_sum = Sum(expr1.output_frame);
       expr3 = compose(expr_sum,expr_cat);
     end
@@ -38,7 +38,7 @@ classdef Base
         expr3 = expr2*expr1;
         return;
       end
-      expr_cat = [expr1;expr2];
+      expr_cat = concatenate(expr1,expr2);
       expr_prod = ElementwiseProduct(expr1.output_frame);
       expr3 = compose(expr_prod,expr_cat);
     end
@@ -64,6 +64,37 @@ classdef Base
     function expr3 = vertcat(expr1, expr2)
       import expression.*
       expr3 = VertCat(expr1,expr2);
+    end
+
+    function expr = concatenate(varargin)
+      % expr3 = concatenate(expr1, expr2, ..., exprN, same_input) returns an expression
+      % whos output frame is the concatenation of the output frames of expr1
+      % and expr2.
+      import expression.*
+      if islogical(varargin{end}) 
+        same_input = varargin{end};
+        varargin(end) = [];
+      else
+        same_input = false;
+      end
+      n_expr = numel(varargin);
+      switch n_expr
+        case 1
+          expr = varargin{1};
+        case 2
+          obj = varargin{1};
+          other = varargin{2};
+          expr = VertCat(obj,other,same_input);
+        otherwise
+          split = floor(n_expr/2);
+          expr = concatenate(concatenate(varargin{1:split},same_input), ...
+                             concatenate(varargin{split+1:end},same_input));
+      end
+    end
+
+    function expr = duplicate(expr,n)
+      tmp = repmat({expr},1,n);
+      expr = concatenate(tmp{:});
     end
 
     function input_frame = getInputFrame(obj)
