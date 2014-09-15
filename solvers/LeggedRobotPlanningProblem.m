@@ -1,8 +1,21 @@
 classdef LeggedRobotPlanningProblem
+  % Encodes a planning problem for an instance of any LeggedRobot class. The
+  % problem is represented by two structures
+  %   * constraints - Constraint objects, each with an associated tspan
+  %                   indicating the portion of the plan (between 0 and 1) for
+  %                   which the constraint is active.
+  %   * support_struct    - Points on the robot which can provide support and an
+  %                   associated tspan indicating the portion of the plan
+  %                   (between 0 and 1) for which those points support the
+  %                   robot. These are stored stored separately fron the rest
+  %                   of the constraints to allow for the generation of
+  %                   planners that treat contacts differently (e.g. quasi-static
+  %                   planning vs. dynamic planning) from the same problem
+  %                   specification.
   properties
     robot
-    supports = struct('body',{},'pts',{},'tspan',{},'constraints',{})
-    rigid_body_constraints = struct('constraint',{},'tspan',{});
+    support_struct = struct('body',{},'pts',{},'tspan',{})
+    constraint_struct = struct('constraint',{},'tspan',{});
     mu = 1
     min_distance = 0.03;
     quasistatic_shrink_factor = 0.2;
@@ -38,23 +51,43 @@ classdef LeggedRobotPlanningProblem
       obj.Q(3,3) = 0;
       obj.Q(6,6) = 0;
     end
+
     function obj = addSupport(obj,body_id,pts,tspan,constraints)
       support.body = obj.robot.parseBodyOrFrameID(body_id);
       support.pts = pts;
       support.tspan = tspan;
-      support.constraints = constraints;
-      obj.supports(end+1) = support;
+      for i = 1:numel(constraints)
+        obj.constraint_struct(end+1).constraint = constraints{i};
+        obj.constraint_struct(end).tspan = tspan;
+      end
+      obj.support_struct(end+1) = support;
+    end
+
+    function obj = addConstraint(obj, constraint, tspan)
+      if iscell(constraint)
+        assert(numel(constraint) == numel(tspan), ...
+          'Drake:LeggedRobotPlanningProblem:BadInputDimensions', ...
+          'If constraint is a cell array, tspan must be a cell array of the same size')
+        for i = 1:numel(constraint)
+          obj = obj.addConstraint(constraint{i},tspan{i});
+        end
+      else
+        new_constraint.constraint = constraint;
+        new_constraint.tspan = tspan;
+        obj.constraint_struct(end+1) = new_constraint;
+      end
     end
 
     function obj = addRigidBodyConstraint(obj,constraint)
       if iscell(constraint)
+        tspan = cell(size(constraint));
         for i = 1:numel(constraint)
-          obj = obj.addRigidBodyConstraint(constraint{i});
+          tspan{i} = min(1,max(0,constraint{i}.tspan));
         end
+        obj = obj.addConstraint(constraint,tspan);
       else
-        new_constraint.constraint = constraint;
-        new_constraint.tspan = min(1,max(0,constraint.tspan));
-        obj.rigid_body_constraints(end+1) = new_constraint;
+        tspan = min(1,max(0,constraint.tspan));
+        obj = obj.addConstraint(constraint,tspan);
       end
     end
     
@@ -76,7 +109,7 @@ classdef LeggedRobotPlanningProblem
       if nargin < 10, options = struct(); end
       
       % Extract stance information
-      in_stance = arrayfun(@(supp)activeKnots(supp,N), obj.supports, ...
+      in_stance = arrayfun(@(supp)activeKnots(supp,N), obj.support_struct, ...
         'UniformOutput',false);
       
       % Set up linearized friction cone edges
@@ -93,7 +126,7 @@ classdef LeggedRobotPlanningProblem
       for i = 1:numel(in_stance)
         contact_wrench_struct(i).active_knot = in_stance{i}(2:end);
         contact_wrench_struct(i).cw = ...
-          LinearFrictionConeWrench(obj.robot,obj.supports(i).body,obj.supports(i).pts,...
+          LinearFrictionConeWrench(obj.robot,obj.support_struct(i).body,obj.support_struct(i).pts,...
           FC_edge);
       end
       
@@ -133,7 +166,7 @@ classdef LeggedRobotPlanningProblem
       % Create kinematic planner
       prog = KinematicDirtran(obj.robot,N,durations,varargin{:});
 
-      % Add kinematic constraints for supports
+      % Add kinematic constraints for support_struct
       prog = obj.addSupportConstraintsToPlanner(prog);
 
       % Add collision avoidance constraints
@@ -142,8 +175,8 @@ classdef LeggedRobotPlanningProblem
       % Add Quasistatic Constraints
       prog = obj.addQuasiStaticConstraintsToPlanner(prog);
 
-      % Add RigidBodyConstraints
-      prog = obj.addRigidBodyConstraintsToPlanner(prog);
+      % Add Constraints
+      prog = obj.addConstraintsToPlanner(prog);
 
       % Add Velocity constraints
       prog = prog.addConstraint(BoundingBoxConstraint(-repmat(obj.v_max,1,prog.N-2),repmat(obj.v_max,1,prog.N-2)),prog.v_inds(:,2:end-1));
@@ -172,17 +205,17 @@ classdef LeggedRobotPlanningProblem
     end
 
     function prog = addQuasiStaticConstraintsToPlanner(obj,prog)
-      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.supports, ...
+      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.support_struct, ...
         'UniformOutput',false);
       for i = 1:prog.N
         qsc_constraint = [];
-        for j = 1:numel(obj.supports)
+        for j = 1:numel(obj.support_struct)
           if ismember(i,in_stance{j})
             if isempty(qsc_constraint)
               qsc_constraint = QuasiStaticConstraint(obj.robot,[-inf,inf],1);
             end
-            qsc_constraint = qsc_constraint.addContact(obj.supports(j).body, ...
-                                                       obj.supports(j).pts);
+            qsc_constraint = qsc_constraint.addContact(obj.support_struct(j).body, ...
+                                                       obj.support_struct(j).pts);
           end
         end
         if ~isempty(qsc_constraint)
@@ -193,16 +226,8 @@ classdef LeggedRobotPlanningProblem
       end
     end
 
-    function prog = addRigidBodyConstraintsToPlanner(obj,prog)
-      is_active = arrayfun(@(supp)activeKnots(supp,prog.N), ...
-        obj.rigid_body_constraints, 'UniformOutput',false);
-      for i = 1:numel(obj.rigid_body_constraints)
-        prog = prog.addRigidBodyConstraint(obj.rigid_body_constraints(i).constraint,is_active{i});
-      end
-    end
-
     function prog = addCollisionConstraintsToPlanner(obj,prog)
-      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.supports, ...
+      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.support_struct, ...
         'UniformOutput',false);
       group_excluded = arrayfun(@(grp)activeKnots(grp,prog.N), obj.excluded_collision_groups, ...
         'UniformOutput',false);
@@ -210,9 +235,9 @@ classdef LeggedRobotPlanningProblem
       interpolation_parameter = (1:obj.n_interp_points)/(obj.n_interp_points+1);
       for i = 1:prog.N
         ignored_bodies{i} = [];
-        for j = 1:numel(obj.supports)
+        for j = 1:numel(obj.support_struct)
           if ismember(i,in_stance{j})
-            ignored_bodies{i}(end+1) = obj.supports(j).body;
+            ignored_bodies{i}(end+1) = obj.support_struct(j).body;
           end
         end
         ignored_groups = {};
@@ -235,14 +260,22 @@ classdef LeggedRobotPlanningProblem
       end
     end
 
+    function prog = addConstraintsToPlanner(obj, prog)
+      active_knots = arrayfun(@(cnstr)activeKnots(cnstr,prog.N), ...
+                              obj.constraint_struct, 'UniformOutput', false);
+      for i = 1:numel(obj.constraint_struct)
+        prog = prog.addConstraint(obj.constraint_struct(i).constraint,active_knots{i});
+      end
+    end
+
     function prog = addSupportConstraintsToPlanner(obj,prog)
-      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.supports, ...
+      in_stance = arrayfun(@(supp)activeKnots(supp,prog.N), obj.support_struct, ...
         'UniformOutput',false);
-      for i = 1:numel(obj.supports)
-        if ~isempty(obj.supports(i).constraints)
-          for j = 1:numel(obj.supports(i).constraints)
+      for i = 1:numel(obj.support_struct)
+        if ~isempty(obj.support_struct(i).constraints)
+          for j = 1:numel(obj.support_struct(i).constraints)
             prog = prog.addRigidBodyConstraint( ...
-              obj.supports(i).constraints{j},in_stance{i});
+              obj.support_struct(i).constraints{j},in_stance{i});
           end
         end
       end
