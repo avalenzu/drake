@@ -31,6 +31,15 @@ classdef LeggedRobotPlanningProblem
   methods
     function obj = LeggedRobotPlanningProblem(robot,options)
       obj.robot = robot;
+      if ~isfield(options,'fixed_initial_state')
+        options.fixed_initial_state =  true;
+      end
+      if ~isfield(options,'start_from_rest')
+        options.start_from_rest =  true;
+      end
+      if ~isfield(options,'end_at_rest')
+        options.end_at_rest =  true;
+      end
       if isfield(options,'n_interp_points')
         obj.n_interp_points = options.n_interp_points;
       end
@@ -50,6 +59,9 @@ classdef LeggedRobotPlanningProblem
       obj.Q(2,2) = 0;
       obj.Q(3,3) = 0;
       obj.Q(6,6) = 0;
+      obj.fixed_initial_state = options.fixed_initial_state;
+      obj.start_from_rest = options.start_from_rest;
+      obj.end_at_rest = options.end_at_rest;
     end
 
     function obj = addSupport(obj,body_id,pts,tspan,constraints)
