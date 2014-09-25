@@ -119,9 +119,9 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   Q(1,1) = 0;
   Q(2,2) = 0;
   Q(6,6) = 0;
-  Qv = 1e0*eye(nq);
+  Qv = 1e1*eye(nq);
   %Qv(arm_idx,arm_idx) = 1e1*eye(numel(arm_idx));
-  Q_comddot = diag([1,1,1]);
+  Q_comddot = diag([1e1,1e2,1e1]);
   Q_contact_force = 0e-4*eye(3);
 
   % Create collision avoidance constraints
@@ -226,6 +226,10 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   if options.visualize
     cdfkp = cdfkp.addDisplayFunction(@(q)displayCallback(in_stance.total,N,q),[cdfkp.h_inds(:);reshape(cdfkp.com_inds(3,:),[],1);reshape(cdfkp.comdot_inds(1,:),[],1);cdfkp.q_inds(:)]);
   end
+
+  % Add cost on angular momentum
+  Q_H = diag([1,1,1e1]);
+  cdfkp = cdfkp.addCost(QuadraticConstraint(-Inf,Inf,kron(eye(cdfkp.N),Q_H),zeros(3*cdfkp.N,1)),cdfkp.H_inds);
 
   % Add Timestep bounds
   cdfkp = cdfkp.addBoundingBoxConstraint(BoundingBoxConstraint(h_min*ones(numel(in_flight)-1,1),h_max_flight*ones(numel(in_flight)-1,1)),cdfkp.h_inds(in_flight(1:end-1)));
@@ -432,27 +436,18 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   toc
 
   % Parse trajectory optimization output
+  [sol.q,sol.v,sol.h,sol.t,sol.com,sol.comdot,sol.comddot, ...
+    sol.H,sol.Hdot,sol.lambda,sol.wrench] = cdfkp.parseSolution(x_sol);
   sol.x_sol = x_sol;
-  sol.q = reshape(x_sol(cdfkp.q_inds(:)),nq,N);
-  sol.v = reshape(x_sol(cdfkp.v_inds(:)),nq,N);
-  sol.h = reshape(x_sol(cdfkp.h_inds),1,[]);
-  sol.t = cumsum([0 sol.h]);
-  sol.com = reshape(x_sol(cdfkp.com_inds),3,[]);
-  sol.comdot = reshape(x_sol(cdfkp.comdot_inds),3,[]);
-  sol.comddot = reshape(x_sol(cdfkp.comddot_inds),3,[]);
-  sol.H = reshape(x_sol(cdfkp.H_inds),3,[]);
-  sol.Hdot = reshape(x_sol(cdfkp.Hdot_inds),3,[])*cdfkp.torque_multiplier;
-  sol.lambda = cell(2,1);
-  for i = 1:numel(cdfkp.lambda_inds)
-    sol.lambda{i} = reshape(x_sol(cdfkp.lambda_inds{i}),size(cdfkp.lambda_inds{i},1),[],N);
-  end
   sol.xtraj= PPTrajectory(foh(sol.t,[sol.q;sol.v]));
   sol.xtraj= sol.xtraj.setOutputFrame(robot_vis.getStateFrame);
+  sol.xtraj_one = halfStrideToFullStride(robot_vis,@mirrorAtlasPositions,sol.xtraj);
+  sol.xtraj_three = oneStrideToMultipleStrides(robot_vis,sol.xtraj_one,3);
   sol.options = options;
   sol.FC_basis_vectors = FC_edge;
 
   % Save results
-  save(sprintf('results_%s',suffix),'sol');
+  save(fullfile(getDrakePath,'examples','Atlas','data',sprintf('results_%s',suffix)),'sol');
 end
 
 function half_periodic_constraint = halfPeriodicConstraint(robot)

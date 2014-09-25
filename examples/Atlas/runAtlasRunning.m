@@ -1,12 +1,13 @@
-function runAtlasRunning(use_mex,use_angular_momentum)
+function runAtlasRunning(filename,use_mex,use_angular_momentum)
 
 if ~checkDependency('gurobi')
   warning('Must have gurobi installed to run this example');
   return;
 end
 
-if (nargin<1); use_mex = true; end
-if (nargin<2); use_angular_momentum = false; end
+if (nargin<1); filename = 'results_testRunning.mat'; end
+if (nargin<2); use_mex = true; end
+if (nargin<3); use_angular_momentum = false; end
 
 path_handle = addpathTemporary({fullfile(getDrakePath,'examples','Atlas','controllers'),...
                                 fullfile(getDrakePath,'examples','Atlas','frames')});
@@ -17,16 +18,24 @@ warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits')
 
 options.floating = true;
 options.dt = 0.001;
+%options.ignore_effort_limits = false;
 options.ignore_effort_limits = true;
 r = Atlas('urdf/atlas_minimal_contact.urdf',options);
 r = r.removeCollisionGroupsExcept({'heel','toe'});
 r = compile(r);
 
+options.ignore_effort_limits = false;
+r_limits = Atlas('urdf/atlas_minimal_contact.urdf',options);
+r_limits = r_limits.removeCollisionGroupsExcept({'heel','toe'});
+r_limits = compile(r_limits);
+umin = r_limits.umin;
+umax = r_limits.umax;
+
 v = r.constructVisualizer;
 v.display_dt = 0.005;
 
 % load in running trajectory
-load('data/results_2m_2mps_midstrike.mat');
+load(fullfile('data',filename));
 
 ts = unique(sol.xtraj_three.getBreaks);
 xtraj = sol.xtraj_three;
@@ -202,7 +211,10 @@ ins(8).system = 1;
 ins(8).input = 9;
 outs(1).system = 2;
 outs(1).output = 1;
+outs(2).system = 1;
+outs(2).output = 1;
 sys = mimoFeedback(qp,r,[],[],ins,outs);
+%sys = mimoFeedback(qp,r_limits,[],[],ins,outs);
 clear ins;
 
 % feedback foot contact detector with QP/atlas
@@ -222,6 +234,8 @@ ins(6).system = 2;
 ins(6).input = 7;
 ins(7).system = 2;
 ins(7).input = 8;
+outs(2).system = 2;
+outs(2).output = 2;
 sys = mimoFeedback(fc,sys,[],[],ins,outs);
 clear ins;
 
@@ -315,10 +329,16 @@ sys = mimoFeedback(qt,sys,[],[],[],outs);
 S=warning('off','Drake:DrakeSystem:UnsupportedSampleTime');
 output_select(1).system=1;
 output_select(1).output=1;
+output_select(2).system=1;
+output_select(2).output=2;
 sys = mimoCascade(sys,v,[],[],output_select);
 warning(S);
 
-traj = simulate(sys,[0 ts(end)],xtraj.eval(0));
+[ytraj,xtraj] = simulate(sys,[0 ts(end)],xtraj.eval(0));
+utraj = ytraj.inFrame(r.getInputFrame());
+udata = squeeze(eval(utraj,utraj.getBreaks()));
+umax_violated = any(bsxfun(@gt,udata,umax),2);
+umin_violated = any(bsxfun(@lt,udata,umin),2);
+keyboard
 playback(v,traj,struct('slider',true));
-
 end
