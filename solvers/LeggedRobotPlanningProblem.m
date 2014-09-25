@@ -14,7 +14,7 @@ classdef LeggedRobotPlanningProblem
   %                   specification.
   properties
     robot
-    support_struct = struct('body',{},'pts',{},'tspan',{})
+    support_struct = struct('body',{},'pts',{},'ignored_bodies',{},'ignored_groups',{},'tspan',{})
     constraint_struct = struct('constraint',{},'tspan',{});
     mu = 1
     min_distance = 0.03;
@@ -24,6 +24,7 @@ classdef LeggedRobotPlanningProblem
     fixed_initial_state = true;
     start_from_rest = true;
     end_at_rest = true;
+    use_collision_constraints = true;
     Q
     v_max = 30*pi/180;
   end
@@ -46,6 +47,12 @@ classdef LeggedRobotPlanningProblem
       if isfield(options,'v_max')
         obj.v_max = options.v_max;
       end
+      if isfield(options,'min_distance')
+        obj.min_distance = options.min_distance;
+      end
+      if isfield(options,'use_collision_constraints')
+        obj.use_collision_constraints = options.use_collision_constraints;
+      end
       if isscalar(obj.v_max)
         obj.v_max = obj.v_max*ones(obj.robot.getNumVelocities(),1);
       else
@@ -64,9 +71,31 @@ classdef LeggedRobotPlanningProblem
       obj.end_at_rest = options.end_at_rest;
     end
 
-    function obj = addSupport(obj,body_id,pts,tspan,constraints)
+    function obj = addSupport(obj,body_id,pts,tspan,constraints,ignored_collision_options)
+      if nargin < 6, ignored_collision_options = struct(); end
       support.body = obj.robot.parseBodyOrFrameID(body_id);
       support.pts = pts;
+      if isfield(ignored_collision_options,'body_idx')
+        support.ignored_bodies = reshape(ignored_collision_options.body_idx,1,[]);
+      else
+        if support.body > 0
+          support.ignored_bodies = support.body;
+        else
+          support.ignored_bodies = obj.robot.getFrame(support.body).body_ind;
+        end
+      end
+      if isfield(ignored_collision_options,'collision_groups')
+        if iscell(ignored_collision_options.collision_groups)
+          support.ignored_groups = reshape(ignored_collision_options.collision_groups,1,[]);
+        else
+          support.ignored_groups = {ignored_collision_options.collision_groups};
+        end
+      else
+        support.ignored_groups = {};
+      end
+      sizecheck(tspan,[1,2]);
+      assert(all(tspan<=1) && all(tspan>=0), ...
+        'Both entries of tspan must be between 0 and 1');
       support.tspan = tspan;
       for i = 1:numel(constraints)
         obj.constraint_struct(end+1).constraint = constraints{i};
@@ -103,18 +132,19 @@ classdef LeggedRobotPlanningProblem
       end
     end
     
-    function obj = addSupportOnFlatGround(obj,body_id,pts,tspan)
+    function obj = addSupportOnFlatGround(obj,body_id,pts,tspan,varargin)
       n_pts = min(size(pts,2),3);
       lb = repmat([NaN; NaN; 0],1,n_pts);
       ub = repmat([NaN; NaN; 0],1,n_pts);
       constraints{1} = WorldPositionConstraint(obj.robot,body_id,pts(:,1:n_pts),lb,ub);
       constraints{2} = WorldFixedPositionConstraint(obj.robot,body_id,pts(:,1:n_pts));
-      obj = addSupport(obj,body_id,pts,tspan,constraints);
+      obj = addSupport(obj,body_id,pts,tspan,constraints,varargin{:});
     end
     
     function prog = generateComDynamicsFullKinematicsPlanner(obj,N,durations,q_nom_traj,q0,Q_comddot, Qv, ...
         Q_contact_force,options)
       % @param N  -- Number of knot points
+      if nargin < 5 || isempty(q0), q0 = eval(q_nom_traj,q_nom_traj.tspan(1)); end
       if nargin < 6, Q_comddot = []; end
       if nargin < 7, Qv = []; end
       if nargin < 9, Q_contact_force = []; end
@@ -152,12 +182,14 @@ classdef LeggedRobotPlanningProblem
       prog = ComDynamicsFullKinematicsPlanner(obj.robot, N, durations, ...
         Q_comddot, Qv, obj.Q, q_nom, Q_contact_force,contact_wrench_struct, ...
         options);
-      
-      % Add support constraints
-      prog = obj.addSupportConstraintsToPlanner(prog);
+
+      % Add Constraints
+      prog = obj.addConstraintsToPlanner(prog);
       
       % Add collision avoidance constraints
-      prog = obj.addCollisionConstraintsToPlanner(prog);
+      if obj.use_collision_constraints
+        prog = obj.addCollisionConstraintsToPlanner(prog);
+      end
 
       if obj.start_from_rest
         % Note: Since we use backwards Euler for the integration constraints on
@@ -182,7 +214,9 @@ classdef LeggedRobotPlanningProblem
       prog = obj.addSupportConstraintsToPlanner(prog);
 
       % Add collision avoidance constraints
-      prog = obj.addCollisionConstraintsToPlanner(prog);
+      if obj.use_collision_constraints
+        prog = obj.addCollisionConstraintsToPlanner(prog);
+      end
 
       % Add Quasistatic Constraints
       prog = obj.addQuasiStaticConstraintsToPlanner(prog);
@@ -245,14 +279,15 @@ classdef LeggedRobotPlanningProblem
         'UniformOutput',false);
       ignored_bodies = {};
       interpolation_parameter = (1:obj.n_interp_points)/(obj.n_interp_points+1);
+      ignored_groups = {};
       for i = 1:prog.N
         ignored_bodies{i} = [];
         for j = 1:numel(obj.support_struct)
           if ismember(i,in_stance{j})
-            ignored_bodies{i}(end+1) = obj.support_struct(j).body;
+            ignored_bodies{i} = [ignored_bodies{i},obj.support_struct(j).ignored_bodies];
+            ignored_groups = [ignored_groups,obj.support_struct(j).ignored_groups];
           end
         end
-        ignored_groups = {};
         for j = 1:numel(obj.excluded_collision_groups)
           if ismember(i,group_excluded{j})
             ignored_groups{end+1} = obj.excluded_collision_groups(j).name;
