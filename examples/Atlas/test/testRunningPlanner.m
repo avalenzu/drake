@@ -33,10 +33,12 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   %mu = 1.16; % rubber on rubber
   mu = 1; % rubber on rubber
   warning(w);
+  plan_publisher = RobotPlanPublisherWKeyFrames('CANDIDATE_MANIP_PLAN',true,robot.getStateFrame.coordinates);
 
 
   % Create convenience variables
   nq = robot.getNumPositions();
+  nu = robot.getNumInputs();
   %nv = robot.getNumVelocities();
   %world = robot.findLinkInd('world');
   l_foot = robot.findLinkInd('l_foot');
@@ -49,10 +51,10 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   r_foot_bottom = robot.getBody(r_foot).getTerrainContactPoints();
   l_foot_toe    = robot.getBody(l_foot).getTerrainContactPoints('toe');
   l_foot_heel   = robot.getBody(l_foot).getTerrainContactPoints('heel');
-  %arm_idx = findJointIndices(robot,'arm');
-  %leg_idx = findJointIndices(robot,'leg');
-  %back_idx = findJointIndices(robot,'back');
-  %wrist_idx = [findJointIndices(robot,'uwy');findJointIndices(robot,'mwx');findJointIndices(robot,'ely');findJointIndices(robot,'shx')];
+  arm_idx = findJointIndices(robot,'arm');
+  leg_idx = findJointIndices(robot,'leg');
+  back_idx = findJointIndices(robot,'back');
+  wrist_idx = [findJointIndices(robot,'uwy');findJointIndices(robot,'mwx');findJointIndices(robot,'ely');findJointIndices(robot,'shx')];
 
   % Construct visualization tools
   v = constructVisualizer(robot_vis);
@@ -114,8 +116,12 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   end
 
   % Set up cost variables
-  q_nom = bsxfun(@times,qstar,ones(1,N));
-  Q = eye(nq);
+  if ~isempty(seed)
+    q_nom = seed.q;
+  else
+    q_nom = bsxfun(@times,qstar,ones(1,N));
+  end
+  Q = 1e0*eye(nq);
   Q(1,1) = 0;
   Q(2,2) = 0;
   Q(6,6) = 0;
@@ -224,12 +230,27 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   % Create trajectory optimization
   cdfkp = ComDynamicsFullKinematicsPlanner(robot,N,tf_range,Q_comddot,Qv,Q,q_nom,Q_contact_force,contact_wrench_struct,options);
   if options.visualize
-    cdfkp = cdfkp.addDisplayFunction(@(q)displayCallback(in_stance.total,N,q),[cdfkp.h_inds(:);reshape(cdfkp.com_inds(3,:),[],1);reshape(cdfkp.comdot_inds(1,:),[],1);cdfkp.q_inds(:)]);
+    %cdfkp = cdfkp.addDisplayFunction(@(q)displayCallback(in_stance.total,N,q),[cdfkp.h_inds(:);reshape(cdfkp.com_inds(3,:),[],1);reshape(cdfkp.comdot_inds(1,:),[],1);cdfkp.q_inds(:)]);
+    cdfkp = cdfkp.addDisplayFunction(@(q)displayCallback(plan_publisher,in_stance.total,N,q),[cdfkp.h_inds(:);reshape(cdfkp.com_inds(3,:),[],1);reshape(cdfkp.comdot_inds(1,:),[],1);cdfkp.q_inds(:)]);
   end
 
   % Add cost on angular momentum
-  Q_H = diag([1,1,1e1]);
+  Q_H = diag([1,1,1]);
   cdfkp = cdfkp.addCost(QuadraticConstraint(-Inf,Inf,kron(eye(cdfkp.N),Q_H),zeros(3*cdfkp.N,1)),cdfkp.H_inds);
+  
+  % Add cost on actuator work
+  %R1 = drakeFunction.frames.realCoordinateSpace(1);
+  %R3 = drakeFunction.frames.realCoordinateSpace(3);
+  %kinetic_energy = drakeFunction.kinematic.KineticEnergy(robot);
+  %potential_energy = drakeFunction.Linear(R3,R1,-robot.getMass()*robot.getGravity()');
+  %kinetic_energy_all = kinetic_energy.duplicate(N);
+  %potential_energy_all = potential_energy.duplicate(N);
+  %mechanical_energy_all = kinetic_energy_all + potential_energy_all;
+  %diff_mechanical_energy = compose(drakeFunction.Difference(R1,N),mechanical_energy_all);
+  %approx_actuator_work = compose(drakeFunction.euclidean.NormSquared(diff_mechanical_energy.getOutputFrame),diff_mechanical_energy);
+  %approx_actuator_work = compose(drakeFunction.euclidean.SmoothNorm(diff_mechanical_energy.getOutputFrame,1e-6),diff_mechanical_energy);
+  %kW = 1e1;
+  %cdfkp = cdfkp.addCost(DrakeFunctionConstraint(-Inf,Inf,kW*approx_actuator_work),[cdfkp.x_inds(:);cdfkp.com_inds(:)]);
 
   % Add Timestep bounds
   cdfkp = cdfkp.addBoundingBoxConstraint(BoundingBoxConstraint(h_min*ones(numel(in_flight)-1,1),h_max_flight*ones(numel(in_flight)-1,1)),cdfkp.h_inds(in_flight(1:end-1)));
@@ -247,6 +268,8 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
     cdfkp = cdfkp.addBoundingBoxConstraint(BoundingBoxConstraint(-fb_v_max*ones(3,N),fb_v_max*ones(3,N)),cdfkp.v_inds(1:3,:));
   end
 
+  % Add pitch limits
+  cdfkp = cdfkp.addConstraint(BoundingBoxConstraint(-pi/4*ones(N,1),pi/4*ones(N,1)),cdfkp.q_inds(5,:));
   % Add initial contition constraints
   if options.start_from_standing
     cdfkp = cdfkp.addConstraint(ConstantConstraint([0;0]), ...
@@ -401,12 +424,13 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   if isempty(seed)
     x_seed = zeros(cdfkp.num_vars,1);
     q_seed = linspacevec(q0,qf,N);
-    v_seed = gradient(q_seed);
+    h_seed = T/N;
+    v_seed = gradient(q_seed,h_seed);
     com_seed = linspacevec(com_0,com_f,N);
-    comdot_seed = gradient(com_seed);
-    comddot_seed = gradient(comdot_seed);
+    comdot_seed = gradient(com_seed,h_seed);
+    comddot_seed = gradient(comdot_seed,h_seed);
     lambda_seed = sqrt(2)/24;
-    x_seed(cdfkp.h_inds) = T/N;
+    x_seed(cdfkp.h_inds) = h_seed;
     x_seed(cdfkp.q_inds(:)) = reshape(q_seed,[],1);
     x_seed(cdfkp.v_inds(:)) = reshape(v_seed,[],1);
     x_seed(cdfkp.com_inds(:)) = reshape(com_seed,[],1);
@@ -417,6 +441,94 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
     end
   else
     x_seed = seed.x_sol;
+    q_seed = reshape(x_seed(cdfkp.q_inds(:)),[nq,N]);
+    v_seed = reshape(x_seed(cdfkp.v_inds(:)),[nq,N]);
+  end
+  h_seed = x_seed(cdfkp.h_inds);
+  H = {}; C = {}; J = {};
+  contact_wrench = cdfkp.contactWrench(x_seed);
+  joint_torque_fun_cell = {};
+  qdd_fun = drakeFunction.FiniteDifferenceDerivative(robot.getVelocityFrame(),N);
+  qdd_frame = robot.getVelocityFrame();
+  tau_frame = drakeFunction.frames.realCoordinateSpace(nu);
+  % Assumes only one contact body
+  lambda_frame = drakeFunction.frames.realCoordinateSpace(size(reshape(cdfkp.lambda_inds{1},[],N),1));
+  Hqdd_fun_cell = {};
+  nv = robot.getNumVelocities();
+  nx = nq+nv;
+  nlambda = lambda_frame.dim;
+  for i = 2:N
+    kinsol = robot.doKinematics(q_seed(:,i),true);
+    [H,C,~,dH,dC] = robot.manipulatorDynamics(q_seed(:,i),v_seed(:,i));
+    [~,J,dJ] = robot.forwardKin(kinsol,contact_wrench(i).body,contact_wrench(i).body_pts);
+    input_frame = MultiCoordinateFrame.constructFrame({qdd_frame,lambda_frame});
+    Hqdd_fun_cell{i-1} = drakeFunction.Linear(qdd_frame,tau_frame,H(7:end,:));
+    dH_reshaped = reshape(dH,[nq,nq,nx]);
+    dH_flat = reshape(permute(dH_reshaped(7:end,:,:),[2,1,3]),[nq,nu*nx])';
+    qdd = (v_seed(:,i)-v_seed(:,i-1))/h_seed(i-1);
+    dHqdd_dx = reshape(dH_flat*qdd,[nu,nx]);
+    dJTF_dx = [reshape(dJ'*reshape(contact_wrench(i).force,[],1),nq,nq),zeros(nq)];
+    dJTF_dx = dJTF_dx(7:end,:);
+    dC = dC(7:end,:);
+    C = C(7:end);
+    dtau_dx_fun_cell{i-1} = drakeFunction.Affine(robot.getStateFrame(),tau_frame,dHqdd_dx+dC-dJTF_dx,C-(dHqdd_dx+dC-dJTF_dx)*[q_seed(:,i);v_seed(:,i)]);
+    JtransposeF_fun_cell{i-1} = drakeFunction.Linear(lambda_frame,tau_frame,J(:,7:end)'*kron(eye(size(contact_wrench(i).body_pts,2)),FC_edge));
+
+    %joint_torque_fun_cell{i-1} = drakeFunction.Affine(input_frame,tau_frame,[H,J'*kron(eye(size(contact_wrench(i).body_pts,2)),FC_edge)],C);
+  end
+  %joint_torque_fun = vertcat(joint_torque_fun_cell{:});
+  if options.penalize_approx_torque || options.constrain_approx_torque
+    Hqdd_fun = vertcat(Hqdd_fun_cell{:});
+    dtau_dx_fun = vertcat(dtau_dx_fun_cell{:});
+    JtransposeF_fun = vertcat(JtransposeF_fun_cell{:});
+    joint_torque_fun = dtau_dx_fun + Hqdd_fun(qdd_fun) - JtransposeF_fun;
+    tmp = eye(2*N); tmp = tmp(2:2:end,:);
+    x_to_v = kron(tmp,eye(nv));
+    A = [zeros((N-1)*nx,N-1),zeros((N-1)*nx,nx),eye((N-1)*nx),zeros((N-1)*nx,(N-1)*nlambda); ...
+         eye(N-1,N*nx+(N-1)*(nlambda+1)); ...
+         zeros(N*nv,N-1), x_to_v, zeros(N*nv,(N-1)*nlambda); ...
+         zeros((N-1)*nlambda,N*(nx+1)-1), eye((N-1)*nlambda)];
+    %input_frame = MultiCoordinateFrame({qdd_fun.getInputFrame(),JtransposeF_fun.getInputFrame()});
+    input_frame = drakeFunction.frames.realCoordinateSpace(N*nx+(N-1)*(1+nlambda));
+    joint_torque_fun = compose(joint_torque_fun,drakeFunction.Linear(input_frame,joint_torque_fun.getInputFrame(),A));
+    joint_torque_inds = [cdfkp.h_inds(:);cdfkp.x_inds(:);reshape(cdfkp.lambda_inds{1}(:,:,2:end),[],1)];
+    %keyboard
+
+    if options.penalize_approx_torque
+      R = options.kTorque*eye(nu);
+      joint_torque_cost_fun = compose(drakeFunction.euclidean.NormSquared(joint_torque_fun.output_frame,kron(speye(N-1),R)),joint_torque_fun);
+      cdfkp = cdfkp.addCost(DrakeFunctionConstraint(-Inf,Inf,joint_torque_cost_fun),joint_torque_inds);
+    end
+
+    if options.constrain_approx_torque
+      joint_torque_lb = robot.getB()*robot.umin;
+      joint_torque_ub = robot.getB()*robot.umax;
+      joint_torque_lb = joint_torque_lb(7:end);
+      joint_torque_ub = joint_torque_ub(7:end);
+      joint_torque_lb = repmat(joint_torque_lb,N-1,1);
+      joint_torque_ub = repmat(joint_torque_ub,N-1,1);
+      %keyboard
+      %cdfkp = cdfkp.addConstraint(LinearConstraint(joint_torque_lb,joint_torque_ub,joint_torque_fun.A),joint_torque_inds);
+      %cdfkp = cdfkp.addConstraint(BoundingBoxConstraint(q_seed-0.2,q_seed+0.2),cdfkp.q_inds(:));
+      cdfkp = cdfkp.addConstraint(DrakeFunctionConstraint(joint_torque_lb,joint_torque_ub,joint_torque_fun),joint_torque_inds);
+    end
+    %keyboard
+  end
+
+  %keyboard
+  if options.constrain_torque
+    joint_torque_lb = robot.getB()*robot.umin;
+    joint_torque_ub = robot.getB()*robot.umax;
+    for i = 2:N
+      contact_wrench_i = cdfkp.contact_wrench(cellfun(@(x) ismember(i,x),cdfkp.contact_wrench_active_knot));
+      num_lambdas = size(cdfkp.lambda_inds{1});
+      num_lambdas = prod(num_lambdas(1:2));
+      joint_torque_fun = drakeFunction.JointTorques(robot,contact_wrench_i,num_lambdas);
+      joint_torque_inds = [cdfkp.h_inds(i-1);cdfkp.q_inds(:,i); ...
+                           reshape(cdfkp.v_inds(:,i-1:i),[],1); ...
+                           reshape(cdfkp.lambda_inds{1}(:,:,i),[],1)];
+      cdfkp = cdfkp.addConstraint(DrakeFunctionConstraint(joint_torque_lb,joint_torque_ub,joint_torque_fun),joint_torque_inds);
+    end
   end
 
   % Set up solver options
@@ -445,6 +557,23 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   sol.xtraj_three = oneStrideToMultipleStrides(robot_vis,sol.xtraj_one,3);
   sol.options = options;
   sol.FC_basis_vectors = FC_edge;
+  sol.contact_wrench = cdfkp.contactWrench(sol.x_sol);
+
+  try
+    for i = 2:N
+      q_i = sol.q(:,i);
+      v_i = sol.v(:,i);
+      kinsol = robot.doKinematics(q_i);
+      vd = (sol.v(:,i)-sol.v(:,i-1))/sol.h(i-1);
+      [H,C,B] = robot.manipulatorDynamics(q_i,v_i);
+      [~,J] = robot.forwardKin(kinsol,sol.contact_wrench(i).body,sol.contact_wrench(i).body_pts);
+      f = sol.contact_wrench(i).force;
+      sol.u(:,i) = B\(H*vd + C - J'*reshape(f,[],1));
+    end
+    sol.u(:,1) = sol.u(:,end);
+  catch ex
+    keyboard
+  end
 
   % Save results
   save(fullfile(getDrakePath,'examples','Atlas','data',sprintf('results_%s',suffix)),'sol');
@@ -556,7 +685,7 @@ function half_periodic_constraint = halfPeriodicConstraint(robot)
   half_periodic_constraint = LinearConstraint(lb,ub,[symmetric_matrix;equal_matrix]);
 end
 
-function displayCallback(in_stance,N,x)
+function displayCallback(publisher,in_stance,N,x)
   h = x(1:N-1);
   ts = [0;cumsum(h)];
   com_z = x(N-1+(1:N));
@@ -565,25 +694,54 @@ function displayCallback(in_stance,N,x)
   x_data = [zeros(2,numel(ts));q;0*q];
   utime = now() * 24 * 60 * 60;
   snopt_info_vector = ones(1, size(x_data,2));
-  sfigure(7);
+  publisher.publish(x_data, ts, utime, snopt_info_vector);
+  sfigure(7); 
   subplot(2,1,1);
-  plot(ts,com_z,'bo-');
+  plot(ts,com_z,'bo-'); 
   hold on
-  plot(ts(in_stance),com_z(in_stance),'ro-');
+  plot(ts(in_stance),com_z(in_stance),'ro-'); 
   title('COM Height')
   xlabel('t (s)')
   ylabel('z (m)')
   hold off
   subplot(2,1,2);
-  plot(ts,comdot_x,'bo-');
+  plot(ts,comdot_x,'bo-'); 
   hold on
-  plot(ts(in_stance),comdot_x(in_stance),'ro-');
+  plot(ts(in_stance),comdot_x(in_stance),'ro-'); 
   title('COM velocity')
   xlabel('t (s)')
   ylabel('xdot (m/s)')
   hold off
   drawnow;
 end
+%function displayCallback(in_stance,N,x)
+  %h = x(1:N-1);
+  %ts = [0;cumsum(h)];
+  %com_z = x(N-1+(1:N));
+  %comdot_x = x(2*N-1+(1:N));
+  %q = reshape(x(3*N:end),[],N);
+  %x_data = [zeros(2,numel(ts));q;0*q];
+  %utime = now() * 24 * 60 * 60;
+  %snopt_info_vector = ones(1, size(x_data,2));
+  %sfigure(7);
+  %subplot(2,1,1);
+  %plot(ts,com_z,'bo-');
+  %hold on
+  %plot(ts(in_stance),com_z(in_stance),'ro-');
+  %title('COM Height')
+  %xlabel('t (s)')
+  %ylabel('z (m)')
+  %hold off
+  %subplot(2,1,2);
+  %plot(ts,comdot_x,'bo-');
+  %hold on
+  %plot(ts(in_stance),comdot_x(in_stance),'ro-');
+  %title('COM velocity')
+  %xlabel('t (s)')
+  %ylabel('xdot (m/s)')
+  %hold off
+  %drawnow;
+%end
 
 function robot = addObstacle(robot,obstacle_x_position)
   radius = 0.1;
@@ -601,6 +759,8 @@ function robot = addObstacle(robot,obstacle_x_position)
 end
 
 function options = defaultOptionsStruct()
+  %options.major_feasibility_tolerance = 1e-5;
+  %options.major_optimality = 1e-5;
   options.visualize = true;
   options.toe_first = false;
   options.n_interp_points = 0;
@@ -618,6 +778,10 @@ function options = defaultOptionsStruct()
   options.time_option = 2;
   options.joint_tol = 10*pi/180;
   options.com_tol = 0.1;
+  options.penalize_approx_torque = false;
+  options.constrain_approx_torque = false;
+  options.constrain_torque = false;
+  options.kTorque = 1;
 end
 
 function options = parseOptionsStruct(options_in)

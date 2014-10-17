@@ -36,10 +36,19 @@ classdef Affine < drakeFunction.DrakeFunction
       [obj.iCfun, obj.jCvar] = find(obj.A);
     end
 
+    function fcn = compose(obj,other)
+      if isa(other,'drakeFunction.Affine')
+        fcn = drakeFunction.Affine(other.getInputFrame(),obj.getOutputFrame(),obj.A*other.A,obj.b + obj.A*other.b);
+      else
+        % punt to DrakeFunction
+        fcn = compose@drakeFunction.DrakeFunction(obj, other);
+      end
+    end
+
     function fcn = concatenate(obj, varargin)
       if islogical(varargin{end})
         same_input = varargin{end};
-        fcns = [obj, varargin(1:end-1)];
+        fcns = [{obj}, varargin(1:end-1)];
       else
         same_input = false;
         fcns = [{obj}, varargin];

@@ -199,11 +199,11 @@ classdef RigidBodyManipulator < Manipulator
           if ~iscell(geom), geom={geom}; end
           for i=1:numel(geom)
             if ~any(cellfun(@(shape) isequal(geom{i},shape),obj.body(1).visual_shapes))
-              obj.body(1).visual_shapes{end+1} = geom{i};
-          obj.dirty = true;
+              %obj.body(1).visual_shapes{end+1} = geom{i};
+              obj.dirty = true;
+            end
+          end
         end
-      end
-    end
       end
     end
 

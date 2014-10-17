@@ -18,8 +18,8 @@ warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits')
 
 options.floating = true;
 options.dt = 0.001;
-%options.ignore_effort_limits = false;
-options.ignore_effort_limits = true;
+options.ignore_effort_limits = false;
+%options.ignore_effort_limits = true;
 r = Atlas('urdf/atlas_minimal_contact.urdf',options);
 r = r.removeCollisionGroupsExcept({'heel','toe'});
 r = compile(r);
@@ -113,6 +113,13 @@ right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_
   r_foot_support;r_foot_support;r_foot_support;r_toe_support; ...
   r_toe_support;r_toe_support;flight;flight;flight];
 
+%left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
+  %l_foot_support;l_foot_support;l_foot_support;l_foot_support; ...
+  %l_foot_support;l_foot_support;l_toe_support;flight;flight;flight;flight];
+%right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_support; ...
+  %r_foot_support;r_foot_support;r_foot_support;r_foot_support; ...
+  %r_foot_support;r_foot_support;r_toe_support;flight;flight;flight;flight];
+
 supports = [left_phase; right_phase; left_phase; right_phase; left_phase; right_phase];
 
 r = r.setInitialState(x_knots(:,1));
@@ -180,8 +187,8 @@ rfoot_motion = BodyMotionControlBlock(r,'r_foot',ctrl_data,boptions);
 pelvis_motion = BodyMotionControlBlock(r,'pelvis',ctrl_data,boptions);
 lhand_motion = BodyMotionControlBlock(r,'l_hand',ctrl_data,boptions);
 rhand_motion = BodyMotionControlBlock(r,'r_hand',ctrl_data,boptions);
-boptions.Kp(4:6) = NaN; % don't constrain orientation
-boptions.Kd(4:6) = NaN;
+boptions.Kp(6) = NaN; % don't constrain orientation
+boptions.Kd(6) = NaN;
 torso_motion = BodyMotionControlBlock(r,'utorso',ctrl_data,boptions);
 
 
@@ -339,6 +346,11 @@ utraj = ytraj.inFrame(r.getInputFrame());
 udata = squeeze(eval(utraj,utraj.getBreaks()));
 umax_violated = any(bsxfun(@gt,udata,umax),2);
 umin_violated = any(bsxfun(@lt,udata,umin),2);
+figure(7)
+subplot(2,1,1)
+plot(utraj.getBreaks(),max(bsxfun(@minus,udata(umax_violated,:),umax(umax_violated)),0)');
+subplot(2,1,2)
+plot(utraj.getBreaks(),max(-bsxfun(@minus,udata(umin_violated,:),umin(umin_violated)),0)');
 keyboard
-playback(v,traj,struct('slider',true));
+playback(v,xtraj,struct('slider',true));
 end

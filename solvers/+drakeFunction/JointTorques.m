@@ -31,6 +31,7 @@ classdef JointTorques < drakeFunction.RigidBodyManipulatorFunction
       dq = [zeros(nQ,1),eye(nQ),zeros(nQ,2*nV+nL)];
       dv_l = [zeros(nV,1+nQ),eye(nV),zeros(nV,nV+nL)];
       dv_r = [zeros(nV,1+nQ+nV),eye(nV),zeros(nV,nL)];
+      dx = [dq;dv_r];
       dvd_dv_r = 1/h*eye(nV);
       dvd_dv_l = -1/h*eye(nV);
       dvd_dh = -vd/h;
@@ -41,7 +42,8 @@ classdef JointTorques < drakeFunction.RigidBodyManipulatorFunction
       %dH = dH(:,1:obj.rbm.getNumPositions());
       kinsol = obj.rbm.doKinematics(q,true);
       JtransposeForce = zeros(nQ,1);
-      dJtransposeForce = zeros(nQ,nL);
+      dJtransposeForce = zeros(nQ,1+nQ+2*nV+nL);
+      dJtransposeForce_dq = zeros(nQ,nQ);
       lambda_count = 0;
       for i = 1:numel(obj.contact_wrench)
         num_pts_i = obj.contact_wrench{i}.num_pts;
@@ -57,11 +59,11 @@ classdef JointTorques < drakeFunction.RigidBodyManipulatorFunction
       end
       dH_reshaped = reshape(dH,[nQ,nQ,nX]);
       dH_flat = reshape(permute(dH_reshaped,[2,1,3]),[nQ,nQ*nX])';
-      dHvd_dx = reshape(dH_flat*qdd,[nQ,nX]);
+      dHvd_dx = reshape(dH_flat*vd,[nQ,nX]);
       dHvd = dHvd_dx*dx + H*dvd;
 
-      f = H*vd + C - obj.B*u - JtransposeForce;
-      df = dHvd + dC - obj.B*du - dJtransposeForce; 
+      f = H*vd + C - JtransposeForce;
+      df = dHvd + dC - dJtransposeForce; 
     end
   end
 end

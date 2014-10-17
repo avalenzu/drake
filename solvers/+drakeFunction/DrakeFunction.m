@@ -74,7 +74,7 @@ classdef DrakeFunction
       import drakeFunction.*
       if nargin < 3, same_input = false; end
       if isa(other,'drakeFunction.DrakeFunction')
-        fcn = compose(Sum(obj.output_frame,2),Concatenated({obj,other},same_input));
+        fcn = compose(Sum(obj.output_frame,2),concatenate(obj,other,same_input));
       else
         error('Drake:drakeFunction:NotSupported', ...
           'Addition of DrakeFunctions with other classes is not supported');
@@ -114,6 +114,7 @@ classdef DrakeFunction
 
     function fcn = times(obj,other)
       import drakeFunction.ConstantMultiple
+      import drakeFunction.ElementwiseProduct
       if isnumeric(obj)
         fcn_orig = other;
         value = obj;
@@ -121,8 +122,16 @@ classdef DrakeFunction
         fcn_orig = obj;
         value = other;
       else
-        error('Drake:drakeFunction:DrakeFunction:NoDrakeFunctionProducts', ...
-          'Elementwise products of two DrakeFunctions are not yet imiplemented');
+        if obj.getNumOutputs() == 1 && other.getNumOutputs() ~= 1 
+          obj = compose(drakeFunction.Linear(obj.getOutputFrame(),other.getOutputFrame(),ones(other.getNumOutputs(),1)),obj);
+        elseif other.getNumOutputs() == 1 && obj.getNumOutputs() ~= 1
+          other = compose(drakeFunction.Linear(other.getOutputFrame(),obj.getOutputFrame(),ones(obj.getNumOutputs(),1)),other);
+        else
+          valuecheck(obj.getNumOutputs(),other.getNumOutputs());
+        end
+        elementwise_product_fun = ElementwiseProduct(obj.getOutputFrame(),other.getOutputFrame());
+        fcn = compose(elementwise_product_fun,[obj;other]);
+        return;
       end
       frame = fcn_orig.getOutputFrame();
       fcn = compose(ConstantMultiple(frame,value),fcn_orig);
