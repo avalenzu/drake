@@ -212,8 +212,8 @@ rfoot_motion = BodyMotionControlBlock(r,'r_foot',ctrl_data,boptions);
 pelvis_motion = BodyMotionControlBlock(r,'pelvis',ctrl_data,boptions);
 lhand_motion = BodyMotionControlBlock(r,'l_hand',ctrl_data,boptions);
 rhand_motion = BodyMotionControlBlock(r,'r_hand',ctrl_data,boptions);
-boptions.Kp =2500*ones(6,1);
-boptions.Kd = 2*sqrt(boptions.Kp);
+%boptions.Kp =2500*ones(6,1);
+%boptions.Kd = 2*sqrt(boptions.Kp);
 boptions.Kp(6) = NaN; % don't constrain orientation
 boptions.Kd(6) = NaN;
 torso_motion = BodyMotionControlBlock(r,'utorso',ctrl_data,boptions);
@@ -248,8 +248,6 @@ outs(1).output = 1;
 outs(2).system = 1;
 outs(2).output = 1;
 sys = mimoFeedback(qp,r,[],[],ins,outs);
-%sys = mimoFeedback(qp,r_no_limits,[],[],ins,outs);
-%sys = mimoFeedback(qp,r_limits,[],[],ins,outs);
 clear ins;
 
 % feedback foot contact detector with QP/atlas

@@ -116,11 +116,12 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
       tf_range = T*[0.1,10];
       h_min = 3/(4*N)*T; h_max_stance = 5/N*T; h_max_flight = 5/N*T;
     else
-      %tf_range = T*[1,1];
+      tf_range = T*[1,1];
       %tf_range = T*[0.2,10];
-      tf_range = [0.25,1];
+      %tf_range = [0.25,1];
       %h_min = 3/(4*N)*T; h_max_stance = 4/(2*N)*T; h_max_flight = 2/N*T;
-      h_min = 0.005; h_max_stance = 0.03; h_max_flight = h_max_stance;
+      h_min = 1/(3*N)*T; h_max_stance = 2/N*T; h_max_flight = 2/N*T;
+      %h_min = 0.005; h_max_stance = 0.03; h_max_flight = h_max_stance;
     end
   end
 
@@ -130,12 +131,13 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   else
     q_nom = bsxfun(@times,qstar,ones(1,N));
   end
-  Q = 1e2*eye(nq);
+  Q = 1e3*eye(nq);
   %Q = 1e-4*eye(nq);
   Q(1,1) = 0;
   Q(2,2) = 0;
   Q(6,6) = 0;
-  %Q(arm_idx,arm_idx) = 1e-6*eye(numel(arm_idx));
+  %Q(knee_idx,knee_idx) = 1e3*ones(numel(knee_idx));
+  %Q(arm_idx,arm_idx) = 1e3*eye(numel(arm_idx));
   Qv = 1e1*eye(nq);
   %Qv = 1e-4*eye(nq);
   %Qv(back_idx,back_idx) = 1e1*eye(numel(back_idx));
@@ -282,7 +284,7 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
     cdfkp = cdfkp.addConstraint(BoundingBoxConstraint(zeros(numel(cdfkp.lambda_inds{i}),1),options.max_lambda*ones(numel(cdfkp.lambda_inds{i}),1)),cdfkp.lambda_inds{i});
   end
 
-  cdfkp = cdfkp.addConstraint(BoundingBoxConstraint(30*pi/180*ones(2,N),60*pi/180*ones(2,N)),cdfkp.q_inds(knee_idx,:));
+  %cdfkp = cdfkp.addConstraint(BoundingBoxConstraint(30*pi/180*ones(2,N),60*pi/180*ones(2,N)),cdfkp.q_inds(knee_idx,:));
 
   % Add Velocity constriants
   if options.enable_velocity_limits
