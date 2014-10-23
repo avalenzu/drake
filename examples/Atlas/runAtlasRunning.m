@@ -24,6 +24,11 @@ r = Atlas('urdf/atlas_minimal_contact.urdf',options);
 r = r.removeCollisionGroupsExcept({'heel','toe'});
 r = compile(r);
 
+options.ignore_effort_limits = true;
+r_no_limits = Atlas('urdf/atlas_minimal_contact.urdf',options);
+r_no_limits = r_no_limits.removeCollisionGroupsExcept({'heel','toe'});
+r_no_limits = compile(r_no_limits);
+
 options.ignore_effort_limits = false;
 r_limits = Atlas('urdf/atlas_minimal_contact.urdf',options);
 r_limits = r_limits.removeCollisionGroupsExcept({'heel','toe'});
@@ -37,8 +42,8 @@ v.display_dt = 0.005;
 % load in running trajectory
 load(fullfile('data',filename));
 
-ts = unique(sol.xtraj_three.getBreaks);
-xtraj = sol.xtraj_three;
+ts = unique(sol.xtraj_ten.getBreaks);
+xtraj = sol.xtraj_ten;
 r.setInitialState(xtraj.eval(0));
 x_knots = xtraj.eval(ts);
 
@@ -74,7 +79,7 @@ com = sol.com;
 comdot = sol.comdot;
 comddot = sol.comddot;
 ts = sol.t;
-for i=1:5 % three strides
+for i=1:19 % ten strides
   comi = sol.com;
   comdoti = sol.comdot;
   comddoti = sol.comddot;
@@ -106,12 +111,31 @@ l_toe_support = RigidBodySupportState(r,l_foot,{{'toe'}});
 r_foot_support = RigidBodySupportState(r,r_foot);
 r_toe_support = RigidBodySupportState(r,r_foot,{{'toe'}});
 
-left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
-  l_foot_support;l_foot_support;l_foot_support;l_toe_support; ...
-  l_toe_support;l_toe_support;flight;flight;flight];
-right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_support; ...
-  r_foot_support;r_foot_support;r_foot_support;r_toe_support; ...
-  r_toe_support;r_toe_support;flight;flight;flight];
+N = numel(sol.t);
+left_phase = [];
+right_phase = [];
+toe_contact = ismember(1:N,sol.in_stance.toe);
+heel_contact = ismember(1:N,sol.in_stance.heel);
+foot_contact = toe_contact & heel_contact;
+toe_only_contact = toe_contact & ~heel_contact;
+for i = 1:N
+  if toe_only_contact(i);
+    left_phase = [left_phase;l_toe_support];
+    right_phase = [right_phase;r_toe_support];
+  elseif foot_contact(i)
+    left_phase = [left_phase;l_foot_support];
+    right_phase = [right_phase;r_foot_support];
+  else
+    left_phase = [left_phase;flight];
+    right_phase = [right_phase;flight];
+  end
+end
+%left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
+  %l_foot_support;l_foot_support;l_foot_support;l_toe_support; ...
+  %l_toe_support;l_toe_support;flight;flight;flight];
+%right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_support; ...
+  %r_foot_support;r_foot_support;r_foot_support;r_toe_support; ...
+  %r_toe_support;r_toe_support;flight;flight;flight];
 
 %left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
   %l_foot_support;l_foot_support;l_foot_support;l_foot_support; ...
@@ -120,7 +144,8 @@ right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_
   %r_foot_support;r_foot_support;r_foot_support;r_foot_support; ...
   %r_foot_support;r_foot_support;r_toe_support;flight;flight;flight;flight];
 
-supports = [left_phase; right_phase; left_phase; right_phase; left_phase; right_phase];
+%supports = [left_phase; right_phase; left_phase; right_phase; left_phase; right_phase];
+supports = [left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase; left_phase; right_phase];
 
 r = r.setInitialState(x_knots(:,1));
 
@@ -187,6 +212,8 @@ rfoot_motion = BodyMotionControlBlock(r,'r_foot',ctrl_data,boptions);
 pelvis_motion = BodyMotionControlBlock(r,'pelvis',ctrl_data,boptions);
 lhand_motion = BodyMotionControlBlock(r,'l_hand',ctrl_data,boptions);
 rhand_motion = BodyMotionControlBlock(r,'r_hand',ctrl_data,boptions);
+boptions.Kp =2500*ones(6,1);
+boptions.Kd = 2*sqrt(boptions.Kp);
 boptions.Kp(6) = NaN; % don't constrain orientation
 boptions.Kd(6) = NaN;
 torso_motion = BodyMotionControlBlock(r,'utorso',ctrl_data,boptions);
@@ -221,6 +248,7 @@ outs(1).output = 1;
 outs(2).system = 1;
 outs(2).output = 1;
 sys = mimoFeedback(qp,r,[],[],ins,outs);
+%sys = mimoFeedback(qp,r_no_limits,[],[],ins,outs);
 %sys = mimoFeedback(qp,r_limits,[],[],ins,outs);
 clear ins;
 
