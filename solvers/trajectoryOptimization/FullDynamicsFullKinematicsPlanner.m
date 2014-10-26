@@ -92,15 +92,24 @@ classdef FullDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
       function [f,df] = midpoint_constraint_fun(h,x0,x1,u0,u1,lambda0,lambda1)
         nL0 = numel(lambda0);
         nL1 = numel(lambda1);
+        dh = [1, zeros(1,2*nX+2*nU+nL0+nL1)];
+        dx0 = [zeros(nX,1),eye(nX), zeros(nX,nX+2*nU+nL0+nL1)];
+        dx1 = [zeros(nX,1+nX),eye(nX), zeros(nX,2*nU+nL0+nL1)];
         x = 0.5*(x0+x1);
-        dx = [zeros(nX,1),0.5*eye(nX), 0.5*eye(nX), zeros(nX,2*nU+nL0+nL1)];
+        dx = 0.5*(dx0+dx1);
         u = 0.5*(u0+u1);
         du = [zeros(nU,1),zeros(nU,2*nX),0.5*eye(nU), 0.5*eye(nU), zeros(nU,nL0+nL1)];
         q = x(1:nQ);
+        q0 = x0(1:nQ);
+        dq0 = dx0(1:nQ,:);
+        q1 = x1(1:nQ);
+        dq1 = dx1(1:nQ,:);
         dq = dx(1:nQ,:);
         qd = x(nQ+1:end);
-        qdd = (x1(nQ+1:end)-x0(nQ+1:end))/h;
-        dqdd = [-qdd/h,zeros(nQ),eye(nQ),zeros(nQ),eye(nQ), zeros(nQ,2*nU+nL0+nL1)];
+        qd1 = x1(nQ+1:end);
+        dqd1 = dx1(nQ+1:end,:);
+        qdd_h = (x1(nQ+1:end)-x0(nQ+1:end));
+        dqdd_h = [zeros(nQ,1+nQ),eye(nQ),zeros(nQ),eye(nQ), zeros(nQ,2*nU+nL0+nL1)];
         [H,C,B,dH,dC_dx,dB_dx] = obj.plant.manipulatorDynamics(q,qd);
         dC = dC_dx*dx;
 
@@ -137,23 +146,25 @@ classdef FullDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
 
         dH_reshaped = reshape(dH,[nQ,nQ,nX]);
         dH_flat = reshape(permute(dH_reshaped,[2,1,3]),[nQ,nQ*nX])';
-        dHqdd_dx = reshape(dH_flat*qdd,[nQ,nX]);
-        dHqdd = dHqdd_dx*dx + H*dqdd;
+        dHqdd_h_dx = reshape(dH_flat*qdd_h,[nQ,nX]);
+        dHqdd_h = dHqdd_h_dx*dx + H*dqdd_h;
 
         dB_reshaped = reshape(dB_dx,[nQ,nU,nX]);
         dB_flat = reshape(permute(dB_reshaped,[2,1,3]),[nU,nQ*nX])';
         dBu_dx = reshape(dB_flat*u,[nQ,nX]);
         dBu = dBu_dx*dx + B*du;
 
-        f = H*qdd + C - B*u - JtransposeForce_avg;
-        df = dHqdd + dC - dBu - dJtransposeForce_avg; 
+        f = H*qdd_h + C*h - B*u*h - JtransposeForce_avg*h;
+        f = [q1-q0-qd1*h; f];
+        df = dHqdd_h + h*dC + C*dh - dBu*h -B*u*dh - dJtransposeForce_avg*h + JtransposeForce_avg*dh; 
+        df = [dq1-dq0-dqd1*h-qd1*dh; df];
       end
 
       if(num_knots == 1)
         % do nothing
       elseif(num_knots == 2)
         n_vars =1 +  2*nX + 2*nU + sum(num_lambda);
-        cnstr = FunctionHandleConstraint(zeros(nQ,1),zeros(nQ,1),n_vars,@midpoint_constraint_fun);
+        cnstr = FunctionHandleConstraint(zeros(nX,1),zeros(nX,1),n_vars,@midpoint_constraint_fun);
         dyn_inds = {obj.h_inds(knot_idx(1));obj.x_inds(:,knot_idx(1));obj.x_inds(:,knot_idx(2));obj.u_inds(:,knot_idx(1));obj.u_inds(:,knot_idx(2));knot_lambda_idx{1};knot_lambda_idx{2}};
         obj = obj.addConstraint(cnstr,dyn_inds);
       end
