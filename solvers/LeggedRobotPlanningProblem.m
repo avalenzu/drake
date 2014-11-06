@@ -63,7 +63,11 @@ classdef LeggedRobotPlanningProblem
       lb = repmat([NaN; NaN; 0],1,n_pts);
       ub = repmat([NaN; NaN; 0],1,n_pts);
       constraints{1} = WorldPositionConstraint(obj.robot,body_id,pts(:,1:n_pts),lb,ub);
-      constraints{2} = WorldFixedPositionConstraint(obj.robot,body_id,pts(:,1:n_pts));
+      if n_pts == 3
+        constraints{2} = WorldFixedBodyPoseConstraint(obj.robot,body_id);
+      else
+        constraints{2} = WorldFixedPositionConstraint(obj.robot,body_id,pts(:,1:n_pts));
+      end
       obj = addSupport(obj,body_id,pts,tspan,constraints);
     end
     
