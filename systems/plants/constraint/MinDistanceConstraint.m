@@ -83,16 +83,16 @@ classdef MinDistanceConstraint < SingleTimeKinematicConstraint
         exp_recip_dist.*(dist(idx_neg).^(-1) - 1);
     end
 
-    function obj = excludeCollisionGroups(obj, collision_group_names)
-      if ischar(collision_group_names)
-        collision_group_names = {collision_group_names};
+    function obj = excludeCollisionGroups(obj, contact_shape_group_names)
+      if ischar(contact_shape_group_names)
+        contact_shape_group_names = {contact_shape_group_names};
       else
-        typecheck(collision_group_names,'cell');
+        typecheck(contact_shape_group_names,'cell');
         if ~isfield(obj.active_collision_options,'collision_groups') || ...
             isempty(obj.active_collision_options.collision_groups)
-          obj.active_collision_options.collision_groups = unique([obj.robot.body.collision_group_name]);
+          obj.active_collision_options.collision_groups = unique([obj.robot.body.contact_shape_group_name]);
         end
-        obj.active_collision_options.collision_groups = setdiff(obj.active_collision_options.collision_groups,collision_group_names);
+        obj.active_collision_options.collision_groups = setdiff(obj.active_collision_options.collision_groups,contact_shape_group_names);
       end
       obj.mex_ptr.delete();
       obj.mex_ptr = constructPtrRigidBodyConstraintmex(RigidBodyConstraint.MinDistanceConstraintType,obj.robot.getMexModelPtr,obj.min_distance,obj.active_collision_options,obj.tspan);
