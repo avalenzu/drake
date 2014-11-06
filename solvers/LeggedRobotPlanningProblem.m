@@ -60,8 +60,8 @@ classdef LeggedRobotPlanningProblem
     
     function obj = addSupportOnFlatGround(obj,body_id,pts,tspan)
       n_pts = min(size(pts,2),3);
-      lb = repmat([NaN; NaN; 0],1,n_pts);
-      ub = repmat([NaN; NaN; 0],1,n_pts);
+      lb = repmat([NaN; NaN; -1e-3],1,n_pts);
+      ub = repmat([NaN; NaN; 1e-3],1,n_pts);
       constraints{1} = WorldPositionConstraint(obj.robot,body_id,pts(:,1:n_pts),lb,ub);
       if n_pts == 3
         constraints{2} = WorldFixedBodyPoseConstraint(obj.robot,body_id);
