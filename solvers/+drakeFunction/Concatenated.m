@@ -96,8 +96,9 @@ classdef Concatenated < drakeFunction.DrakeFunction
       df_cell = cell(obj.n_contained_functions,1);
       for i = 1:obj.n_contained_functions
         f_cell{i} = NaN(obj.contained_functions{i}.getNumOutputs(),1);
-        df_cell{i} = ones(obj.contained_functions{i}.getNumOutputs(), ...
-                          obj.contained_functions{i}.getNumInputs());
+        [iCfun,jCvar] = obj.contained_functions{i}.getSparsityPattern();
+        df_cell{i} = sparse(iCfun, jCvar, ...
+                            ones(numel(iCfun),1));
       end
       [~,df] = combineOutputs(obj,f_cell,df_cell);
       [obj.iCfun, obj.jCvar] = find(df);
