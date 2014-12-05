@@ -607,7 +607,7 @@ classdef NonlinearProgram
       end
     end
     
-    function obj = replaceCost(obj,cost,cost_idx,xind)
+    function obj = replaceCost(obj,cost,cost_idx,xind,data_ind)
       % replace the cost_idx'th cost in the original problem with a new cost
       % @param cost     -- A Constraint object, currently accepts NonlinearConstraint and
       % LinearConstraint
@@ -616,6 +616,9 @@ classdef NonlinearProgram
       % evaluating the cost. Default value is (1:obj.num_vars)
       if(nargin<4)
         xind = {(1:obj.num_vars)'};
+      end
+      if(nargin<5)
+        data_ind = [];
       end
       if ~iscell(xind)
         xind = {xind(:)};
@@ -631,11 +634,14 @@ classdef NonlinearProgram
       cost_tmp{cost_idx} = cost;
       cost_xind_tmp = obj.cost_xind_cell;
       cost_xind_tmp{cost_idx} = xind;
+      cost_dataind_tmp = obj.cost_dataind;
+      cost_dataind_tmp{cost_idx} = data_ind;
       obj.cost = {};
       obj.cost_xind_cell = {};
       obj.cost_xind_stacked = {};
+      obj.cost_dataind = {};
       for i = 1:num_cost
-        obj = obj.addCost(cost_tmp{i},cost_xind_tmp{i});
+        obj = obj.addCost(cost_tmp{i},cost_xind_tmp{i},cost_dataind_tmp{i});
       end
     end
     

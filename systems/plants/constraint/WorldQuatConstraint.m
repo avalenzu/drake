@@ -55,5 +55,21 @@ classdef WorldQuatConstraint < QuatConstraint
       [~,joint_path] = obj.robot.findKinematicPath(1,obj.body);
       joint_idx = vertcat(obj.robot.body(joint_path).position_num)';
     end
+
+    function cnstr = generateObjective(obj,t)
+      % generate a FunctionHandleConstraint object if time is valid or if no time is given
+      if nargin < 2, t = obj.tspan(1); end;
+      if(obj.isTimeValid(t))
+        [lb,ub] = obj.bounds(t);
+        cnstr = {FunctionHandleConstraint(lb,ub,obj.robot.getNumPositions,@(~,kinsol) obj.eval(t,kinsol))};
+        name_str = obj.name(t);
+        cnstr{1} = cnstr{1}.setName(name_str);
+        joint_idx = obj.kinematicsPathJoints();
+        cnstr{1} = cnstr{1}.setSparseStructure(reshape(bsxfun(@times,(1:obj.num_constraint)',ones(1,length(joint_idx))),[],1),...
+          reshape(bsxfun(@times,ones(obj.num_constraint,1),joint_idx),[],1));
+      else
+        cnstr = {};
+      end
+    end
   end
 end
