@@ -118,7 +118,7 @@ classdef MotionPlanningProblem
           [xs,valid_interp] =options.interpolation_fcn(V(:,imin),xs,1);
         end
 %         if ~(valid_interp && checkConstraints(obj,xs)), continue; end
-
+        if ~valid_interp, continue; end
         if dmin>options.max_length_between_constraint_checks
           %keyboard
           % then linearly interpolate along that distance
@@ -129,7 +129,7 @@ classdef MotionPlanningProblem
           for i=2:num_intermediate_samples-1
             [xss_i,valid_interp] = options.interpolation_fcn(V(:,imin),xs,interp_values(i));
             if valid_interp && checkConstraints(obj,xss_i),
-              if interp_values(i) > 0.25
+              if 1 && interp_values(i) > 0.25
                 valid=true;
               else
                 continue;
