@@ -6,6 +6,7 @@ warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
 warning('off','Drake:RigidBodyManipulator:UnsupportedJointLimits');
 options.floating = true;
 options.terrain = RigidBodyFlatTerrain();
+if ~isfield(options,'n_smoothing_passes'), options.n_smoothing_passes = 1; end;
 urdf = fullfile(getDrakePath(),'examples','Atlas','urdf','atlas_convex_hull.urdf');
 r = RigidBodyManipulator(urdf,options);
 nq = r.getNumPositions();
@@ -143,7 +144,7 @@ position_constraint_7 = WorldPositionConstraint(r, l_hand, ref_frame(1:3,:)*[poi
 
 quat_constraint_8 = WorldQuatConstraint(r, l_hand, [0.73638758447380859; 0.089093166809596377; 0.6584413641826542; -0.1274782451791375], 10*pi/180, [1.0, 1.0]);
 
-min_distance_world = 0.03;
+min_distance_world = 0.01;
 min_distance = 0.01;
 active_collision_options.body_idx = setdiff(1:r.getNumBodies(),[l_foot,r_foot]);
 collision_constraint = MinDistanceConstraint(r, min_distance);
@@ -224,17 +225,24 @@ toc(rrt_time);
 %if info == 1
 smoothing_time = tic;
 x_data = xtraj.eval(xtraj.getBreaks());
-x_data_smoothed = smoothPath(x_data);
-for i = 1:10
+x_data_smoothed = x_data;
+for i = 1:options.n_smoothing_passes
   x_data_smoothed = smoothPath(x_data_smoothed);
 end
+dist = zeros(1,size(x_data_smoothed,2)-1);
+t = zeros(1,size(x_data_smoothed,2)-1);
+for i = 1:numel(t)
+  dist(i) = options.distance_metric_fcn(x_data_smoothed(:,i),x_data_smoothed(:,i+1));
+end
+velocity = -diff(0.5*cos(linspace(0,pi,numel(dist)+1)));
+t = cumsum(dist./velocity)/sum(dist./velocity);
 display('Smoothing time:')
 toc(smoothing_time);
 hold on;
 plot(x_data_smoothed(1,:),x_data_smoothed(2,:),'ro-');
 hold off;
 % q_traj = PPTrajectory(foh(linspace(0,1,numel(xtraj.getBreaks())),x_data(8:end,:)));
-q_traj = PPTrajectory(foh(linspace(0,1,size(x_data_smoothed,2)),x_data_smoothed(8:end,:)));
+q_traj = PPTrajectory(foh([0,t],x_data_smoothed(8:end,:)));
 q_traj = q_traj.setOutputFrame(r.getPositionFrame());
 %else
 %q_traj = []
@@ -266,8 +274,8 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
         kinsol = r.doKinematics(q);
         xyz_quat = r.forwardKin(kinsol,l_hand,point_in_link_frame,2);
         x_interp = [xyz_quat; q];
-      else
-        display(info);
+%       else
+%         display(info);
       end
     else
       valid_interp = false;
@@ -301,7 +309,7 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
         end
       end
       if ~valid_shortcut
-        mid_index = floor(size(x_data,2)/2);
+        mid_index = ceil(size(x_data,2)/2);
         x_data_smoothed_1 = smoothPath(x_data(:,1:mid_index));
         x_data_smoothed_2 = smoothPath(x_data(:,mid_index:end));
         x_data_smoothed = [x_data_smoothed_1(:,1:end-1),x_data_smoothed_2];
