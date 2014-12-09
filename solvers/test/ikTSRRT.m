@@ -164,7 +164,7 @@ for i = r.getNumBodies():-1:1
   end
 end
 cost = cost/min(cost);
-cost = cost.^2;
+% cost = cost.^2;
 Q = diag(cost);
 % Q = eye(nq);
 ikoptions = IKoptions(r);
