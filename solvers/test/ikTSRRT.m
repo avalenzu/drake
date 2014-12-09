@@ -117,12 +117,18 @@ posture_constraint_6 = posture_constraint_6.setJointLimits(joint_inds, joints_lo
 
 % fixed right arm
 posture_constraint_7 = PostureConstraint(r, [-inf, inf]);
-joint_inds = [joints.r_arm_usy; joints.r_arm_shx; joints.r_arm_ely; joints.r_arm_elx; joints.r_arm_uwy; joints.r_arm_mwx];
-joints_lower_limit = reach_start(joint_inds) + [0.0; 0.0; 0.0; 0.0; 0.0; 0.0];
-joints_upper_limit = reach_start(joint_inds) + [0.0; 0.0; 0.0; 0.0; 0.0; 0.0];
+joint_inds = [joints.r_arm_usy; joints.r_arm_shx; joints.r_arm_ely; joints.r_arm_elx; joints.r_arm_uwy; joints.r_arm_mwx; joints.neck_ay];
+joints_lower_limit = reach_start(joint_inds);
+joints_upper_limit = reach_start(joint_inds);
 posture_constraint_7 = posture_constraint_7.setJointLimits(joint_inds, joints_lower_limit, joints_upper_limit);
 jlmin(joint_inds) = joints_lower_limit;
 jlmax(joint_inds) = joints_upper_limit;
+
+posture_constraint_8 = PostureConstraint(r, [-inf, inf]);
+joint_inds = [joints.l_leg_kny;joints.r_leg_kny];
+joints_lower_limit = 30*pi/180*[1;1];
+joints_upper_limit = 120*pi/180*[1;1];
+posture_constraint_8 = posture_constraint_8.setJointLimits(joint_inds, joints_lower_limit, joints_upper_limit);
 
 point_in_link_frame = [0.35; 0.24449999999999988; 0.011200000000000071];
 %point_in_link_frame = [0; 0.24449999999999988; 0.011200000000000071];
@@ -145,7 +151,7 @@ collision_constraint_2 = MinDistanceConstraint(r, min_distance,active_collision_
 collision_constraint_2 = collision_constraint_2.generateConstraint();
 problem = problem.addConstraint(collision_constraint_2{1},7+(1:nq));
 
-base_constraints = {qsc_constraint_0, position_constraint_1, quat_constraint_2, position_constraint_3, quat_constraint_4, posture_constraint_5,posture_constraint_6,posture_constraint_7};
+base_constraints = {qsc_constraint_0, position_constraint_1, quat_constraint_2, position_constraint_3, quat_constraint_4, posture_constraint_5,posture_constraint_6,posture_constraint_7,posture_constraint_8};
 active_constraints = [base_constraints, {position_constraint_7,quat_constraint_8}];
 
 ik_seed_pose = q_nom;
