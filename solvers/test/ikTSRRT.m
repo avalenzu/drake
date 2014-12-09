@@ -220,8 +220,13 @@ rrt_time = tic;
 toc(rrt_time);
 
 %if info == 1
-q_data = xtraj.eval(xtraj.getBreaks());
-q_traj = PPTrajectory(foh(linspace(0,1,numel(xtraj.getBreaks())),q_data(8:end,:)));
+x_data = xtraj.eval(xtraj.getBreaks());
+x_data_smoothed = smoothPath(x_data);
+hold on;
+plot(x_data_smoothed(1,:),x_data_smoothed(2,:),'ro');
+hold off;
+% q_traj = PPTrajectory(foh(linspace(0,1,numel(xtraj.getBreaks())),x_data(8:end,:)));
+q_traj = PPTrajectory(foh(linspace(0,1,size(x_data_smoothed,2)),x_data_smoothed(8:end,:)));
 q_traj = q_traj.setOutputFrame(r.getPositionFrame());
 %else
 %q_traj = []
@@ -246,7 +251,7 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
       ang_tol = 1*pi/180;
       quat_constraint_8 = WorldQuatConstraint(r, l_hand, quat, ang_tol, [1.0, 1.0]);
       
-      [q, info, infeasible_constraint] = inverseKin(r, q_nom_local, q_nom_local, base_constraints{:}, position_constraint_7,quat_constraint_8,ikoptions);
+      [q, info, infeasible_constraint] = inverseKin(r, q_nom, q_nom, base_constraints{:}, position_constraint_7,quat_constraint_8,ikoptions);
       
       valid_interp = (info < 10);
       if valid_interp
@@ -267,6 +272,34 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
     %   end
   end
 
+  function x_data_smoothed = smoothPath(x_data)
+    if size(x_data,2) <= 2;
+      x_data_smoothed = x_data;
+    else
+      x0 = x_data(:,1);
+      xf = x_data(:,end);
+      valid_shortcut = true;
+      num_interpolated_checks = ...
+        ceil(options.distance_metric_fcn(x0,xf)/(0.5*options.max_edge_length));
+      x_data_smoothed = zeros(size(x_data,1),num_interpolated_checks);
+      alpha = linspace(0,1,num_interpolated_checks);
+      for ii = 1:num_interpolated_checks
+        [x_interp,valid_shortcut] = options.interpolation_fcn(x0,xf,alpha(ii));
+        valid_shortcut = valid_shortcut && problem.checkConstraints(x_interp);
+        if valid_shortcut
+          x_data_smoothed(:,ii) = x_interp;
+        else
+          break; 
+        end
+      end
+      if ~valid_shortcut
+        mid_index = floor(size(x_data,2)/2);
+        x_data_smoothed_1 = smoothPath(x_data(:,1:mid_index));
+        x_data_smoothed_2 = smoothPath(x_data(:,mid_index:end));
+        x_data_smoothed = [x_data_smoothed_1(:,1:end-1),x_data_smoothed_2];
+      end
+    end
+  end
   function x_sample = sampleFunction()
     xyz = (xyz_max-xyz_min).*rand(3,1)+xyz_min;
     quat = uniformlyRandomQuat();
