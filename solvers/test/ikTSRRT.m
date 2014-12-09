@@ -176,18 +176,6 @@ ikoptions = ikoptions.setMajorOptimalityTolerance(1e-3);
 
 [q_end, info, infeasible_constraint] = inverseKin(r, ik_seed_pose, ik_nominal_pose, active_constraints{:}, ikoptions);
 
-xyz_box_edge_length = 2;
-orientation_weight = 1;%xyz_box_edge_length;
-posture_weight = 1e0;
-
-options.distance_metric_fcn = @(q1,q2) poseDistance(q1(1:7,:),q2(1:7,:),orientation_weight);
-% options.max_length_between_constraint_checks = 0.1;
-options.max_edge_length = 0.2;
-options.interpolation_fcn = @ikInterpolation;
-options.display_after_every = 10;
-options.display_fcn = @displayFun;
-options.goal_bias = goal_bias;
-
 v.draw(0,q_end);
 kinsol = r.doKinematics(reach_start);
 xyz_quat_start = r.forwardKin(kinsol,l_hand,point_in_link_frame,2);
@@ -205,8 +193,21 @@ active_constraints = [base_constraints,{position_constraint_7,quat_constraint_8}
 
 x_start = [xyz_quat_start;q_start];
 x_goal = [xyz_quat_goal;q_end];
+xyz_box_edge_length = 2;
 xyz_min = min(xyz_quat_start(1:3),xyz_quat_goal(1:3)) - xyz_box_edge_length/2;
 xyz_max = max(xyz_quat_start(1:3),xyz_quat_goal(1:3)) + xyz_box_edge_length/2;
+
+orientation_weight = max(abs(xyz_max-xyz_min));%xyz_box_edge_length;
+posture_weight = 1e0;
+
+options.distance_metric_fcn = @(q1,q2) poseDistance(q1(1:7,:),q2(1:7,:),orientation_weight);
+% options.max_length_between_constraint_checks = 0.1;
+options.max_edge_length = 0.2;
+options.interpolation_fcn = @ikInterpolation;
+options.display_after_every = 10;
+options.display_fcn = @displayFun;
+options.goal_bias = goal_bias;
+
 % n_ee_poses_tried = 1;
 %sample_prog = InverseKinematics(r,ik_nominal_pose,base_constraints{:},collision_constraint);
 % sample_prog = InverseKinematics(r,ik_nominal_pose,base_constraints{:});
