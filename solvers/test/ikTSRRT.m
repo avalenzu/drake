@@ -1,4 +1,5 @@
-function [q_traj,info,v,V,parent] = ikTSRRT(goal_bias,options)
+function [q_traj,info,v,V,parent] = ikTSRRT(goal_bias,options,rng_seed)
+if nargin < 3, rng; else, rng(rng_seed); end
 if nargin < 1 || isempty(goal_bias), goal_bias = 0.05; end
 w = warning('off','Drake:RigidBodyManipulator:UnsupportedContactPoints');
 warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
@@ -217,13 +218,20 @@ options.goal_bias = goal_bias;
 % sample_prog.setSolverOptions('snopt','MajorOptimalityTolerance',1e-3);
 rrt_time = tic;
 [xtraj,info,V,parent] = problem.rrt(x_start,x_goal,@sampleFunction,options);
+display('RRT time:')
 toc(rrt_time);
 
 %if info == 1
+smoothing_time = tic;
 x_data = xtraj.eval(xtraj.getBreaks());
 x_data_smoothed = smoothPath(x_data);
+for i = 1:10
+  x_data_smoothed = smoothPath(x_data_smoothed);
+end
+display('Smoothing time:')
+toc(smoothing_time);
 hold on;
-plot(x_data_smoothed(1,:),x_data_smoothed(2,:),'ro');
+plot(x_data_smoothed(1,:),x_data_smoothed(2,:),'ro-');
 hold off;
 % q_traj = PPTrajectory(foh(linspace(0,1,numel(xtraj.getBreaks())),x_data(8:end,:)));
 q_traj = PPTrajectory(foh(linspace(0,1,size(x_data_smoothed,2)),x_data_smoothed(8:end,:)));
@@ -245,7 +253,7 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
     q_nom_local = x1(8:end);
     
     if eval(collision_constraint_world,[xyz;quat2rpy(quat)]) == 0
-      tol = 0.0;
+      tol = 0.01;
       position_constraint_7 = Point2PointDistanceConstraint(r, l_hand,1,point_in_link_frame, xyz, 0, tol, [1.0, 1.0]);
       
       ang_tol = 1*pi/180;
@@ -273,14 +281,14 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
   end
 
   function x_data_smoothed = smoothPath(x_data)
-    if size(x_data,2) <= 2;
+    if size(x_data,2) <= 3;
       x_data_smoothed = x_data;
     else
       x0 = x_data(:,1);
       xf = x_data(:,end);
       valid_shortcut = true;
       num_interpolated_checks = ...
-        ceil(options.distance_metric_fcn(x0,xf)/(0.5*options.max_edge_length));
+        ceil(options.distance_metric_fcn(x0,xf)/(1*options.max_edge_length));
       x_data_smoothed = zeros(size(x_data,1),num_interpolated_checks);
       alpha = linspace(0,1,num_interpolated_checks);
       for ii = 1:num_interpolated_checks
