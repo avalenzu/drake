@@ -144,7 +144,7 @@ position_constraint_7 = WorldPositionConstraint(r, l_hand, ref_frame(1:3,:)*[poi
 
 quat_constraint_8 = WorldQuatConstraint(r, l_hand, [0.73638758447380859; 0.089093166809596377; 0.6584413641826542; -0.1274782451791375], 10*pi/180, [1.0, 1.0]);
 
-min_distance_world = 0.01;
+min_distance_world = 0.03;
 min_distance = 0.01;
 active_collision_options.body_idx = setdiff(1:r.getNumBodies(),[l_foot,r_foot]);
 collision_constraint = MinDistanceConstraint(r, min_distance);
@@ -204,7 +204,7 @@ posture_weight = 1e0;
 
 options.distance_metric_fcn = @(q1,q2) poseDistance(q1(1:7,:),q2(1:7,:),orientation_weight);
 % options.max_length_between_constraint_checks = 0.1;
-options.max_edge_length = 0.2;
+options.max_edge_length = 0.1;
 options.interpolation_fcn = @ikInterpolation;
 options.display_after_every = 10;
 options.display_fcn = @displayFun;
@@ -234,8 +234,8 @@ t = zeros(1,size(x_data_smoothed,2)-1);
 for i = 1:numel(t)
   dist(i) = options.distance_metric_fcn(x_data_smoothed(:,i),x_data_smoothed(:,i+1));
 end
-velocity = -diff(0.5*cos(linspace(0,pi,numel(dist)+1)));
-t = cumsum(dist./velocity)/sum(dist./velocity);
+velocity = 1;%-diff(0.5*cos(linspace(0,pi,numel(dist)+1)));
+t = 5*cumsum(dist./velocity)/sum(dist./velocity);
 display('Smoothing time:')
 toc(smoothing_time);
 hold on;
@@ -253,7 +253,9 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
     MotionPlanningProblem.drawFirstTwoCoordinates(V,parent,last_drawn_edge_num);
   end
 
-  function [x_interp,valid_interp] = ikInterpolation(x1,x2,alpha)
+  function [x_interp,valid_interp] = ikInterpolation(x1,x2,alpha,tol,ang_tol)
+    if nargin < 4, tol = 0.01; end
+    if nargin < 5, ang_tol = 10*pi/180; end
     x_interp = [];
     xyz = (1-alpha)*x1(1:3)+alpha*x2(1:3);
     quat = (1-alpha)*x1(4:7)+alpha*x2(4:7); %yes, I know this isn't the right way to do this
@@ -261,10 +263,8 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
     q_nom_local = x1(8:end);
     
     if eval(collision_constraint_world,[xyz;quat2rpy(quat)]) == 0
-      tol = 0.01;
       position_constraint_7 = Point2PointDistanceConstraint(r, l_hand,1,point_in_link_frame, xyz, 0, tol, [1.0, 1.0]);
       
-      ang_tol = 1*pi/180;
       quat_constraint_8 = WorldQuatConstraint(r, l_hand, quat, ang_tol, [1.0, 1.0]);
       
       [q, info, infeasible_constraint] = inverseKin(r, q_nom, q_nom, base_constraints{:}, position_constraint_7,quat_constraint_8,ikoptions);
@@ -289,7 +289,7 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
   end
 
   function x_data_smoothed = smoothPath(x_data)
-    if size(x_data,2) <= 3;
+    if size(x_data,2) <= 2;
       x_data_smoothed = x_data;
     else
       x0 = x_data(:,1);
@@ -300,7 +300,7 @@ q_traj = q_traj.setOutputFrame(r.getPositionFrame());
       x_data_smoothed = zeros(size(x_data,1),num_interpolated_checks);
       alpha = linspace(0,1,num_interpolated_checks);
       for ii = 1:num_interpolated_checks
-        [x_interp,valid_shortcut] = options.interpolation_fcn(x0,xf,alpha(ii));
+        [x_interp,valid_shortcut] = ikInterpolation(x0,xf,alpha(ii),0,0);
         valid_shortcut = valid_shortcut && problem.checkConstraints(x_interp);
         if valid_shortcut
           x_data_smoothed(:,ii) = x_interp;
