@@ -30,7 +30,7 @@ void mexFunction( int nlhs, mxArray *plhs[],int nrhs, const mxArray *prhs[] ) {
   // See whether we're using multiple contacts or not
   bool allow_variable_number_of_contacts = false;
   if (nrhs >= 2) {
-    if (!mxIsLogicalScalar) {
+    if (!mxIsLogicalScalar(prhs[1])) {
       mexErrMsgIdAndTxt("Drake:collisionDetectmex:InvalidInput", 
                         "The second argument must be a logical scalar.");
     }
