@@ -144,6 +144,11 @@ public:
                         std::vector<int>& bodyB_idx,
                         bool use_margins = true);
 
+  bool potentialCollisionPoints(  VectorXd& phi, MatrixXd& normal, 
+                                  MatrixXd& xA, MatrixXd& xB, 
+                                  std::vector<int>& bodyA_idx, 
+                                  std::vector<int>& bodyB_idx,
+                                  bool use_margins = true);
 
   bool allCollisions(std::vector<int>& bodyA_idx, std::vector<int>& bodyB_idx, 
                      MatrixXd& ptsA, MatrixXd& ptsB,

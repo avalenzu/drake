@@ -29,8 +29,9 @@ namespace DrakeCollision
   {
     int body_idx;
     Shape shape;
+    Eigen::Matrix4d T_element_to_link;
     
-    ElementData(int body_idx, Shape shape) : body_idx(body_idx), shape(shape) {};
+    ElementData(int body_idx, Shape shape, Eigen::Matrix4d T_element_to_link) : body_idx(body_idx), shape(shape), T_element_to_link(T_element_to_link) {};
   };
 
   class BulletModel : public Model
@@ -107,6 +108,12 @@ namespace DrakeCollision
       {
         return bodies.at(body_idx);
       };
+
+      virtual bool potentialCollisionPoints(std::vector<int>& bodyA_idx,
+          std::vector<int>& bodyB_idx,
+          Eigen::MatrixXd& ptsA, Eigen::MatrixXd& ptsB,
+          Eigen::MatrixXd& normal,
+          Eigen::VectorXd& distance);
       
       virtual bool allCollisions(std::vector<int>& bodyA_idx,
               std::vector<int>& bodyB_idx,

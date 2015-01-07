@@ -11,9 +11,10 @@ namespace DrakeCollision
   bool OverlapFilterCallback::needBroadphaseCollision(btBroadphaseProxy* proxy0,
       btBroadphaseProxy* proxy1) const
   {
-    bool collides = (proxy0->m_collisionFilterGroup & proxy1->m_collisionFilterMask) != 0;
-    collides = collides && (proxy1->m_collisionFilterGroup &
-        proxy0->m_collisionFilterMask);
+    //bool collides = (proxy0->m_collisionFilterGroup & proxy1->m_collisionFilterMask) != 0;
+    //collides = collides && (proxy1->m_collisionFilterGroup &
+        //proxy0->m_collisionFilterMask);
+    bool collides = true;
 
     //add some additional logic here that modified 'collides'
     if (collides) {
@@ -27,10 +28,13 @@ namespace DrakeCollision
       auto element_data1 = static_cast< ElementData* >(bt_collision_object1->getUserPointer());
       const Body& body0 = parent_model->getBody(element_data0->body_idx);
       const Body& body1 = parent_model->getBody(element_data1->body_idx);
-      collides = (body0.getBodyIdx() != body1.getBodyIdx());
-      collides = collides && !body0.adjacentTo(body1);
+      //collides = (body0.getBodyIdx() != body1.getBodyIdx());
+      //collides = collides && !body0.adjacentTo(body1);
       collides = collides && body0.collidesWith(body1);
     }
+    //DEBUG
+    //cout << "BulletModel::callback: collides = " << collides << endl;
+    //END_DEBUG
     return collides;
   }
 
@@ -63,7 +67,7 @@ namespace DrakeCollision
       bodies[body_idx].addElement(body_idx, parent_idx, T_element_to_link, shape, params, group_name, use_margins );
       
       const BulletElement& elem = bodies.at(body_idx).back();
-      element_data.push_back(unique_ptr<ElementData>(new ElementData(body_idx,elem.getShape())));
+      element_data.push_back(unique_ptr<ElementData>(new ElementData(body_idx,elem.getShape(),elem.getLinkTransform())));
       elem.bt_obj->setUserPointer(element_data.back().get());
       bt_collision_world->addCollisionObject(elem.bt_obj.get());
       if (is_static) {
@@ -413,6 +417,65 @@ namespace DrakeCollision
     //END_DEBUG
     return has_result;
   };
+
+  bool BulletModel::potentialCollisionPoints(std::vector<int>& bodyA_idx,
+          std::vector<int>& bodyB_idx,
+          MatrixXd& ptsA, MatrixXd& ptsB,
+          MatrixXd& normal,
+          VectorXd& distance)
+  {
+    BulletResultCollector c;
+    bt_collision_world->performDiscreteCollisionDetection();
+    int numManifolds = bt_collision_world->getDispatcher()->getNumManifolds();
+    for (int i=0;i<numManifolds;i++)
+    {
+      btPersistentManifold* contactManifold =  bt_collision_world->getDispatcher()->getManifoldByIndexInternal(i);
+      const btCollisionObject* obA = contactManifold->getBody0();
+      const btCollisionObject* obB = contactManifold->getBody1();
+      auto element_dataA = static_cast< ElementData*  >(obA->getUserPointer());
+      auto element_dataB = static_cast< ElementData*  >(obB->getUserPointer());
+      int bodyA_idx_i = element_dataA->body_idx;
+      int bodyB_idx_i = element_dataB->body_idx;
+      Shape shapeA = element_dataA->shape;
+      Shape shapeB = element_dataB->shape;
+      double marginA = 0;
+      double marginB = 0;
+      if (shapeA == MESH || shapeA == BOX) { 
+        marginA = obA->getCollisionShape()->getMargin();
+      }
+      if (shapeB == MESH || shapeB == BOX) { 
+        marginB = obB->getCollisionShape()->getMargin();
+      }
+      int numContacts = contactManifold->getNumContacts();
+      // DEBUG
+      //cout << "potentialCollisionPoints: numContacts = " << numContacts << endl;
+      // END_DEBUG
+      for (int j=0;j<numContacts;j++)
+      {        
+        btManifoldPoint& pt = contactManifold->getContactPoint(j);
+        const btVector3& normalOnB = pt.m_normalWorldOnB;
+        const btVector3& pointOnAinWorld = pt.getPositionWorldOnA() + normalOnB*marginA;
+        const btVector3& pointOnBinWorld = pt.getPositionWorldOnB() - normalOnB*marginB;
+        const btVector3 pointOnElemA = obA->getWorldTransform().invXform(pointOnAinWorld);
+        const btVector3 pointOnElemB = obB->getWorldTransform().invXform(pointOnBinWorld);
+
+        VectorXd pointOnA_1(4);
+        VectorXd pointOnB_1(4);
+        pointOnA_1 << toVector3d(pointOnElemA), 1;
+        pointOnB_1 << toVector3d(pointOnElemB), 1;
+
+        Vector3d pointOnA;
+        Vector3d pointOnB;
+        pointOnA << element_dataA->T_element_to_link.topRows(3)*pointOnA_1;
+        pointOnB << element_dataB->T_element_to_link.topRows(3)*pointOnB_1;
+
+        c.addSingleResult(bodyA_idx_i,bodyB_idx_i,pointOnA,pointOnB,
+            toVector3d(normalOnB),(double) pt.getDistance() + marginA + marginB);
+      }
+    }   
+    c.getResults(bodyA_idx,bodyB_idx,ptsA,ptsB,normal,distance);
+    return c.pts.size() > 0;
+  }
   
   bool BulletModel::allCollisions(vector<int>& bodyA_idx,
           vector<int>& bodyB_idx,

@@ -27,6 +27,16 @@ void mexFunction( int nlhs, mxArray *plhs[],int nrhs, const mxArray *prhs[] ) {
   // first get the model_ptr back from matlab
   RigidBodyManipulator *model= (RigidBodyManipulator*) getDrakeMexPointer(prhs[0]);
 
+  // See whether we're using multiple contacts or not
+  bool allow_variable_number_of_contacts = false;
+  if (nrhs >= 2) {
+    if (!mxIsLogicalScalar) {
+      mexErrMsgIdAndTxt("Drake:collisionDetectmex:InvalidInput", 
+                        "The second argument must be a logical scalar.");
+    }
+    allow_variable_number_of_contacts = mxIsLogicalScalarTrue(prhs[1]);
+  }
+
   // Parse `active_collision_options`
   vector<int> active_bodies_idx;
   set<string> active_group_names;
@@ -65,22 +75,33 @@ void mexFunction( int nlhs, mxArray *plhs[],int nrhs, const mxArray *prhs[] ) {
   }
 
   vector<int> bodyA_idx, bodyB_idx;
-  MatrixXd ptsA, ptsB, normals, JA, JB, Jd;
+  MatrixXd ptsA, ptsB, normals;
   VectorXd dist;
-  if (active_bodies_idx.size() > 0) {
-    if (active_group_names.size() > 0) {
-      model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
-                              active_bodies_idx,active_group_names);
-    } else {
-      model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
-                              active_bodies_idx);
-    }
+  if (allow_variable_number_of_contacts){
+    //DEBUG
+    //cout << "collisionDetectmex: Using potentialCollisionPoints" << endl;
+    //END_DEBUG
+    model->potentialCollisionPoints(dist, normals, ptsA, ptsB, bodyA_idx, 
+                                    bodyB_idx);
   } else {
-    if (active_group_names.size() > 0) {
-      model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
-                             active_group_names);
+    //DEBUG
+    //cout << "collisionDetectmex: Using closestPointsAllBodies" << endl;
+    //END_DEBUG
+    if (active_bodies_idx.size() > 0) {
+      if (active_group_names.size() > 0) {
+        model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
+            active_bodies_idx,active_group_names);
+      } else {
+        model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
+            active_bodies_idx);
+      }
     } else {
-      model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx);
+      if (active_group_names.size() > 0) {
+        model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx,
+            active_group_names);
+      } else {
+        model-> collisionDetect(dist, normals, ptsA, ptsB, bodyA_idx, bodyB_idx);
+      }
     }
   }
 

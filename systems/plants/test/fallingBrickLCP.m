@@ -1,14 +1,17 @@
 function fallingBrickLCP
+  rng(1)
 
 options.floating = true;
 options.terrain = RigidBodyFlatTerrain();
-p = TimeSteppingRigidBodyManipulator('FallingBrickBetterCollisionGeometry.urdf',.01,options);
-x0 = p.resolveConstraints([0;1+rand;randn(10,1)]);
+options.enable_fastqp = false;
+%p = TimeSteppingRigidBodyManipulator('FallingBrickBetterCollisionGeometry.urdf',.01,options);
+p = TimeSteppingRigidBodyManipulator('FallingBrick.urdf',.01,options);
+x0 = p.resolveConstraints([0;1+rand;2;randn(9,1)]);
 
-if 0 
+if 1 
   v = p.constructVisualizer();
   sys = cascade(p,v);
-  sys.simulate([0 8],x0);
+  [~, xtraj] = sys.simulate([0 8],x0);
   return;
 end
 

@@ -273,10 +273,31 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         else
           nL = sum([obj.manip.joint_limit_min~=-inf;obj.manip.joint_limit_max~=inf]); % number of joint limits
         end
-        nContactPairs = obj.manip.getNumContactPairs;
+
         nP = obj.manip.num_position_constraints;  % number of position constraints
         nV = obj.manip.num_velocity_constraints;
         Big = 1e20;
+
+        % Get contact information
+        if (nargout>4)
+          [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D,dn,dD] = obj.manip.contactConstraints(q,true);
+          nC = length(phiC);
+          mC = length(D);
+          dJ = zeros(nL+nP+(mC+2)*nC,num_q^2);  % was sparse, but reshape trick for the transpose below didn't work
+          dJ(nL+nP+(1:nC),:) = reshape(dn,nC,[]);
+          dD = cellfun(@(A)reshape(A,size(D{1},1),size(D{1},2)*size(dD{1},2)),dD,'UniformOutput',false);
+          dD = vertcat(dD{:});
+          dJ(nL+nP+nC+(1:mC*nC),:) = dD;
+        else
+          [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D] = obj.manip.contactConstraints(q,true);
+          nC = length(phiC);
+          mC = length(D);
+        end
+
+        nContactPairs = numel(phiC);
+        % DEBUG
+        fprintf('nContactPairs = %d\n', nContactPairs);
+        % END_DEBUG
 
         if (nContactPairs+nL+nP+nV==0)
           z = [];
@@ -301,20 +322,6 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         %   J = [JL; JP; n; D{1}; ...; D{mC}; zeros(nC,num_q)]
 
         if (nContactPairs > 0)
-          if (nargout>4)
-            [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D,dn,dD] = obj.manip.contactConstraints(q,true);
-            nC = length(phiC);
-            mC = length(D);
-            dJ = zeros(nL+nP+(mC+2)*nC,num_q^2);  % was sparse, but reshape trick for the transpose below didn't work
-            dJ(nL+nP+(1:nC),:) = reshape(dn,nC,[]);
-            dD = cellfun(@(A)reshape(A,size(D{1},1),size(D{1},2)*size(dD{1},2)),dD,'UniformOutput',false);
-            dD = vertcat(dD{:});
-            dJ(nL+nP+nC+(1:mC*nC),:) = dD;
-          else
-            [phiC,normal,d,xA,xB,idxA,idxB,mu,n,D] = obj.manip.contactConstraints(q,true);
-            nC = length(phiC);
-            mC = length(D);
-          end
           J = zeros(nL + nP + (mC+2)*nC,num_q)*q(1); % *q(1) is for taylorvar
           lb = zeros(nL+nP+(mC+2)*nC,1);
           ub = Big*ones(nL+nP+(mC+2)*nC,1);

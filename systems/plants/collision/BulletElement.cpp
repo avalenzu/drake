@@ -26,6 +26,7 @@ namespace DrakeCollision
         //DEBUG
         //std::cout << "BulletElement::BulletElement: Create BOX ..." << std::endl;
         //END_DEBUG
+        //bt_shape = new btBoxShape bt_shape( btVector3(params[0]/2,params[1]/2,params[2]/2) );
         btBoxShape bt_box( btVector3(params[0]/2,params[1]/2,params[2]/2) );
         /* Strange things happen to the collision-normals when we use the
          * convex interface to the btBoxShape. Instead, we'll explicitly create
