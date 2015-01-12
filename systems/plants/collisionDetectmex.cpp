@@ -82,7 +82,7 @@ void mexFunction( int nlhs, mxArray *plhs[],int nrhs, const mxArray *prhs[] ) {
     //cout << "collisionDetectmex: Using potentialCollisionPoints" << endl;
     //END_DEBUG
     model->potentialCollisionPoints(dist, normals, ptsA, ptsB, bodyA_idx, 
-                                    bodyB_idx);
+                                    bodyB_idx, false);
   } else {
     //DEBUG
     //cout << "collisionDetectmex: Using closestPointsAllBodies" << endl;
