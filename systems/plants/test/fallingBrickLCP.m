@@ -1,5 +1,4 @@
 function fallingBrickLCP
-  rng(4);
 dt = 0.01;
 options.floating = true;
 options.terrain = RigidBodyFlatTerrain();
@@ -20,8 +19,16 @@ end
 
 v = p.constructVisualizer();
 v.drawWrapper(0,x0);
-xtraj_points = p_points.simulate([0 4],double(x0));
-xtraj = p.simulate([0 4],x0);
+tf = 4;
+timer_points = tic;
+xtraj_points = p_points.simulate([0 tf],double(x0));
+T_points = toc(timer_points);
+timer_bullet = tic;
+xtraj = p.simulate([0 tf],x0);
+T_bullet = toc(timer_bullet);
+fprintf(['Real-time factor:\n\tPoints - %4.2f\tBullet - %4.2f\n', ...
+         'Speed up: %4.2f\n'], ...
+        tf/T_points, tf/T_bullet, T_points/T_bullet)
 v.playback(xtraj);
 
 t=xtraj.getBreaks();
@@ -30,16 +37,17 @@ x_points=xtraj_points.eval(t);
 err = x - x_points;
 
 for t=xtraj.getBreaks()
-  x=xtraj.eval(t);
   x_points=xtraj_points.eval(t);
-%   assert(max(abs(x - x_points)) < 1e-3);
-%   fprintf('t = %6.4f\t\tMax error: %6.4e\n',t,max(abs(x - x_points)))
-  phi = p.contactConstraints(x(1:6));
+  phi = p_points.contactConstraints(x_points(1:6));
   if any(phi<-0.05)
     phi
     error('penetration');
   end
 end
-fprintf('Max error: %6.4e\n',max(max(abs(err(1:3,:)))))
-fprintf('Max error: %6.4e\n',max(max(abs(err(4:6,:)))))
+max_xyz_err = max(max(abs(err(1:3,:))));
+max_rpy_err = 180/pi*max(max(abs(err(4:6,:))));
+fprintf('Max xyz error: %4.2e m\n',max_xyz_err)
+fprintf('Max rpy error: %4.2e degrees\n',max_rpy_err)
+assert(max_xyz_err < 1e-3)
+assert(max_rpy_err < 1)
 
