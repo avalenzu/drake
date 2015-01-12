@@ -225,7 +225,8 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
     end
 
     function [obj,z,Mqdn,wqdn,dz,dMqdn,dwqdn] = solveLCP(obj,t,x,u)
-%       global active_set_fail_count 
+      global active_set_fail_count 
+      global fastqp_run_count 
       % do LCP time-stepping
 
       % todo: implement some basic caching here
@@ -294,12 +295,12 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
           mC = length(D);
         end
 
-        nContactPairs = numel(phiC);
         % DEBUG
-        %fprintf('nContactPairs = %d\n', nContactPairs);
+        %fprintf('nC = %d\n', nC);
+        xB
         % END_DEBUG
 
-        if (nContactPairs+nL+nP+nV==0)
+        if (nC+nL+nP+nV==0)
           z = [];
           Mqdn = [];
           wqdn = qd + h*(H\tau);
@@ -529,6 +530,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         QP_FAILED = true;
         
         if obj.enable_fastqp && all(size(z) == size(obj.LCP_cache.data.z))
+          fastqp_run_count = fastqp_run_count + 1;
           n_z_inactive = sum(z_inactive);
           if n_z_inactive > 0
             Aeq = M(M_active,z_inactive); 
@@ -618,11 +620,11 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
               % when M*z_inactive + w > 1e-8 by a small amount
               obj.LCP_cache.data.M_active = obj.LCP_cache.data.z_inactive; 
             end
-%             if isempty(active_set_fail_count)
-%                active_set_fail_count = 1;
-%             else
-%                active_set_fail_count = active_set_fail_count + 1;
-%             end
+            if isempty(active_set_fail_count)
+               active_set_fail_count = 1;
+            else
+               active_set_fail_count = active_set_fail_count + 1;
+            end
         end
         % for debugging
         %cN = z(nL+nP+(1:nC))
