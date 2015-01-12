@@ -112,6 +112,8 @@ namespace DrakeCollision
     virtual bool allCollisions(std::vector<int>& bodyA_idx, 
 			       std::vector<int>& bodyB_idx, 
 			       Eigen::MatrixXd& ptsA, Eigen::MatrixXd& ptsB) { return false; };
+
+    virtual void clearStoredContacts() {};
                                   
     //
     // Performs raycasting collision detecting (like a LIDAR / laser rangefinder)

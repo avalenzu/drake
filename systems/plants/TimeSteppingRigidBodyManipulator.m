@@ -296,7 +296,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
 
         nContactPairs = numel(phiC);
         % DEBUG
-        fprintf('nContactPairs = %d\n', nContactPairs);
+        %fprintf('nContactPairs = %d\n', nContactPairs);
         % END_DEBUG
 
         if (nContactPairs+nL+nP+nV==0)
@@ -840,6 +840,10 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
     function varargout = collisionDetect(obj,varargin)
       varargout = cell(1,nargout);
       [varargout{:}]=collisionDetect(obj.manip,varargin{:});
+    end
+
+    function obj = clearStoredContacts(obj,varargin)
+      obj.manip = clearStoredContacts(obj.manip,varargin{:});
     end
 
     function varargout = collisionDetectTerrain(obj,varargin)

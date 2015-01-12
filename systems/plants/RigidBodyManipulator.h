@@ -154,6 +154,7 @@ public:
                      MatrixXd& ptsA, MatrixXd& ptsB,
                         bool use_margins = true);
 
+  void clearStoredContacts(bool use_margins = true);
   //bool closestDistanceAllBodies(VectorXd& distance, MatrixXd& Jd);
   
   int findLinkId(std::string linkname, int robot = -1);

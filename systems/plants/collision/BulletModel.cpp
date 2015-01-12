@@ -522,6 +522,16 @@ namespace DrakeCollision
     return c.pts.size() > 0;
   }
 
+  void BulletModel::clearStoredContacts()
+  {
+    btDispatcher* dispatcher = bt_collision_world->getDispatcher();
+    int numManifolds = dispatcher->getNumManifolds();
+    for (int i=0;i<numManifolds;i++)
+    {
+      dispatcher->clearManifold(dispatcher->getManifoldByIndexInternal(i));
+    }
+  }
+
   const vector<int> BulletModel::bodyIndices() const
   {
     std::vector<int> bodies_idx;

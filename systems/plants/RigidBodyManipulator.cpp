@@ -623,6 +623,13 @@ bool RigidBodyManipulator::allCollisions(vector<int>& bodyA_idx,
     return collision_model_no_margins->allCollisions(bodyA_idx, bodyB_idx, ptsA, ptsB);
 }
 
+void RigidBodyManipulator::clearStoredContacts(bool use_margins)
+{
+  if (use_margins)
+    return collision_model->clearStoredContacts();
+  else
+    return collision_model_no_margins->clearStoredContacts();
+}
 
 //bool RigidBodyManipulator::closestDistanceAllBodies(VectorXd& distance,
                                                         //MatrixXd& Jd)

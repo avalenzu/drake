@@ -102,6 +102,8 @@ namespace DrakeCollision
                                                Eigen::VectorXd& distance,
                                                const std::vector<int>& bodies_idx,
                                                const std::set<std::string>& active_element_groups);
+
+      virtual void clearStoredContacts();
       // END Required member functions
 
       virtual const Body& getBody(int body_idx) const

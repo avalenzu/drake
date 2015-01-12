@@ -850,6 +850,11 @@ classdef RigidBodyManipulator < Manipulator
 %      end
     end
 
+    function obj = clearStoredContacts(obj)
+      clearStoredContactsmex(obj.getMexModelPtr(),true);
+      clearStoredContactsmex(obj.getMexModelPtr(),false);
+    end
+
     function indices = findJointIndices(model, str)
       model.warning_manager.warnOnce('Drake:RigidBodyManipulator:findJointIndicesDeprecated','findJointIndices has been replaced with findPositionIndices.  please update your code');
       indiced = findPositionIndices(model,str);
