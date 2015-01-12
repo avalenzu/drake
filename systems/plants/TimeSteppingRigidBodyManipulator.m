@@ -321,7 +321,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         % and implement equation (7) from Anitescu97, by collecting
         %   J = [JL; JP; n; D{1}; ...; D{mC}; zeros(nC,num_q)]
 
-        if (nContactPairs > 0)
+        if (nC > 0)
           J = zeros(nL + nP + (mC+2)*nC,num_q)*q(1); % *q(1) is for taylorvar
           lb = zeros(nL+nP+(mC+2)*nC,1);
           ub = Big*ones(nL+nP+(mC+2)*nC,1);
@@ -528,7 +528,7 @@ classdef TimeSteppingRigidBodyManipulator < DrakeSystem
         
         QP_FAILED = true;
         
-        if obj.enable_fastqp
+        if obj.enable_fastqp && all(size(z) == size(obj.LCP_cache.data.z))
           n_z_inactive = sum(z_inactive);
           if n_z_inactive > 0
             Aeq = M(M_active,z_inactive); 
