@@ -16,10 +16,9 @@ classdef MotionPlanningTree
   end
 
   methods (Abstract)
-    q = randomConfig(T);
-    id_near = nearestNeighbor(T, q);
-    T = addVertex(T, q, id_parent);
-    is_valid = isValidConfiguration(T, q);
+    q = randomConfig(obj);
+    d = distanceMetric(obj, q1, q_array)
+    is_valid = isValidConfiguration(obj, q);
     q = getVertex(obj, id);
     q = interpolate(obj, q1, q2, interpolation_factors);
   end
@@ -76,10 +75,26 @@ classdef MotionPlanningTree
       end
     end
 
+    function q_path = extractPath(TA, path_ids_A, TB, path_ids_B)
+      if nargin > 2
+        q_path = [TA.getVertex(path_ids_A), TB.getVertex(fliplr(path_ids_B(1:end-1)))];
+      else
+        q_path = TA.getVertex(path_ids_A);
+      end
+    end
     function obj = setLCMGL(obj, name, color)
       obj.lcmgl = LCMGLClient(name);
       sizecheck(color, 3);
       obj.line_color = color;
+    end
+
+    function [d, id_near] = nearestNeighbor(obj, q)
+      d_all = obj.distanceMetric(q, obj.getVertex(1:obj.n));
+      [d, id_near] = min(d_all);
+    end
+
+    function obj = addVertex(obj)
+      obj.n = obj.n + 1;
     end
 
     function drawTree(~, ~)

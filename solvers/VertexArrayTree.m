@@ -5,10 +5,6 @@ classdef VertexArrayTree < MotionPlanningTree
     parent
   end
 
-  methods (Abstract)
-    d = distanceMetric(obj, q1, q_array)
-  end
-
   methods
     function obj = VertexArrayTree(dim)
       obj = obj@MotionPlanningTree();
@@ -24,15 +20,10 @@ classdef VertexArrayTree < MotionPlanningTree
     end
 
     function [obj, id] = addVertex(obj, q, id_parent)
-      obj.n = obj.n + 1;
+      obj = addVertex@MotionPlanningTree(obj);
       obj.V(:,obj.n) = q; 
       obj.parent(obj.n) = id_parent; 
       id = obj.n;
-    end
-
-    function [d, id_near] = nearestNeighbor(obj, q)
-      d_all = obj.distanceMetric(q, obj.V(:,1:obj.n));
-      [d, id_near] = min(d_all);
     end
 
     function q = getVertex(obj, id)
@@ -43,14 +34,6 @@ classdef VertexArrayTree < MotionPlanningTree
       path_ids = leaf_id;
       while path_ids(1) > 1
         path_ids = [obj.parent(path_ids(1)),path_ids];
-      end
-    end
-
-    function q_path = extractPath(TA, path_ids_A, TB, path_ids_B)
-      if nargin > 2
-        q_path = [TA.V(:,path_ids_A), fliplr(TB.V(:,path_ids_B))];
-      else
-        q_path = TA.V(:,path_ids_A);
       end
     end
 
