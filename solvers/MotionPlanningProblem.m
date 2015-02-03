@@ -38,6 +38,108 @@ classdef MotionPlanningProblem
 
     end
 
+    function [T, path_ids, info] = rrtNew(obj, x_start, x_goal, T, options)
+      defaultOptions.display_fcn = @MotionPlanningProblem.drawFirstTwoCoordinates;
+      defaultOptions.display_after_every = 50;
+      defaultOptions.goal_bias = .05;
+      options = applyDefaults(options, defaultOptions);
+      if nargin < 4 || isempty(T) 
+        T = CartesianMotionPlanningTree(@(q)obj.checkConstraints(q), options.max_edge_length);
+        T = T.init(x_start);
+      else
+        T = T.init(x_start);
+        typecheck(T, 'MotionPlanningTree');
+        assert(T.isValidConfiguration(x_start))
+        assert(T.isValidConfiguration(x_goal))
+      end
+      last_drawn_edge_num = 1;
+      while T.n < T.N
+        try_goal = rand<options.goal_bias;
+        if try_goal
+          x_sample = x_goal;
+        else
+          x_sample = T.randomConfig();
+        end
+        [T, status] = extend(T, x_sample);
+        if mod(T.n,options.display_after_every)==0 || (try_goal && status == T.REACHED)
+          T.drawTree(last_drawn_edge_num);
+          drawnow
+          last_drawn_edge_num = T.n-1;
+        end
+
+        if try_goal && status == T.REACHED
+          info = 1;
+          path_ids = T.getPathToVertex(T.n);
+          drawPath(T, path_ids);
+          break;
+        end
+      end
+      path_ids = T.getPathToVertex(T.n);
+    end
+
+    function [TA, TB,  path_ids_A, path_ids_B, info] = rrtConnect(obj, x_start, x_goal, TA, TB, options)
+      if nargin < 5, options = struct(); end
+      defaultOptions.display_fcn = @MotionPlanningProblem.drawFirstTwoCoordinates;
+      defaultOptions.display_after_every = 50;
+      defaultOptions.max_length_between_constraint_checks = 0.001;
+      defaultOptions.goal_bias = .05;
+      defaultOptions.N = 10000;
+      options = applyDefaults(options, defaultOptions);
+      if nargin < 4 || isempty(TA) 
+        TA = CartesianMotionPlanningTree(@(q)obj.checkConstraints(q), options.max_edge_length);
+        TA = TA.init(x_start);
+      else
+        typecheck(TA, 'MotionPlanningTree');
+        TA = TA.init(x_start);
+        assert(TA.isValidConfiguration(x_goal))
+      end
+      if nargin < 5 || isempty(TB) 
+        TB = CartesianMotionPlanningTree(@(q)obj.checkConstraints(q), options.max_edge_length);
+        TB = TB.init(x_goal);
+      else
+        typecheck(TB, 'MotionPlanningTree');
+        TB = TB.init(x_goal);
+        assert(TB.isValidConfiguration(x_goal))
+      end
+      info = 2;
+      last_drawn_edge_num_A = 1;
+      last_drawn_edge_num_B = 1;
+      for n = 1:options.N
+        if mod(n,2) == 0
+          [TA, TB, path_ids_A, path_ids_B] = obj.rrtConnectIteration(TA, TB);
+        else
+          [TB, TA, path_ids_B, path_ids_A] = obj.rrtConnectIteration(TB, TA);
+        end
+        if mod(TA.n,options.display_after_every)==0 || mod(TB.n,options.display_after_every)==0 || ~isempty(path_ids_A)
+          TA.drawTree(last_drawn_edge_num_A);
+          TB.drawTree(last_drawn_edge_num_B);
+          drawnow
+          last_drawn_edge_num_A = TA.n-1;
+          last_drawn_edge_num_B = TB.n-1;
+        end
+        if ~isempty(path_ids_A)
+          assert(~isempty(path_ids_B))
+          info = 1;
+          drawPath(TA, path_ids_A, TB, path_ids_B);
+          break;
+        end
+      end
+    end
+
+    function [TA, TB, path_ids_A, path_ids_B] = rrtConnectIteration(obj, TA, TB)
+      x_sample = TA.randomConfig();
+      [TA, status, id_new] = extend(TA, x_sample);
+      path_ids_A = [];
+      path_ids_B = [];
+      if status ~= TA.TRAPPED
+        [TB, status, id_last] = connect(TB, TA.getVertex(id_new));
+        if status == TB.REACHED
+          path_ids_A = TA.getPathToVertex(id_new);
+          path_ids_B = TB.getPathToVertex(id_last);
+        end
+      end
+    end
+
     function [xtraj,info,V,parent] = rrt(obj,x_start,x_goal,random_sample_fcn,options)
       % Simple RRT algorithm
       % @param x_start

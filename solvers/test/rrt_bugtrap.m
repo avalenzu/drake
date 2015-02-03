@@ -18,7 +18,11 @@ prob = addConstraint(prob,FunctionHandleConstraint(0,0,2,@(x)inpolygon(x(1),x(2)
 options.figure_num = gcf;
 options.max_edge_length = .1;
 options.max_length_between_constraint_checks = .01;
-xtraj = prob.rrt(x_start,x_goal,@uniformSamples,options);
+%xtraj = prob.rrt(x_start,x_goal,@uniformSamples,options);
+%[T, path_ids, info] = prob.rrtNew(x_start, x_goal, [], options);
+%xtraj = extractTrajectory(T, path_ids);
+[TA, TB,  path_ids_A, path_ids_B, info] = prob.rrtConnect(x_start, x_goal, [], options);
+xtraj = extractTrajectory(TA, path_ids_A, TB, path_ids_B);
 
 fnplt(xtraj);
 
