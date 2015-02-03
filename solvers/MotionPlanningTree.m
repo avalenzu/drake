@@ -6,9 +6,9 @@ classdef MotionPlanningTree
   end
   
   properties
-    constraint_fcn = @(~) true;
+    constraint_fcn = @(q)true;
     N = 1e4; % Number of nodes for which memory should be pre-allocated
-    n; % Number of nodes in the tree
+    n = 0; % Number of nodes in the tree
     lcmgl;
     max_edge_length = 0.1;
     max_length_between_constraint_checks = 0.01;
@@ -20,14 +20,13 @@ classdef MotionPlanningTree
     id_near = nearestNeighbor(T, q);
     T = addVertex(T, q, id_parent);
     is_valid = isValidConfiguration(T, q);
-    obj = init(obj, N, q_init)
     q = getVertex(obj, id);
     q = interpolate(obj, q1, q2, interpolation_factors);
   end
 
   methods
-    function T = MotionPlanningTree(constraint_fcn)
-      T.constraint_fcn = constraint_fcn;
+    function obj = init(obj, q_init)
+      obj.n = 0;
     end
 
     function [q_new, id_near] = newConfig(obj, q)

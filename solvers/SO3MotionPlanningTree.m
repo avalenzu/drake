@@ -6,8 +6,8 @@ classdef SO3MotionPlanningTree < VertexArrayTree
   end
 
   methods
-    function obj = SO3MotionPlanningTree(constraint_fcn)
-      obj = obj@VertexArrayTree(4, constraint_fcn);
+    function obj = SO3MotionPlanningTree()
+      obj = obj@VertexArrayTree(4);
     end
 
     function q = randomConfig(obj)

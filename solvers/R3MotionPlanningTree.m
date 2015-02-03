@@ -1,7 +1,7 @@
 classdef R3MotionPlanningTree < CartesianMotionPlanningTree
   methods
-    function obj = R3MotionPlanningTree(constraint_fcn)
-      obj = obj@CartesianMotionPlanningTree(3, constraint_fcn);
+    function obj = R3MotionPlanningTree()
+      obj = obj@CartesianMotionPlanningTree(3);
     end
 
     function drawTree(obj, ~, draw_now)

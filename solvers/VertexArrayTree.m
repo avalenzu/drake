@@ -10,13 +10,13 @@ classdef VertexArrayTree < MotionPlanningTree
   end
 
   methods
-    function obj = VertexArrayTree(dim, constraint_fcn)
-      obj = obj@MotionPlanningTree(constraint_fcn);
-      obj.n = 0;
+    function obj = VertexArrayTree(dim)
+      obj = obj@MotionPlanningTree();
       obj.dim = dim;
     end
 
     function obj = init(obj, q_init)
+      obj = init@MotionPlanningTree(obj);
       sizecheck(q_init, 'colvec');
       obj.V = NaN(obj.dim, obj.N);
       obj.parent = NaN(1, obj.N);

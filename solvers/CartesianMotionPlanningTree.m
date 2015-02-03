@@ -4,8 +4,8 @@ classdef CartesianMotionPlanningTree < VertexArrayTree
     ub = 1;
   end
   methods
-    function obj = CartesianMotionPlanningTree(dim, constraint_fcn)
-      obj = obj@VertexArrayTree(dim, constraint_fcn);
+    function obj = CartesianMotionPlanningTree(dim)
+      obj = obj@VertexArrayTree(dim);
     end
 
     function q = randomConfig(obj)
