@@ -54,25 +54,25 @@ classdef MotionPlanningTree
         end
       end
     end
-    function [T, status, id_new] = extend(T, q)
-      [q_new, id_near] = newConfig(T, q);
-      if ~isempty(q_new) && T.constraint_fcn(q_new)
-        [T, id_new] = T.addVertex(q_new, id_near);
+    function [obj, status, id_new] = extend(obj, q)
+      [q_new, id_near] = newConfig(obj, q);
+      if ~isempty(q_new) && obj.constraint_fcn(q_new)
+        [obj, id_new] = obj.addVertex(q_new, id_near);
         if q_new == q
-          status = T.REACHED;
+          status = obj.REACHED;
         else
-          status = T.ADVANCED;
+          status = obj.ADVANCED;
         end
       else
         id_new = [];
-        status = T.TRAPPED;
+        status = obj.TRAPPED;
       end
     end
 
-    function [T, status, id_last] = connect(T, q)
-      status = T.ADVANCED;
-      while status == T.ADVANCED
-        [T, status, id_last] = extend(T, q);
+    function [obj, status, id_last] = connect(obj, q)
+      status = obj.ADVANCED;
+      while status == obj.ADVANCED
+        [obj, status, id_last] = extend(obj, q);
       end
     end
 
