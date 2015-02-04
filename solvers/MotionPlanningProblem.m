@@ -42,6 +42,7 @@ classdef MotionPlanningProblem
       defaultOptions.display_fcn = @MotionPlanningProblem.drawFirstTwoCoordinates;
       defaultOptions.display_after_every = 50;
       defaultOptions.goal_bias = .05;
+      defaultOptions.N = 10000;
       options = applyDefaults(options, defaultOptions);
       if nargin < 4 || isempty(T) 
         T = CartesianMotionPlanningTree(@(q)obj.checkConstraints(q), options.max_edge_length);
@@ -53,7 +54,8 @@ classdef MotionPlanningProblem
         assert(T.isValidConfiguration(x_goal))
       end
       last_drawn_edge_num = 1;
-      while T.n < T.N
+      info = 2;
+      while T.n < options.N
         try_goal = rand<options.goal_bias;
         if try_goal
           x_sample = x_goal;
