@@ -82,10 +82,52 @@ classdef MotionPlanningTree
         q_path = TA.getVertex(path_ids_A);
       end
     end
+
+
+    function [obj_new, id_last] = recursiveConnectSmoothing(obj, path_ids, n_iterations)
+      if nargin < 3
+        path_length = numel(path_ids);
+        obj_start = obj.init(obj.getVertex(path_ids(1)));
+        if path_length == 2
+          % DEBUG
+          %fprintf('DONE: path_length is 2\n');
+          % END_DEBUG
+          [obj_new, id_last] = obj_start.addVertex(obj.getVertex(path_ids(2)), 1);
+        else
+          [obj_new, status, id_last] = obj_start.connect(obj.getVertex(path_ids(end)));
+          if status ~= obj.REACHED
+            % DEBUG
+            %fprintf('RECURSE: connect failed');
+            % END_DEBUG
+            %mid_idx = floor(path_length/2);
+            mid_idx = randi([2,path_length-1]);
+            [obj_new, id_last] = obj.recursiveConnectSmoothing(path_ids(1:mid_idx));
+            obj_new2 = obj.recursiveConnectSmoothing(path_ids(mid_idx+1:end));
+            for i = 1:obj_new2.n
+              [obj_new, id_last] = obj_new.addVertex(obj_new2.getVertex(i), id_last);
+            end
+          end
+          % DEBUG
+          %fprintf('DONE: connect succeeded\n');
+          % END_DEBUG
+        end
+      else
+        for i = 1:n_iterations
+          [obj, id_last] = recursiveConnectSmoothing(obj, path_ids);
+          path_ids = obj.getPathToVertex(id_last);
+          % DEBUG
+          %path_ids
+          % END_DEBUG
+        end
+        obj_new = obj;
+      end
+    end
+
     function obj = setLCMGL(obj, name, color)
       obj.lcmgl = LCMGLClient(name);
       sizecheck(color, 3);
       obj.line_color = color;
+      obj.lcmgl.switchBuffers();
     end
 
     function [d, id_near] = nearestNeighbor(obj, q)
@@ -93,8 +135,9 @@ classdef MotionPlanningTree
       [d, id_near] = min(d_all);
     end
 
-    function obj = addVertex(obj)
+    function [obj, id] = addVertex(obj, q, parent_id)
       obj.n = obj.n + 1;
+      id = obj.n;
     end
 
     function obj = drawTree(obj, ~)

@@ -20,10 +20,17 @@ classdef VertexArrayTree < MotionPlanningTree
     end
 
     function [obj, id] = addVertex(obj, q, id_parent)
-      obj = addVertex@MotionPlanningTree(obj);
+      [obj, id] = addVertex@MotionPlanningTree(obj, q, id_parent);
       obj.V(:,obj.n) = q; 
       obj.parent(obj.n) = id_parent; 
-      id = obj.n;
+    end
+
+    function [obj, id_last] = addPath(obj, q, id_parent)
+      path_length = size(q, 2);
+      for i = 1:path_length
+        [obj, id_parent] = obj.addVertex(q(:,i), id_parent);
+      end
+      id_last = id_parent;
     end
 
     function q = getVertex(obj, id)
