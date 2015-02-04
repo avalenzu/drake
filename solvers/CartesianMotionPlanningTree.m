@@ -16,7 +16,7 @@ classdef CartesianMotionPlanningTree < VertexArrayTree
       q = bsxfun(@times,1-f,q1) + bsxfun(@times,f,q2);
     end
 
-    function drawTree(obj, n_at_last_draw)
+    function obj = drawTree(obj, n_at_last_draw)
       line([obj.V(1,(n_at_last_draw+1):obj.n);obj.V(1,obj.parent((n_at_last_draw+1):obj.n))],[obj.V(2,n_at_last_draw+1:obj.n);obj.V(2,obj.parent(n_at_last_draw+1:obj.n))],'Color',0.3*[1 1 1],'Marker','.');
       axis equal
     end

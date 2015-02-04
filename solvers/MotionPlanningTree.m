@@ -97,7 +97,7 @@ classdef MotionPlanningTree
       obj.n = obj.n + 1;
     end
 
-    function drawTree(~, ~)
+    function obj = drawTree(obj, ~)
     end
   end
 end

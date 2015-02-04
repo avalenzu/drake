@@ -22,7 +22,7 @@ classdef SO3MotionPlanningTree < VertexArrayTree
       q = slerp(q1, q2, f);
     end
 
-    function drawTree(obj, ~, draw_now)
+    function obj = drawTree(obj, ~, draw_now)
       if nargin < 3, draw_now = true; end
       obj.lcmgl.glColor3f(obj.line_color(1), obj.line_color(2), obj.line_color(3));
       for jj = 2:obj.n

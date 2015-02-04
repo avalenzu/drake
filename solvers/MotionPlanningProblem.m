@@ -62,7 +62,7 @@ classdef MotionPlanningProblem
         end
         [T, status] = extend(T, x_sample);
         if mod(T.n,options.display_after_every)==0 || (try_goal && status == T.REACHED)
-          T.drawTree(last_drawn_edge_num);
+          T = T.drawTree(last_drawn_edge_num);
           drawnow
           last_drawn_edge_num = T.n-1;
         end
@@ -111,8 +111,8 @@ classdef MotionPlanningProblem
           [TB, TA, path_ids_B, path_ids_A] = obj.rrtConnectIteration(TB, TA);
         end
         if mod(TA.n,options.display_after_every)==0 || mod(TB.n,options.display_after_every)==0 || ~isempty(path_ids_A)
-          TA.drawTree(last_drawn_edge_num_A);
-          TB.drawTree(last_drawn_edge_num_B);
+          TA = TA.drawTree(last_drawn_edge_num_A);
+          TB = TB.drawTree(last_drawn_edge_num_B);
           drawnow
           last_drawn_edge_num_A = TA.n-1;
           last_drawn_edge_num_B = TB.n-1;
