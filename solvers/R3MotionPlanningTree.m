@@ -16,7 +16,6 @@ classdef R3MotionPlanningTree < CartesianMotionPlanningTree
     end
 
     function drawPath(obj, varargin)
-      obj.drawTree([], false);
       q_path = extractPath(obj, varargin{:});
       obj.lcmgl.glLineWidth(2);
       obj.lcmgl.glColor3f(0,1,0);
