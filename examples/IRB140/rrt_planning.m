@@ -69,7 +69,7 @@ function r = rrt_planning(planning_mode, r, n_smoothing_passes)
     traj = PPTrajectory(foh(linspace(0,10,path_length), q_path));
     traj = traj.setOutputFrame(TA.rbm.getPositionFrame());
     %v = r.constructVisualizer();
-    v = r.constructVisualizer(struct('use_collision_geometry',true));
+    v = r.constructVisualizer(struct('use_collision_geometry',false));
     v.playback(traj, struct('slider', true));
   end
 end
