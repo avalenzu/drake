@@ -145,7 +145,7 @@ public:
                         bool use_margins = true);
 
 
-  bool allCollisions(std::vector<int>& bodyA_idx, std::vector<int>& bodyB_idx, 
+  bool allCollisions(const double min_distance, std::vector<int>& bodyA_idx, std::vector<int>& bodyB_idx, 
                      MatrixXd& ptsA, MatrixXd& ptsB,
                         bool use_margins = true);
 

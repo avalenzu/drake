@@ -1,4 +1,4 @@
-classdef VertexArrayTree < MotionPlanningTree
+classdef VertexArrayTree < MotionPlanningTree & MotionPlanningProblem
   properties
     dim
     V
@@ -8,15 +8,16 @@ classdef VertexArrayTree < MotionPlanningTree
   methods
     function obj = VertexArrayTree(dim)
       obj = obj@MotionPlanningTree();
+      obj = obj@MotionPlanningProblem(dim);
       obj.dim = dim;
     end
 
-    function obj = init(obj, q_init)
+    function [obj, id_last] = init(obj, q_init)
       obj = init@MotionPlanningTree(obj);
       sizecheck(q_init, 'colvec');
       obj.V = NaN(obj.dim, obj.N);
       obj.parent = NaN(1, obj.N);
-      obj = obj.addVertex(q_init, 1);
+      [obj,id_last] = obj.addVertex(q_init, 1);
     end
 
     function [obj, id] = addVertex(obj, q, id_parent)
@@ -44,8 +45,9 @@ classdef VertexArrayTree < MotionPlanningTree
       end
     end
 
-    function is_valid = isValidConfiguration(obj, q)
-      is_valid = sizecheck(q, [obj.dim, 1]);
+    function valid = isValidConfiguration(obj, q)
+      valid = sizecheck(q, [obj.dim, 1]);
+      valid = valid && obj.checkConstraints(q);
     end
 
   end

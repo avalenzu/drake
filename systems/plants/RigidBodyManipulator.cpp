@@ -597,15 +597,16 @@ bool RigidBodyManipulator::collisionDetect( VectorXd& phi,
     return collision_model_no_margins->closestPointsAllBodies(bodyA_idx,bodyB_idx,xA,xB,normal,phi);
 }
 
-bool RigidBodyManipulator::allCollisions(vector<int>& bodyA_idx,
+bool RigidBodyManipulator::allCollisions(const double min_distance,
+                                         vector<int>& bodyA_idx,
                                          vector<int>& bodyB_idx,
                                          MatrixXd& ptsA, MatrixXd& ptsB,
                                          bool use_margins)
 {
   if (use_margins)
-    return collision_model->allCollisions(bodyA_idx, bodyB_idx, ptsA, ptsB);
+    return collision_model->allCollisions(min_distance, bodyA_idx, bodyB_idx, ptsA, ptsB);
   else
-    return collision_model_no_margins->allCollisions(bodyA_idx, bodyB_idx, ptsA, ptsB);
+    return collision_model_no_margins->allCollisions(min_distance, bodyA_idx, bodyB_idx, ptsA, ptsB);
 }
 
 

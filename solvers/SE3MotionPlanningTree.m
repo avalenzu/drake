@@ -25,19 +25,28 @@ classdef SE3MotionPlanningTree < CompositeVertexArrayTree
       %obj.rbm = obj.rbm.addFloatingBase(1, 2, [0;0;0], [0;0;0],'quat'); 
       %obj.rbm = obj.rbm.addFloatingBase(1, 2, [0;0;0], [0;0;0]); 
       obj = obj.compile();
+      %obj = obj.addConstraint(FunctionHandleConstraint(0, 1e-8, 7, ...
+                                                       %@obj.isCollisionFree));
     end
 
     function obj = compile(obj)
       obj.rbm = obj.rbm.compile();
-      obj.constraint_fcn = @obj.isCollisionFree;
     end
 
-    function valid = isCollisionFree(obj, q)
+    %function [c, dc] = isCollisionFree(obj, q)
+      %xyz = q(1:3);
+      %quat = q(4:7); 
+      %rpy = quat2rpy(quat);
+      %kinsol = obj.rbm.doKinematics([xyz; rpy]);
+      %[c, dc] = smoothDistancePenaltymex(obj.rbm.getMexModelPtr, obj.min_distance);
+    %end
+
+    function valid = checkConstraints(obj, q)
       xyz = q(1:3);
       quat = q(4:7); 
       rpy = quat2rpy(quat);
-      kinsol = obj.rbm.doKinematics([xyz; rpy]);
-      valid = (smoothDistancePenaltymex(obj.rbm.getMexModelPtr, obj.min_distance) < 1e-6);
+      valid = checkConstraints@CompositeVertexArrayTree(obj, q);
+      valid = valid && isempty(obj.rbm.allCollisions([xyz; rpy], obj.min_distance));
     end
 
     function obj = addGeometryToRobot(obj, geom)

@@ -62,7 +62,8 @@ classdef MotionPlanningProblem
         else
           x_sample = T.randomConfig();
         end
-        [T, status] = extend(T, x_sample);
+        %[T, status] = extend(T, x_sample);
+        [T, status] = connect(T, x_sample);
         if mod(T.n,options.display_after_every)==0 || (try_goal && status == T.REACHED)
           T = T.drawTree(last_drawn_edge_num);
           drawnow
@@ -92,27 +93,27 @@ classdef MotionPlanningProblem
         TA = TA.init(x_start);
       else
         typecheck(TA, 'MotionPlanningTree');
+        assert(TA.isValidConfiguration(x_start))
         TA = TA.init(x_start);
-        assert(TA.isValidConfiguration(x_goal))
       end
       if nargin < 5 || isempty(TB) 
         TB = CartesianMotionPlanningTree(@(q)obj.checkConstraints(q), options.max_edge_length);
         TB = TB.init(x_goal);
       else
         typecheck(TB, 'MotionPlanningTree');
-        TB = TB.init(x_goal);
         assert(TB.isValidConfiguration(x_goal))
+        TB = TB.init(x_goal);
       end
       info = 2;
       last_drawn_edge_num_A = 1;
       last_drawn_edge_num_B = 1;
       for n = 1:options.N
         if mod(n,2) == 0
-          [TA, TB, path_ids_A, path_ids_B] = obj.rrtConnectIteration(TA, TB);
+          [TA, TB, path_ids_A, path_ids_B] = obj.rrtConnectIteration(TA, TB, options.goal_bias);
         else
-          [TB, TA, path_ids_B, path_ids_A] = obj.rrtConnectIteration(TB, TA);
+          [TB, TA, path_ids_B, path_ids_A] = obj.rrtConnectIteration(TB, TA, options.goal_bias);
         end
-        if mod(TA.n,options.display_after_every)==0 || mod(TB.n,options.display_after_every)==0 || ~isempty(path_ids_A)
+        if TA.n + TB.n - last_drawn_edge_num_A - last_drawn_edge_num_B > options.display_after_every || ~isempty(path_ids_A)
           TA = TA.drawTree(last_drawn_edge_num_A);
           TB = TB.drawTree(last_drawn_edge_num_B);
           drawnow
@@ -128,13 +129,16 @@ classdef MotionPlanningProblem
       end
     end
 
-    function [TA, TB, path_ids_A, path_ids_B] = rrtConnectIteration(obj, TA, TB)
+    function [TA, TB, path_ids_A, path_ids_B] = rrtConnectIteration(obj, TA, TB, goal_bias)
       x_sample = TA.randomConfig();
       [TA, status, id_new] = extend(TA, x_sample);
+%       [TA, status, id_new] = connect(TA, x_sample);
       path_ids_A = [];
       path_ids_B = [];
-      if status ~= TA.TRAPPED
+      if status == TA.TRAPPED && ~isempty(id_new), keyboard; end
+      if status ~= TA.TRAPPED && rand < goal_bias
         [TB, status, id_last] = connect(TB, TA.getVertex(id_new));
+
         if status == TB.REACHED
           path_ids_A = TA.getPathToVertex(id_new);
           path_ids_B = TB.getPathToVertex(id_last);

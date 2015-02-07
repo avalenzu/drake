@@ -22,8 +22,8 @@ classdef CartesianMotionPlanningTree < VertexArrayTree
     end
 
     function d = distanceMetric(obj, q1, q_array)
-      %d = sqrt(sum(bsxfun(@minus, q1, q_array).^2,1));
-      d = sqrt(sum((q_array-repmat(q1,1,size(q_array,2))).^2,1));
+      d = sqrt(sum(bsxfun(@minus, q1, q_array).^2,1));
+      %d = sqrt(sum((q_array-repmat(q1,1,size(q_array,2))).^2,1));
     end
   end
 end

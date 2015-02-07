@@ -6,7 +6,6 @@ classdef MotionPlanningTree
   end
   
   properties
-    constraint_fcn = @(q)true;
     N = 1e4; % Number of nodes for which memory should be pre-allocated
     n = 0; % Number of nodes in the tree
     lcmgl;
@@ -28,7 +27,7 @@ classdef MotionPlanningTree
       obj.n = 0;
     end
 
-    function [q_new, id_near] = newConfig(obj, q)
+    function [obj, q_new, id_near] = newConfig(obj, q)
       [d, id_near] = nearestNeighbor(obj, q);
       if d < obj.max_edge_length
         q_new = q;
@@ -37,31 +36,32 @@ classdef MotionPlanningTree
         q_new = obj.interpolate(obj.getVertex(id_near), q, alpha);
         d = obj.max_edge_length;
       end
-      if d > obj.max_length_between_constraint_checks
+      valid = obj.isValidConfiguration(q_new);
+      if valid && d > obj.max_length_between_constraint_checks
         num_interpolated_checks = 2+ceil(d/obj.max_length_between_constraint_checks);
         interpolation_factors = linspace(0, 1, num_interpolated_checks);
-        xss = obj.interpolate(obj.getVertex(id_near), q, interpolation_factors);
-        valid = true;
+        xss = obj.interpolate(obj.getVertex(id_near), q_new, interpolation_factors);
         for i=2:num_interpolated_checks-1
-          if ~obj.constraint_fcn(xss(:,i)),
-            valid=false;
-            break;
-          end
+          valid = obj.isValidConfiguration(xss(:,i));
+          if ~valid, break; end
+%           [obj, id_near] = obj.addVertex(xss(:,i), id_near);
+%           obj.drawTree();
         end
-        if ~valid
-          q_new = [];
-        end
+      end
+      if ~valid
+        q_new = [];
       end
     end
     function [obj, status, id_new] = extend(obj, q)
-      [q_new, id_near] = newConfig(obj, q);
-      if ~isempty(q_new) && obj.constraint_fcn(q_new)
+      [obj, q_new, id_near] = newConfig(obj, q);
+      if ~isempty(q_new)
         [obj, id_new] = obj.addVertex(q_new, id_near);
         if q_new == q
           status = obj.REACHED;
         else
           status = obj.ADVANCED;
         end
+%         obj.drawTree();
       else
         id_new = [];
         status = obj.TRAPPED;
@@ -70,8 +70,15 @@ classdef MotionPlanningTree
 
     function [obj, status, id_last] = connect(obj, q)
       status = obj.ADVANCED;
-      while status == obj.ADVANCED
-        [obj, status, id_last] = extend(obj, q);
+      [obj, status, id_last] = extend(obj, q);
+      status_tmp = status;
+      while status_tmp == obj.ADVANCED
+        [obj, status_tmp, id_last_tmp] = extend(obj, q);
+        if status_tmp ~= obj.TRAPPED
+          status = status_tmp;
+          id_last = id_last_tmp;
+        end
+%         display('Continue connecting ...');
       end
     end
 
@@ -87,8 +94,10 @@ classdef MotionPlanningTree
     function [obj_new, id_last] = recursiveConnectSmoothing(obj, path_ids, n_iterations)
       if nargin < 3
         path_length = numel(path_ids);
-        obj_start = obj.init(obj.getVertex(path_ids(1)));
-        if path_length == 2
+        [obj_start, id_last] = obj.init(obj.getVertex(path_ids(1)));
+        if path_length == 1
+          obj_new = obj_start;
+        elseif path_length == 2
           % DEBUG
           %fprintf('DONE: path_length is 2\n');
           % END_DEBUG
@@ -99,8 +108,10 @@ classdef MotionPlanningTree
             % DEBUG
             %fprintf('RECURSE: connect failed');
             % END_DEBUG
-            %mid_idx = floor(path_length/2);
-            mid_idx = randi([2,path_length-1]);
+%             mid_idx = floor(path_length/2);
+            mid_idx = randi([floor(path_length/3),2*floor(path_length/3)]);
+%             mid_idx = randi([2,path_length-1]);
+%             fprintf('Length: %d\tmid_idx: %d\n', path_length, mid_idx);
             [obj_new, id_last] = obj.recursiveConnectSmoothing(path_ids(1:mid_idx));
             obj_new2 = obj.recursiveConnectSmoothing(path_ids(mid_idx+1:end));
             for i = 1:obj_new2.n
@@ -115,6 +126,7 @@ classdef MotionPlanningTree
         for i = 1:n_iterations
           [obj, id_last] = recursiveConnectSmoothing(obj, path_ids);
           path_ids = obj.getPathToVertex(id_last);
+          obj.drawPath(path_ids);
           % DEBUG
           %path_ids
           % END_DEBUG

@@ -414,7 +414,7 @@ namespace DrakeCollision
     return has_result;
   };
   
-  bool BulletModel::allCollisions(vector<int>& bodyA_idx,
+  bool BulletModel::allCollisions(const double min_distance, vector<int>& bodyA_idx,
           vector<int>& bodyB_idx,
           MatrixXd& ptsA, MatrixXd& ptsB)
   {
@@ -445,7 +445,7 @@ namespace DrakeCollision
       int numContacts = contactManifold->getNumContacts();
       for (int j=0;j<numContacts;j++)
       {        btManifoldPoint& pt = contactManifold->getContactPoint(j);
-        if (pt.getDistance()+marginA+marginB<0.f)
+        if (pt.getDistance()+marginA+marginB<min_distance)
         {
           const btVector3& normalOnB = pt.m_normalWorldOnB;
           const btVector3& ptA = pt.getPositionWorldOnA() + normalOnB*marginA;

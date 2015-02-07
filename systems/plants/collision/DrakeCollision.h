@@ -103,7 +103,7 @@ namespace DrakeCollision
         Eigen::MatrixXd& normal, 
         Eigen::VectorXd& distance);
 
-    virtual bool allCollisions(std::vector<int>& bodyA_idx, 
+    virtual bool allCollisions(const double min_distance, std::vector<int>& bodyA_idx, 
 			       std::vector<int>& bodyB_idx, 
 			       Eigen::MatrixXd& ptsA, Eigen::MatrixXd& ptsB) { return false; };
                                   

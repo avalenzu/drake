@@ -1,4 +1,4 @@
-classdef ConfigurationSpaceMotionPlanningTree < CartesianMotionPlanningTree & MotionPlanningProblem
+classdef ConfigurationSpaceMotionPlanningTree < CartesianMotionPlanningTree
   properties
     rbm
     visualization_point = struct('body', 1, 'pt', [0;0;0]);
@@ -10,42 +10,30 @@ classdef ConfigurationSpaceMotionPlanningTree < CartesianMotionPlanningTree & Mo
   methods
     function obj = ConfigurationSpaceMotionPlanningTree(rbm)
       obj = obj@CartesianMotionPlanningTree(rbm.getNumPositions());
-      obj = obj@MotionPlanningProblem(rbm.getNumPositions());
       obj.rbm = rbm;
       [obj.lb, obj.ub] = rbm.getJointLimits();
       obj.lb(isinf(obj.lb)) = -10;
       obj.ub(isinf(obj.ub)) = 10;
-      obj.v = obj.rbm.constructVisualizer(struct('use_collision_geometry',true));
+      %obj.v = obj.rbm.constructVisualizer(struct('use_collision_geometry',true));
       obj = obj.compile();
     end
 
     function obj = compile(obj)
-      collision_constraint = DrakeFunctionConstraint(0,0,drakeFunction.kinematic.SmoothDistancePenalty(obj.rbm,obj.min_distance,obj.active_collision_options));
+      %collision_constraint = DrakeFunctionConstraint(0,1e-8,drakeFunction.kinematic.SmoothDistancePenalty(obj.rbm,obj.min_distance,obj.active_collision_options));
       obj.constraints = {};
       obj.x_inds = {};
-      obj = obj.addConstraint(collision_constraint);
-      obj.constraint_fcn = @obj.checkConstraints;
+      %obj = obj.addConstraint(collision_constraint);
       obj.xyz_vis = NaN(3, obj.N);
     end
 
-    function valid = isCollisionFree(obj, q)
-      xyz = q(1:3);
-      quat = q(4:7); 
-      rpy = quat2rpy(quat);
-      kinsol = obj.rbm.doKinematics([xyz; rpy]);
-      valid = (smoothDistancePenaltymex(obj.rbm.getMexModelPtr, obj.min_distance) < 1e-6);
+    function valid = checkConstraints(obj, q)
+      valid = checkConstraints@CartesianMotionPlanningTree(obj, q);
+      valid = valid && isempty(obj.rbm.allCollisions(q, obj.min_distance));
     end
 
     function obj = addGeometryToWorld(obj, geom)
       obj.rbm = obj.rbm.addGeometryToBody(1, geom);
       obj = obj.compile();
-    end
-
-    function valid = checkConstraints(obj, q)
-      %obj.v.draw(0,q);
-      valid = checkConstraints@MotionPlanningProblem(obj, q);
-      %test = smoothDistancePenaltymex(obj.rbm.getMexModelPtr, obj.min_distance, obj.active_collision_options)
-      %pause(0.1)
     end
 
     function q = randomConfig(obj)

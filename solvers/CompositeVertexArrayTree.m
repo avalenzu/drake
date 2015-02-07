@@ -19,8 +19,10 @@ classdef CompositeVertexArrayTree < VertexArrayTree
     end
 
     function d = distanceMetric(obj, q1, q_array)
-      d = obj.TA.distanceMetric(q1(obj.idxA), q_array(obj.idxA, :)) ...
-          + obj.weightB*obj.TB.distanceMetric(q1(obj.idxB), q_array(obj.idxB, :));
+      d = obj.TA.distanceMetric(q1(obj.idxA,:), q_array(obj.idxA, :));
+      if obj.weightB > 0
+        d = d + obj.weightB*obj.TB.distanceMetric(q1(obj.idxB,:), q_array(obj.idxB, :));
+      end
     end
 
     function q = interpolate(obj, q1, q2, interpolation_factors)
@@ -35,16 +37,17 @@ classdef CompositeVertexArrayTree < VertexArrayTree
       %q(obj.idxB,:) = obj.TB.getVertex(id);
     %end
 
-    function obj = init(obj, q_init)
+    function [obj, id_last] = init(obj, q_init)
       %obj.n = 1;
       obj = init@VertexArrayTree(obj, q_init);
-      obj.TA = obj.TA.init(q_init(obj.idxA));
+      [obj.TA, id_last] = obj.TA.init(q_init(obj.idxA));
       obj.TB = obj.TB.init(q_init(obj.idxB));
     end
 
-    function is_valid = isValidConfiguration(obj, q)
-      is_valid = obj.TA.isValidConfiguration(q(obj.idxA)) && ...
-                 obj.TB.isValidConfiguration(q(obj.idxB));
+    function valid = isValidConfiguration(obj, q)
+      valid = isValidConfiguration@VertexArrayTree(obj, q) && ...
+              obj.TA.isValidConfiguration(q(obj.idxA)) && ...
+              obj.TB.isValidConfiguration(q(obj.idxB));
     end
 
     function [obj, id_new] = addVertex(obj, q, id_parent)
