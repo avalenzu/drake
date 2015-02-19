@@ -406,6 +406,13 @@ classdef RigidBodyManipulator < Manipulator
       end
     end
 
+    function [model, robotnum] = addEmptyRobot(model, robotname)
+      typecheck(robotname, 'char');
+      robotname = regexprep(robotname, '\.', '_', 'preservecase');
+      model.name = [model.name, {robotname}];
+      robotnum = length(model.name);
+    end
+
     function [model,id]=addLink(model,b)
       % @ingroup Kinematic Tree
       typecheck(b,'RigidBody');
