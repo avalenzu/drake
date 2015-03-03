@@ -17,11 +17,12 @@ classdef RelativeQuaternion < drakeFunction.kinematic.Kinematic
       % @param frameB     -- Body/frame name or frame id/body idx
       %
       % @retval obj       -- RelativeQuaternion object
-      obj = obj@drakeFunction.kinematic.Kinematic(rbm,drakeFunction.frames.realCoordinateSpace(4));
+      obj = obj@drakeFunction.kinematic.Kinematic(rbm,drakeFunction.frames.Quaternion());
       obj.frameA = obj.rbm.parseBodyOrFrameID(frameA);
       obj.frameB = obj.rbm.parseBodyOrFrameID(frameB);
+      obj = obj.setSparsityPattern();
     end
-    function [quat,dquat] = eval(obj,q)
+    function [quat,dquat] = eval(obj,q,kinsol_options)
       % quat = eval(obj,q) returns the relative quaternion
       %
       % [quat,dquat] = eval(obj,q) also returns the Jacobian of the relative
@@ -29,18 +30,24 @@ classdef RelativeQuaternion < drakeFunction.kinematic.Kinematic
       %
       % @param obj  -- drakeFunction.kinematic.RelativeQuaternion object
       % @param q    -- Column vector of joint positions
-      kinsol = obj.rbm.doKinematics(q);
-      [pos_A,J_A] = forwardKin(obj.rbm,kinsol,obj.frameA,[0;0;0],2);
-      [pos_B,J_B] = forwardKin(obj.rbm,kinsol,obj.frameB,[0;0;0],2);
-      quat_a2w = pos_A(4:7,1);
-      dquat_a2w = J_A(4:7,:);
-      quat_b2w = pos_B(4:7,1);
-      dquat_b2w = J_B(4:7,:);
-      [quat_w2b,dquat_w2b] = quatConjugate(quat_b2w);
-      dquat_w2b = dquat_w2b*dquat_b2w;
+      if nargin < 3, kinsol_options = struct(); end
+      kinsol = obj.rbm.doKinematics(q, [], kinsol_options);
+      options.base_or_frame_id = obj.frameB;
+      options.rotation_type = 2;
+      [xyz_quat, dxyz_quat] = obj.rbm.forwardKin(kinsol, obj.frameA, [0;0;0], options);
+      quat = xyz_quat(4:7);
+      dquat = dxyz_quat(4:7,:);
+      %[pos_A,J_A] = forwardKin(obj.rbm,kinsol,obj.frameA,[0;0;0],2);
+      %[pos_B,J_B] = forwardKin(obj.rbm,kinsol,obj.frameB,[0;0;0],2);
+      %quat_a2w = pos_A(4:7,1);
+      %dquat_a2w = J_A(4:7,:);
+      %quat_b2w = pos_B(4:7,1);
+      %dquat_b2w = J_B(4:7,:);
+      %[quat_w2b,dquat_w2b] = quatConjugate(quat_b2w);
+      %dquat_w2b = dquat_w2b*dquat_b2w;
 
-      [quat,dquat_a2b] = quatProduct(quat_w2b,quat_a2w);
-      dquat = dquat_a2b*[dquat_w2b;dquat_a2w];
+      %[quat,dquat_a2b] = quatProduct(quat_w2b,quat_a2w);
+      %dquat = dquat_a2b*[dquat_w2b;dquat_a2w];
     end
   end
 
@@ -50,10 +57,11 @@ classdef RelativeQuaternion < drakeFunction.kinematic.Kinematic
         joint_idx = kinematicsPathJoints@drakeFunction.kinematic.Kinematic(obj);
       else
         [~,joint_path] = obj.rbm.findKinematicPath(obj.frameA,obj.frameB);
-        joint_idx = zeros(size(joint_path));
+        joint_idx = [];
         for i = 1:numel(joint_path)
-          joint_idx(i) = obj.rbm.getBody(joint_path(i)).dofnum;
+          joint_idx = [joint_idx; obj.rbm.getBody(joint_path(i)).position_num];
         end
+        joint_idx = joint_idx';
       end
     end
   end

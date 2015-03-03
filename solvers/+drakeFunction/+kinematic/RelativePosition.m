@@ -44,6 +44,7 @@ classdef RelativePosition < drakeFunction.kinematic.Kinematic
       obj.frameB = obj.rbm.parseBodyOrFrameID(frameB);
       obj.pts_in_A = pts_in_A;
       obj.n_pts = n_pts_tmp;
+      obj = obj.setSparsityPattern();
     end
 
     function [pos,J,dJ] = eval(obj,q)
@@ -109,10 +110,11 @@ classdef RelativePosition < drakeFunction.kinematic.Kinematic
         joint_idx = kinematicsPathJoints@drakeFunction.kinematic.Kinematic(obj);
       else
         [~,joint_path] = obj.rbm.findKinematicPath(obj.frameA,obj.frameB);
-        joint_idx = zeros(size(joint_path));
+        joint_idx = [];
         for i = 1:numel(joint_path)
-          joint_idx(i) = obj.rbm.getBody(joint_path(i)).dofnum;
+          joint_idx = [joint_idx; obj.rbm.getBody(joint_path(i)).position_num];
         end
+        joint_idx = joint_idx';
       end
     end
   end

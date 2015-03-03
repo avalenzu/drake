@@ -171,19 +171,21 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
         vector<int> active_bodies_idx;
         set<string> active_group_names;
         // First get the list of body indices for which to compute distances
-        const mxArray* active_collision_options = prhs[4];
+        const mxArray* active_collision_options = prhs[3];
         const mxArray* body_idx = mxGetField(active_collision_options,0,"body_idx");
         if (body_idx != NULL) {
-          //DEBUG
-          //cout << "collisionDetectmex: Received body_idx" << endl;
-          //END_DEBUG
-          int n_active_bodies = mxGetNumberOfElements(body_idx);
-          //DEBUG
-          //cout << "collisionDetectmex: n_active_bodies = " << n_active_bodies << endl;
-          //END_DEBUG
+          int n_active_bodies = static_cast<int>(mxGetNumberOfElements(body_idx));
           active_bodies_idx.resize(n_active_bodies);
-          memcpy(active_bodies_idx.data(),(int*) mxGetData(body_idx),
-              sizeof(int)*n_active_bodies);
+          if (mxGetClassID(body_idx) == mxINT32_CLASS) {
+            memcpy(active_bodies_idx.data(),(int*) mxGetData(body_idx),
+                sizeof(int)*n_active_bodies);
+          } else if(mxGetClassID(body_idx) == mxDOUBLE_CLASS) {
+            double* ptr = mxGetPr(body_idx);
+            for (int i=0; i<n_active_bodies; i++)
+              active_bodies_idx[i] = static_cast<int>(ptr[i]);
+          } else {
+            mexErrMsgIdAndTxt("Drake:constructPtrRigidBodyConstraintmex:WrongInputClass","active_collision_options.body_idx must be an int32 or a double array");
+          }
           transform(active_bodies_idx.begin(),active_bodies_idx.end(),
               active_bodies_idx.begin(),
               [](int i){return --i;});
