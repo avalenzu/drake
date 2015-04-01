@@ -48,6 +48,11 @@ classdef RigidBodyTorsionalSpring < RigidBodyForceElement
         error('removed joint with a torsional spring.  need to handle this case');
       end
     end
+    function [T,U] = energy(obj,manip,q,qd)
+      T=0;
+      theta = q(manip.body(obj.child_body).position_num);
+      U = .5*obj.k*(obj.rest_angle - theta)'*(obj.rest_angle - theta);
+    end
   end
   
   methods (Static)
@@ -66,7 +71,7 @@ classdef RigidBodyTorsionalSpring < RigidBodyForceElement
       end
       
       jointNode = node.getElementsByTagName('joint').item(0);
-      obj.child_body = findJointInd(model,char(jointNode.getAttribute('name')),robotnum);
+      obj.child_body = findJointId(model,char(jointNode.getAttribute('name')),robotnum);
       obj.parent_body = model.body(obj.child_body).parent;
       assert(numel(model.body(obj.child_body).position_num)==1 && model.body(obj.child_body).pitch==0,'Torsional springs are currnetly only supported for pin joints (aka, continuous and rotational joints)');
     end

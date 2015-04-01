@@ -76,14 +76,8 @@ classdef BotVisualizer < RigidBodyVisualizer
         end
         for j=1:link.num_geom
           if use_collision_geometry
-            if isa(b.collision_geometry{j},'RigidBodyMesh')
-              b.collision_geometry{j} = convertToOBJ(b.collision_geometry{j});
-            end
             link.geom(j) = serializeToLCM(b.collision_geometry{j});
           else
-            if isa(b.visual_geometry{j},'RigidBodyMesh')
-              b.visual_geometry{j} = convertToOBJ(b.visual_geometry{j});
-            end
             link.geom(j) = serializeToLCM(b.visual_geometry{j});
           end
         end
@@ -225,7 +219,7 @@ classdef BotVisualizer < RigidBodyVisualizer
       lc.publish('DRAKE_VIEWER_COMMAND',vc);
     end
     
-    function playbackMovie(obj,xtraj,filename)
+    function playbackMovie(obj,xtraj,filename,options)
       ffmpeg = getCMakeParam('ffmpeg');
       if isempty(ffmpeg)
         error('need ffmpeg.  rerun make configure from the prompt to help find it');
@@ -248,7 +242,7 @@ classdef BotVisualizer < RigidBodyVisualizer
       lc = lcm.lcm.LCM.getSingleton();
       lc.publish('DRAKE_VIEWER_COMMAND',vc);
 
-      playback(obj,xtraj);
+      playback(obj,xtraj,options);
       
       vc.command_type = vc.STOP_RECORDING;
       lc.publish('DRAKE_VIEWER_COMMAND',vc);

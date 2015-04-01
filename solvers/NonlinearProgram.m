@@ -731,7 +731,7 @@ classdef NonlinearProgram
         end
         obj.solver = solver;
       elseif(strcmp(solver,'default'))
-        if(checkDependency('snopt'))
+        if(checkDependency('snopt') || checkDependency('NonlinearProgramSnoptmex'))
           obj = obj.setSolver('snopt');
         elseif(checkDependency('studentSnopt')&&obj.num_vars<=300 && obj.num_cin+obj.num_ceq+size(obj.Ain,1)+size(obj.Aeq,1)<=300)
           obj = obj.setSolver('studentSnopt');
@@ -941,15 +941,22 @@ classdef NonlinearProgram
       % When using fmincon, if the algorithm is not specified through
       % setSolverOptions('fmincon','Algorithm',ALGORITHM), then it will
       % iterate all possible algorithms in fmincon to search for a solution.
-      switch lower(obj.solver)
-        case 'snopt'
-          [x,objval,exitflag,infeasible_constraint_name] = snopt(obj,x0);
-        case 'fmincon'
-          [x,objval,exitflag,infeasible_constraint_name] = fmincon(obj,x0);
-        case 'ipopt'
-          [x,objval,exitflag,infeasible_constraint_name] = ipopt(obj,x0);
-        otherwise
-          error('Drake:NonlinearProgram:UnknownSolver',['The requested solver, ',obj.solver,' is not known, or not currently supported']);
+      if(obj.num_vars == 0)
+        x = [];
+        objval = 0;
+        exitflag = 1;
+        infeasible_constraint_name = {};
+      else
+        switch lower(obj.solver)
+          case 'snopt'
+            [x,objval,exitflag,infeasible_constraint_name] = snopt(obj,x0);
+          case 'fmincon'
+            [x,objval,exitflag,infeasible_constraint_name] = fmincon(obj,x0);
+          case 'ipopt'
+            [x,objval,exitflag,infeasible_constraint_name] = ipopt(obj,x0);
+          otherwise
+            error('Drake:NonlinearProgram:UnknownSolver',['The requested solver, ',obj.solver,' is not known, or not currently supported']);
+        end
       end
     end
     
@@ -1612,10 +1619,10 @@ classdef NonlinearProgram
         ub = ub(2:end);
         ub_err = fval-ub;
         max_ub_err = max(ub_err);
-        max_ub_err = max_ub_err*(max_ub_err>0);
+        if (max_ub_err<0), max_ub_err=0; end
         lb_err = lb-fval;
         max_lb_err = max(lb_err);
-        max_lb_err = max_lb_err*(max_lb_err>0);
+        if (max_lb_err<0), max_lb_err=0; end
         if(max_ub_err+max_lb_err>2*obj.constraint_err_tol)
           infeasible_constraint_idx = (ub_err>obj.constraint_err_tol) | (lb_err>obj.constraint_err_tol);
           cnstr_name = [obj.cin_name;obj.ceq_name;obj.Ain_name;obj.Aeq_name];

@@ -7,19 +7,19 @@ classdef RigidBodyGeometry
   end
   
   methods
-    function obj = RigidBodyGeometry(bullet_shape_id,varargin)
-      % obj = RigidBodyGeometry(bullet_shape_id) constructs a
+    function obj = RigidBodyGeometry(drake_shape_id,varargin)
+      % obj = RigidBodyGeometry(drake_shape_id) constructs a
       % RigidBodyGeometry object with the geometry-to-body transform set to
       % identity.
       %
-      % obj = RigidBodyGeometry(bullet_shape_id,T) constructs a
+      % obj = RigidBodyGeometry(drake_shape_id,T) constructs a
       % RigidBodyGeometry object with the geometry-to-body transform T.
       % 
-      % obj = RigidBodyGeometry(bullet_shape_id,xyz,rpy) constructs a
+      % obj = RigidBodyGeometry(drake_shape_id,xyz,rpy) constructs a
       % RigidBodyGeometry object with the geometry-to-body transform specified
       % by the position, xyz, and Euler angles, rpy.
       %
-      % @param bullet_shape_id - Integer that tells the DrakeCollision library
+      % @param drake_shape_id - Integer that tells the DrakeCollision library
       % what type of geometry this is.
       % @param T - 4x4 homogenous transform from geometry-frame to body-frame
       % @param xyz - 3-element vector specifying the position of the geometry
@@ -41,7 +41,7 @@ classdef RigidBodyGeometry
         rpy = reshape(varargin{2},3,1);
         T_geometry_to_body = [rpy2rotmat(rpy), xyz; zeros(1,3),1];
       end
-      obj.bullet_shape_id = bullet_shape_id;
+      obj.drake_shape_id = drake_shape_id;
       obj.T = T_geometry_to_body;
     end
     
@@ -121,7 +121,7 @@ classdef RigidBodyGeometry
         switch (lower(char(thisNode.getNodeName())))
           case 'box'
             size = parseParamString(model,robotnum,char(thisNode.getAttribute('size')));
-            obj = RigidBodyBox(size);
+            obj = RigidBodyBox(size(:));
           case 'sphere'
             r = parseParamString(model,robotnum,char(thisNode.getAttribute('radius')));
             obj = RigidBodySphere(r);
@@ -172,8 +172,8 @@ classdef RigidBodyGeometry
         thisNode = childNodes.item(i-1);
         switch (lower(char(thisNode.getNodeName())))
           case 'box'
-            sizeNode = thisNode.getElementsByTagName('size').item(0);
-            size = parseParamString(model,robotnum,char(getNodeValue(getFirstChild(sizeNode))));
+            size_node = thisNode.getElementsByTagName('size').item(0);
+            size = parseParamString(model,robotnum,char(getNodeValue(getFirstChild(size_node))));
             obj = RigidBodyBox(size);
           case 'mesh'
             uriNode = thisNode.getElementsByTagName('uri').item(0);
@@ -206,6 +206,25 @@ classdef RigidBodyGeometry
             end
             obj = RigidBodyMesh(GetFullPath(filename));
             obj.scale = scale;
+          case 'plane'
+            size_node = thisNode.getElementsByTagName('size').item(0);
+            size = parseParamString(model,robotnum,char(getNodeValue(getFirstChild(size_node))));
+            normal_node = thisNode.getElementsByTagName('normal').item(0);
+            normal = parseParamString(model,robotnum,char(getNodeValue(getFirstChild(normal_node))));
+            
+            pts = diag([size/2,0])*[ 1 1 -1 -1; 1 -1 -1 1; 0 0 0 0];
+            
+            % now rotate [0;0;1] onto the normal
+            % http://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+            v = [ -normal(2); normal(1); 0];
+            s = norm(v); c = normal(3);
+            if abs(s)<eps^2
+              R = diag([sign(c),1,sign(c)]);
+            else
+              vx = [ 0, -v(3), v(2); v(3), 0, -v(1); -v(2), v(1), 0];
+              R = eye(3) + vx + vx*vx*(1-c)/(s^2);
+            end
+            obj = RigidBodyMeshPoints(R*pts);            
           case {'#text','#comment'}
             % intentionally do nothing
           otherwise
@@ -235,7 +254,7 @@ classdef RigidBodyGeometry
                  
                  
     c = [.7 .7 .7];  % 3x1 color
-    bullet_shape_id = 0;  % UNKNOWN
+    drake_shape_id = 0;  % UNKNOWN
     name % String identifier
   end
 end

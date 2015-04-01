@@ -20,7 +20,8 @@ classdef RigidBodyMesh < RigidBodyGeometry
       %   geometry in the body-frame
       % @param rpy - 3-element vector of Euler angles specifying the
       %   orientation of the geometry in the body-frame
-      obj = obj@RigidBodyGeometry(4,varargin{:});
+      obj = obj@RigidBodyGeometry(4,varargin{:}); 
+                                                  
       typecheck(filename,'char');
       obj.filename = filename;
     end
@@ -72,7 +73,7 @@ classdef RigidBodyMesh < RigidBodyGeometry
         if strcmpi(ext,'.stl') || exist(fullfile(path,[name,'.stl']),'file')
           stl2vrml(fullfile(path,[name,'.stl']),path);
         else
-          error(['unknown mesh file extension ',geom.filename]);
+          error(['missing mesh file or unknown file extension ',geom.filename]);
         end
       end
       geom.filename = fullfile(path,[name,'.wrl']);
@@ -81,22 +82,23 @@ classdef RigidBodyMesh < RigidBodyGeometry
     function geom = convertToOBJ(geom)
       [path,name,ext] = fileparts(geom.filename);
       if ~strcmpi(ext,'.obj') && ~exist(fullfile(path,[name,'.obj']),'file')
-        exe = ''; if ispc, exe = '.exe'; end 
+        exe = ''; if ispc, exe = '.exe'; end
         converter = fullfile(pods_get_bin_path,['convert_to_obj',exe]);
         if exist(converter)
           systemWCMakeEnv([converter,' ',geom.filename]);
         else
-          error('can''t convert %s to OBJ format',geom.filename); 
+          error('can''t convert %s to OBJ format',geom.filename);
         end
       end
       geom.filename = fullfile(path,[name,'.obj']);
     end
     
     function geometry = serializeToLCM(obj)
+      obj = convertToOBJ(obj);
       geometry = drake.lcmt_viewer_geometry_data();
       geometry.type = geometry.MESH;
       geometry.string_data = obj.filename;
-      geometry.num_float_data = 1;
+      geometry.num_float_data = length(obj.scale);
       geometry.float_data = obj.scale;  % scale
 
       geometry.position = obj.T(1:3,4);

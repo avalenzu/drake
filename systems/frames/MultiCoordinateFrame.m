@@ -134,6 +134,7 @@ classdef MultiCoordinateFrame < CoordinateFrame
             % prepend remapping from coordinates of parent to children
             T = sparse(1:obj.dim,[obj.coord_ids{:}],1,obj.dim,obj.dim);
             tf = cascade(AffineTransform(obj,tf.getInputFrame,T,zeros(obj.dim,1)),tf);
+            tf = setOutputFrame(tf,target);  % because the parallel combination loop above will results in an input frame with a ladder of subframes.
           end
         end
       end
@@ -292,8 +293,52 @@ classdef MultiCoordinateFrame < CoordinateFrame
       fr = obj.frame{id};
     end
     
+    function fr = getFrameByNameRecursive(obj,name)
+      % Looks in all subframes that are multicoordinate frames for this
+      % frame.
+      to_search = obj.frame;
+      i = 1;
+      while (i <= length(to_search))
+        if (isa(to_search{i}, 'MultiCoordinateFrame'))
+          to_search = [to_search to_search{i}.frame];
+        end
+        i = i + 1;
+      end
+      id = find(cellfun(@(a)strcmp(a.name,name),to_search));
+      
+      if length(id)~=1
+        error(['couldn''t find unique frame named ',name]);
+      end
+      fr = to_search{id};
+    end
+    
     function id = getFrameNumByName(obj,name)
       id = find(cellfun(@(a)strcmp(a.name,name),obj.frame));
+    end
+    
+    function id = getFrameNumByNameRecursive(obj,name)
+      % Returns vector of subframe ids to get to the supplied
+      % frame from the root. The first elem in the vec is
+      % the root level subframe -- each sequential item in
+      % the vec is the index into the next subframe down.
+      to_search = obj.frame;
+      frame_locations = num2cell(1:length(to_search));
+      i = 1;
+      while (i <= length(to_search))
+        if (isa(to_search{i}, 'MultiCoordinateFrame'))
+          to_search = [to_search to_search{i}.frame];
+          for j=1:length(to_search{i}.frame)
+            frame_locations{end+1} = [frame_locations{i} j];
+          end
+        end
+        i = i + 1;
+      end
+      id = find(cellfun(@(a)strcmp(a.name,name),to_search));
+      if length(id)>1
+        error(['couldn''t find unique frame named ',name]);
+      elseif length(id) == 1
+        id = frame_locations{id};
+      end
     end
     
     function id = getFrameNum(obj,frame)

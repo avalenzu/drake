@@ -113,6 +113,7 @@ These forces are represented by a 6x6 matrix 'Ma' similar to a mass matrix, wher
                     <xs:documentation> Adds a buoyancy force to the parent body, placed at a defined center of buoyancy. </xs:documentation>
                 </xs:annotation>
             </xs:element>
+            <xs:element name="torsional_spring" type="torsional_spring"/>
         </xs:choice>
         <xs:attribute name="name" type="xs:string"/>
     </xs:complexType>
@@ -327,7 +328,7 @@ Reynolds number around which we design the aerodynamic coefficients.</xs:documen
             </xs:element>
         </xs:all>
 
-        <xs:attribute name="name" type="xs:string" use="required" />
+        <xs:attribute name="name" type="xs:string" use="required"/>
 
         <xs:attribute name="coefficient_drag_x" type="xs:double" use="required">
             <xs:annotation>
@@ -387,7 +388,7 @@ Reynolds number around which we design the aerodynamic coefficients.</xs:documen
             </xs:element>
         </xs:all>
 
-        <xs:attribute name="name" type="xs:string" use="required" />
+        <xs:attribute name="name" type="xs:string" use="required"/>
 
         <xs:attribute default="-INF" name="lower_limit" type="xs:double">
             <xs:annotation>
@@ -533,6 +534,44 @@ this buoyancy is attached.</xs:documentation>
         </xs:attribute>
     </xs:complexType>
 
+    <xs:complexType name="cable">
+        <xs:all>
+            <xs:annotation>
+                <xs:documentation>Note: the order of the terminator, pulleys, and crossovers DOES MATTER - they specific the kinematic path of the cable.
+e.g. terminator - pulley - pulley - crossover - pulley - terminator
+</xs:documentation>
+            </xs:annotation>
+            <xs:element maxOccurs="2" minOccurs="2" name="terminator" type="link_reference_w_pose"/>
+            <xs:element form="qualified" maxOccurs="unbounded" minOccurs="0" name="pulley"
+                type="pulley">
+                <xs:annotation>
+                    <xs:documentation>provides a radius about which the cable slides (as if it were frictionless - the actual motion of the pulley is not simulated)</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:all>
+        <xs:attribute default="cable" name="name"/>
+        <xs:attribute name="min_length" use="required"/>
+        <xs:attribute name="max_length" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="pulley">
+        <xs:attribute name="link" type="xs:string" use="required"/>
+        <xs:attribute default="0 0 0" name="xyz" type="matlab_parameter_expression"/>
+        <xs:attribute default="0 0 0" name="axis" type="matlab_parameter_expression">
+            <xs:annotation>
+                <xs:documentation>the cable wraps counter-clockwise (right-hand rule) around the pulley axis</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute default="0" name="radius" type="matlab_parameter_expression">
+            <xs:annotation>
+                <xs:documentation>All attachments are implemented as (frictionless) pulleys.  Simple attachments are pulleys of radius zero.</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="number_of_wraps" type="xs:int">
+            <xs:annotation>
+                <xs:documentation>Number of times that the cable is wrapped completely around a pulley.  Adds additional 2*pi*radius*number_of_wraps to the computed length of the cable.</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
     <xs:simpleType name="joint_type">
         <xs:restriction base="xs:string">
             <xs:enumeration value="revolute"/>
@@ -579,7 +618,7 @@ this buoyancy is attached.</xs:documentation>
             </xs:element>
             <xs:element name="inertia" type="inertia" minOccurs="0" maxOccurs="1">
                 <xs:annotation>
-                    <xs:documentation>The 3x3 rotational inertia matrix, represented in the inertia frame. Because the rotational inertia matrix is symmetric, only 6 above-diagonal elements of this matrix are specified here, using the attributes ixx, ixy, ixz, iyy, iyz, izz. </xs:documentation>
+                    <xs:documentation>The 3x3 rotational inertia matrix, represented in the inertia frame (as defined by the origin tag, e.g., about the center of mass of this link). Because the rotational inertia matrix is symmetric, only 6 above-diagonal elements of this matrix are specified here, using the attributes ixx, ixy, ixz, iyy, iyz, izz. </xs:documentation>
                 </xs:annotation>
             </xs:element>
         </xs:all>
@@ -943,7 +982,7 @@ yet. (see bug 921)</xs:documentation>
     </xs:complexType>
     <xs:complexType name="collision_filter_group">
         <xs:annotation>
-            <xs:documentation>Provides a means to exclude certain pairs of bodies from collision detec- tion and closest distance computations. A collision filter group can contain one or more links, and a link may belong to any number of collision filter groups. One collision filter group can ignore another, in which case pairs of bodies with one element from each group are skipped when performing the aforementioned computations.</xs:documentation>
+            <xs:documentation>Provides a means to exclude certain pairs of bodies from collision detection and closest distance computations. A collision filter group can contain one or more links, and a link may belong to any number of collision filter groups. Given two links A and B by default they are specified to be checked for collision. If they are adjacent in the kinematic tree, then they are not checked for collision unless one is the world link and the jointing connecting them is a floating base joint. If link A is in a collision filter group Alpha and link B is in a collision filter group Beta and Beta is in Alpha.ignored_collision_filter group then A and B are not checked for collision. The same also holds in reverse, i.e. if Alpha is in Beta.ignored_collision_filter_group then links A and B are not in collision. However only one of the two conditions is necessary for excluding the pair of bodies from collision detection.</xs:documentation>
         </xs:annotation>
         <xs:sequence>
             <xs:element name="member" type="link_reference" maxOccurs="unbounded" minOccurs="0">

@@ -8,9 +8,8 @@ if ~checkDependency('gurobi')
   return;
 end
 
-path_handle = addpathTemporary({fullfile(getDrakePath,'examples','ZMP'),...
-                                fullfile(getDrakePath,'examples','Atlas','controllers'),...
-                                fullfile(getDrakePath,'examples','Atlas','frames')});
+path_handle = addpathTemporary(fullfile(getDrakePath(), 'examples', 'ZMP'));
+import atlasControllers.*;
 
 % put robot in a random x,y,yaw position and balance for 2 seconds
 visualize = true;
@@ -24,9 +23,11 @@ warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits')
 
 options.floating = true;
 options.dt = 0.002;
-options.hands = 'robotiq_weight_only';
+options.hand_left = 'robotiq_weight_only';
+options.hand_right = 'robotiq_weight_only';
 r = Atlas('urdf/atlas_minimal_contact.urdf',options);
-options.hands = 'robotiq';
+options.hand_left = 'robotiq_tendons';
+options.hand_right = 'robotiq_tendons';
 r_hands = Atlas('urdf/atlas_minimal_contact.urdf',options);
 r = r.removeCollisionGroupsExcept({'heel','toe'});
 r_hands = r_hands.removeCollisionGroupsExcept({'heel','toe'});
@@ -58,7 +59,7 @@ kinsol = doKinematics(r,q0);
 com = getCOM(r,kinsol);
 
 % build TI-ZMP controller
-footidx = [findLinkInd(r,'r_foot'), findLinkInd(r,'l_foot')];
+footidx = [findLinkId(r,'r_foot'), findLinkId(r,'l_foot')];
 foot_pos = terrainContactPositions(r,kinsol,footidx);
 comgoal = mean([mean(foot_pos(1:2,1:4)');mean(foot_pos(1:2,5:8)')])';
 limp = LinearInvertedPendulum(com(3));
@@ -67,16 +68,16 @@ limp = LinearInvertedPendulum(com(3));
 foot_support = RigidBodySupportState(r,find(~cellfun(@isempty,strfind(r.getLinkNames(),'foot'))));
 
 % generate manip plan
-rhand_ind = findLinkInd(r,'r_hand');
-lhand_ind = findLinkInd(r,'l_hand');
+rhand_ind = findLinkId(r,'r_hand');
+lhand_ind = findLinkId(r,'l_hand');
 rhand_pos = forwardKin(r,kinsol,rhand_ind,[0;0;0],1);
 lhand_pos = forwardKin(r,kinsol,lhand_ind,[0;0;0],1);
 diff = [0.1+0.1*rand(); 0.05*randn(); 0.1+0.5*rand()];
 rhand_goal = rhand_pos(1:3) + diff;
 lhand_goal = lhand_pos(1:3) + diff;
 
-rfoot_ind = findLinkInd(r,'r_foot');
-lfoot_ind = findLinkInd(r,'l_foot');
+rfoot_ind = findLinkId(r,'r_foot');
+lfoot_ind = findLinkId(r,'l_foot');
 rfoot_pos = forwardKin(r,kinsol,rfoot_ind,[0;0;0],1);
 lfoot_pos = forwardKin(r,kinsol,lfoot_ind,[0;0;0],1);
 
@@ -128,7 +129,7 @@ end
 qtraj = PPTrajectory(spline(ts,q));
 
 ctrl_data = QPControllerData(false,struct(...
-  'acceleration_input_frame',AtlasCoordinates(r),...
+  'acceleration_input_frame',atlasFrames.AtlasCoordinates(r),...
   'D',-com(3)/9.81*eye(2),...
   'Qy',eye(2),...
   'S',V.S,...
@@ -169,15 +170,36 @@ ins(2).system = 1;
 ins(2).input = 3;
 ins(3).system = 2;
 ins(3).input = 2;
+ins(4).system = 2;
+ins(4).input = 3;
 outs(1).system = 2;
 outs(1).output = 1;
 outs(2).system = 2;
 outs(2).output = 2;
+outs(3).system = 2;
+outs(3).output = 3;
 sys = mimoFeedback(qp,r_hands,[],[],ins,outs);
 clear ins;
 clear outs;
 
-rh = RobotiqControlBlock(r_hands, 2, '');
+rh = RobotiqControlBlock(r_hands, 2, 'right_');
+ins(1).system = 1;
+ins(1).input = 1;
+ins(2).system = 1;
+ins(2).input = 2;
+ins(3).system = 1;
+ins(3).input = 4;
+outs(1).system = 1;
+outs(1).output = 1;
+outs(2).system = 1;
+outs(2).output = 2;
+outs(3).system = 1;
+outs(3).output = 3;
+sys = mimoFeedback(sys, rh,[],[],ins,outs);
+clear ins;
+clear outs;
+
+lh = RobotiqControlBlock(r_hands, 3, 'left_');
 ins(1).system = 1;
 ins(1).input = 1;
 ins(2).system = 1;
@@ -186,7 +208,9 @@ outs(1).system = 1;
 outs(1).output = 1;
 outs(2).system = 1;
 outs(2).output = 2;
-sys = mimoFeedback(sys, rh,[],[],ins,outs);
+outs(3).system = 1;
+outs(3).output = 3;
+sys = mimoFeedback(sys, lh,[],[],ins,outs);
 clear ins;
 clear outs;
 
@@ -200,6 +224,8 @@ outs(1).system = 2;
 outs(1).output = 1;
 outs(2).system = 2;
 outs(2).output = 2;
+outs(3).system = 2;
+outs(3).output = 3;
 sys = mimoFeedback(fc,sys,[],[],ins,outs);
 clear ins;
 
@@ -212,6 +238,8 @@ outs(1).system = 2;
 outs(1).output = 1;
 outs(2).system = 2;
 outs(2).output = 2;
+outs(3).system = 2;
+outs(3).output = 3;
 sys = mimoFeedback(pd,sys,[],[],ins,outs);
 clear ins;
 
@@ -226,12 +254,13 @@ if visualize
   output_select(1).output=1;
   output_select(2).system=1;
   output_select(2).output=2;
+  output_select(3).system = 1;
+  output_select(3).output = 3;
   sys = mimoCascade(sys,v,[],[],output_select);
   warning(S);
 end
 x0 = xstar_hands;
 x0(3) = 1.0; % drop it a bit
-
 traj = simulate(sys,[0 2],x0);
 if visualize
   % This doesn't see hand movements. Why?

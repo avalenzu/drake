@@ -454,17 +454,16 @@ classdef RigidBodyWing < RigidBodyForceElement
         wingvel_rel = RigidBodyWing.computeWingVelocityRelative(obj.kinframe, manip, kinsol, wingvel_struct);
       end
 
-      
       airspeed = norm(wingvel_world_xz);
       if (nargout>1)
-        dairspeeddq = (wingvel_world_xz'*dwingvel_worlddq)/norm(wingvel_world_xz);
-        dairspeeddqd = (wingvel_world_xz'*dwingvel_worlddqd)/norm(wingvel_world_xz);
+        dairspeeddq = (wingvel_world_xz'*dwingvel_worlddq)/(norm(wingvel_world_xz)+eps);
+        dairspeeddqd = (wingvel_world_xz'*dwingvel_worlddqd)/(norm(wingvel_world_xz)+eps);
       end
 
       aoa = -(180/pi)*atan2(wingvel_rel(3),wingvel_rel(1));
       if (nargout>1)
-        daoadq = -(180/pi)*(wingvel_rel(1)*dwingvel_reldq(3,:)-wingvel_rel(3)*dwingvel_reldq(1,:))/(wingvel_rel(1)^2+wingvel_rel(3)^2);
-        daoadqd = -(180/pi)*(wingvel_rel(1)*dwingvel_reldqd(3,:)-wingvel_rel(3)*dwingvel_reldqd(1,:))/(wingvel_rel(1)^2+wingvel_rel(3)^2);
+        daoadq = -(180/pi)*(wingvel_rel(1)*dwingvel_reldq(3,:)-wingvel_rel(3)*dwingvel_reldq(1,:))/(wingvel_rel(1)^2+wingvel_rel(3)^2+eps);
+        daoadqd = -(180/pi)*(wingvel_rel(1)*dwingvel_reldqd(3,:)-wingvel_rel(3)*dwingvel_reldqd(1,:))/(wingvel_rel(1)^2+wingvel_rel(3)^2+eps);
       end
 
       %lift and drag are the forces on the body in the world frame.
@@ -520,7 +519,7 @@ classdef RigidBodyWing < RigidBodyForceElement
       %inputs of point (body coordinates), and force (world coordinates)
       %returns [torque; xforce; yforce] in the body coordinates
       %obj.body.position_num should have 6 elements for
-      %linkID = manip.findLinkInd(obj.body.linkname, 0);
+      %linkID = manip.findLinkId(obj.body.linkname, 0);
       if (nargout>1)
         [f,fJ,fP] = cartesianForceToSpatialForce(manip, kinsol, frame.body_ind, frame.T(1:3,4),lift_world+drag_world);
         dfdq = fJ+fP*(dlift_worlddq+ddrag_worlddq);
@@ -771,7 +770,7 @@ classdef RigidBodyWing < RigidBodyForceElement
       name = regexprep(name, '\.', '_', 'preservecase');
 
       elNode = node.getElementsByTagName('parent').item(0);
-      parent = findLinkInd(model,char(elNode.getAttribute('link')),robotnum);
+      parent = findLinkId(model,char(elNode.getAttribute('link')),robotnum);
 
       xyz=zeros(3,1); rpy=zeros(3,1);
       elnode = node.getElementsByTagName('origin').item(0);

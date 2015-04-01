@@ -12,9 +12,16 @@ classdef Visualizer < DrakeSystem
 
   methods
     function obj=Visualizer(input_frame)
-      typecheck(input_frame,'CoordinateFrame');
-      obj=obj@DrakeSystem(0,0,input_frame.dim,0,true);
-      obj = setInputFrame(obj,input_frame);
+      if isempty(input_frame)
+        dim = 0;
+      else
+        typecheck(input_frame,'CoordinateFrame');
+        dim = input_frame.dim;
+      end      
+      obj=obj@DrakeSystem(0,0,dim,0,true);
+      if ~isempty(input_frame)
+        obj = setInputFrame(obj,input_frame);
+      end
     end
 
     function x0 = getInitialState(obj)
@@ -250,8 +257,12 @@ classdef Visualizer < DrakeSystem
 
       set(f, 'Position', [560 400 560 20 + 30*rows]);
       resize_gui();
-      update_display(slider{1});
-
+      if isempty(state_dims), 
+        obj.drawWrapper(0,[]); 
+      else 
+        update_display(slider{1});
+      end
+      
       function resize_gui(source, eventdata)
         p = get(gcf,'Position');
         width = p(3);

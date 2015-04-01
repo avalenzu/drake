@@ -21,6 +21,12 @@ classdef RigidBodyManipulator < Manipulator
     num_contact_pairs;
     contact_options; % struct containing options for contact/collision handling
     contact_constraint_id=[];
+
+    % struct containing the output of 'obj.getTerrainContactPoints()'.
+    % That output does not change between compilations, and is requested
+    % at every simulation dt, so storing it can speed things up.
+    cached_terrain_contact_points_struct=[];
+                                            
     frame = [];     % array of RigidBodyFrame objects
 
     robot_state_frames;
@@ -37,9 +43,9 @@ classdef RigidBodyManipulator < Manipulator
     dirty = true;
     collision_filter_groups;  % map of CollisionFilterGroup objects
   end
-
+  
   methods
-    function obj = RigidBodyManipulator(urdf_filename,options)
+    function obj = RigidBodyManipulator(filename,options)
       % Construct a new rigid body manipulator object with a single (empty)
       % RigidBody (called 'world'), and optionally load a first robot from
       % urdf (see documentation for addRobotFromURDF for details on the
@@ -54,11 +60,22 @@ classdef RigidBodyManipulator < Manipulator
       obj = setTerrain(obj,options.terrain);
       obj.contact_options = obj.parseContactOptions(options);
 
-      obj.collision_filter_groups=containers.Map('KeyType','char','ValueType','any');
+      obj.collision_filter_groups = PassByValueMap('KeyType','char','ValueType','any');
       obj.collision_filter_groups('no_collision') = CollisionFilterGroup();
 
-      if (nargin>0 && ~isempty(urdf_filename))
-        obj = addRobotFromURDF(obj,urdf_filename,zeros(3,1),zeros(3,1),options);
+      if isfield(options,'use_new_kinsol')
+        obj.use_new_kinsol = options.use_new_kinsol;
+      end
+      
+      if (nargin>0 && ~isempty(filename))
+        [path,name,ext]=fileparts(filename);
+        if strcmpi(ext,'.urdf')
+          obj = addRobotFromURDF(obj,filename,zeros(3,1),zeros(3,1),options);
+        elseif strcmpi(ext,'.sdf') || strcmpi(ext,'.world')
+          obj = addRobotFromSDF(obj,filename,zeros(3,1),zeros(3,1),options);
+        else
+          error('Drake:RigidBodyManipulator:UnsupportedFileExtension','Unrecognized file extension: %s',ext);
+        end          
       end
     end
   end
@@ -111,6 +128,11 @@ classdef RigidBodyManipulator < Manipulator
   end
 
   methods
+    function obj = setNewKinsolFlag(obj,flag)
+      obj.use_new_kinsol = flag;
+      obj = compile(obj);
+    end
+    
     function [Vq, dVq] = qdotToV(obj, q)
       compute_gradient = nargout > 1;
 
@@ -320,11 +342,38 @@ classdef RigidBodyManipulator < Manipulator
       g = obj.gravity;
     end
 
-    function f_friction = computeFrictionForce(model,qd)
-      m = model.featherstone;
-      f_friction = m.damping'.*qd;
-      if (m.coulomb_friction)
-        f_friction = f_friction + min(1,max(-1,qd./m.coulomb_window')).*m.coulomb_friction';
+    function [f_friction, df_frictiondv] = computeFrictionForce(model,v)
+      % Note: gradient is with respect to v, not q!
+      compute_gradient = nargout > 1;
+      
+      nv = model.getNumVelocities();
+      damping = zeros(nv, 1);
+      coulomb_friction = zeros(nv, 1);
+      static_friction = zeros(nv, 1);
+      coulomb_window = zeros(nv, 1);
+
+      for i = 2 : model.getNumBodies()
+        b = model.body(i);
+        damping(b.velocity_num) = b.damping;
+        coulomb_friction(b.velocity_num) = b.coulomb_friction;
+        static_friction(b.velocity_num) = b.static_friction;
+        coulomb_window(b.velocity_num) = b.coulomb_window;
+      end
+
+      f_friction = damping .* v;
+      if compute_gradient
+        df_frictiondv = diag(damping);
+      end
+      
+      if any(coulomb_friction)
+        f_friction = f_friction + min(1,max(-1,v./coulomb_window)).*coulomb_friction;
+        if compute_gradient
+          ind = find(abs(v)<coulomb_window');
+          dind = sign(v(ind))./coulomb_window(ind)' .* coulomb_window(ind)';
+          fc_drv = zeros(model.getNumVelocities(),1);
+          fc_drv(ind) = dind;
+          df_frictiondv = df_frictiondv + diag(fc_drv);
+        end
       end
     end
 
@@ -395,17 +444,9 @@ classdef RigidBodyManipulator < Manipulator
 
       child = model.body(child_ind);
 
-      if child.parent>0
-        error(['there is already a joint connecting this child (' child.linkname ') to a parent (' model.body(parent_ind).linkname ') on joint ' name ]);
-      end
-
       jointname = regexprep(name, '\.', '_', 'preservecase');
-      if ismember(lower(jointname),lower({model.body.jointname}))
-        num = 2;
-        while ismember(lower([jointname,num2str(num)]),lower({model.body.jointname}))
-          num = num+1;
-        end
-        jointname = [jointname,num2str(num)];
+      if ismember(lower(jointname),lower({model.body([model.body.robotnum]==child.robotnum).jointname}))
+        model.warning_manager.warnOnce('Drake:RigidBodyManipulator:DuplicateJointName',['You already have a joint named ', jointname, ' on this robot.  This can cause problems later if you try to access elements of the state vector by name']);
       end
       child.jointname = jointname;
       rangecheck(parent_ind,1,getNumBodies(model));
@@ -451,6 +492,7 @@ classdef RigidBodyManipulator < Manipulator
         valuecheck(child.T_body_to_joint*[axis;1],[0;0;1;1],1e-6);
       end
 
+      child.floating = 0;
       switch lower(type)
         case {'revolute','continuous'}
           child.pitch = 0;
@@ -620,11 +662,11 @@ classdef RigidBodyManipulator < Manipulator
     function model = compile(model)
       % After parsing, compute some relevant data structures that will be
       % accessed in the dynamics and visualization
-      if isempty(model.name)
-        return;  % nothing to compile
-      end
 
       model = removeFixedJoints(model);
+
+      % Clear cached contact points
+      model.cached_terrain_contact_points_struct = [];
 
       % reorder body list to make sure that parents before children in the
       % list (otherwise simple loops over bodies might not compute
@@ -642,7 +684,9 @@ classdef RigidBodyManipulator < Manipulator
       end
       
       %% update RigidBodyElements
-      
+      % todo: use applyToAllRigidBodyElements (but will have to generalize
+      % it to take multiple outputs, or make sure onCompile doesn't have to
+      % return the second argument)
       for i=1:length(model.force)
         [new_element, model] = model.force{i}.onCompile(model);
         model.force{i} = new_element;
@@ -685,8 +729,6 @@ classdef RigidBodyManipulator < Manipulator
           model.body(i).velocity_num=0;
         end
       end
-
-      if (num_q<1) error('This model has no DOF!'); end
 
       u_limit = repmat(inf,length(model.actuator),1);
       u_limit = [-u_limit u_limit]; % lower/upper limits
@@ -767,8 +809,10 @@ classdef RigidBodyManipulator < Manipulator
         model = setDirectFeedthrough(model,false);
       end
 
-      model = model.setJointLimits([model.body.joint_limit_min]',[model.body.joint_limit_max]');
-
+      if getNumPositions(model)>0
+        model = model.setJointLimits([model.body.joint_limit_min]',[model.body.joint_limit_max]');
+      end
+      
       model = model.setInputLimits(u_limit(:,1),u_limit(:,2));
 
       %% check basic assumption from kinematics:
@@ -790,6 +834,9 @@ classdef RigidBodyManipulator < Manipulator
       % so it should go after createMexPointer
       [phi,~,~,~,idxA,idxB] = model.collisionDetect(zeros(model.getNumPositions,1));
       model.num_contact_pairs = length(phi);
+
+      % cache the full set of terrain contact points
+      model.cached_terrain_contact_points_struct = model.getTerrainContactPoints();
       
       % can't really add the full complementarity constraints here,
       % since the state constraints only take x as the input.  so 
@@ -823,6 +870,14 @@ classdef RigidBodyManipulator < Manipulator
         model.loop(j) = loop;
       end
 
+      for j=1:length(model.position_constraints)
+        % todo: generalize this by moving the updateConstraint logic above into
+        % drakeFunction.RBM
+        if isa(model.position_constraints{j},'DrakeFunctionConstraint') && isa(model.position_constraints{j}.fcn,'drakeFunction.kinematic.CableLength')
+          model = updatePositionEqualityConstraint(model,j,DrakeFunctionConstraint(model.position_constraints{j}.lb,model.position_constraints{j}.ub,setRigidBodyManipulator(model.position_constraints{j}.fcn,model)));
+        end
+      end
+      
       if (model.num_contact_pairs>0)
         warning('Drake:RigidBodyManipulator:UnsupportedContactPoints','Contact is not supported by the dynamics methods of this class.  Consider using TimeSteppingRigidBodyManipulator or HybridPlanarRigidBodyManipulator');
       end
@@ -834,26 +889,47 @@ classdef RigidBodyManipulator < Manipulator
     end
 
     function indices = findJointIndices(model, str)
-      %findJointIndices Returns indices in the state vector for joints whose
+      model.warning_manager.warnOnce('Drake:RigidBodyManipulator:findJointIndicesDeprecated','findJointIndices has been replaced with findPositionIndices.  please update your code');
+      indiced = findPositionIndices(model,str);
+    end    
+    
+    function indices = findPositionIndices(model, str)
+      %findPositionIndices Returns position indices in the state vector for joints whose
       % name contains a specified string.
       %   @param str (sub)string to be searched for
       %   @retvall indices array of indices into state vector
       indices = find(~cellfun('isempty',strfind(model.getStateFrame().coordinates(1:getNumPositions(model)),str)));
     end
 
-    function body_ind = findLinkInd(model,linkname,robot,error_level)
+    function indices = findVelocityIndices(model, str)
+      %findJointVelocityIndices Returns velocity indices in the state vector for joints whose
+      % name contains a specified string.
+      %   @param str (sub)string to be searched for
+      %   @retvall indices array of indices into state vector
+      indices = find(~cellfun('isempty',strfind(model.getStateFrame().coordinates((getNumPositions(model)+1):end),str)));
+    end
+    
+    
+    function body_ind = findLinkInd(model,varargin)
+      model.warning_manager.warnOnce('Drake:RigidBodyManipulator:finkLinkIndDeprecated','findLinkInd has been replaced with findLinkId.  please update your code');
+      body_ind = findLinkId(model,varargin{:});
+    end
+    
+    function body_id = findLinkId(model,linkname,robot,error_level)
       % @param robot can be the robot number or the name of a robot
-      % robot=0 means look at all robots
+      % robot<0 means look at all robots
       % @param error_level >0 for throw error, 0 for throw warning, <0 for do nothing. @default throw error
       % @ingroup Kinematic Tree
-      if nargin<3 || isempty(robot), robot=0; end
+      if nargin<3 || isempty(robot), robot=-1; end
       linkname = lower(linkname);
       linkname=regexprep(linkname, '[\[\]\\\/\.]+', '_', 'preservecase');
 
-      if ischar(robot) robot = strmatch(lower(robot),lower({model.name})); end
+      if ischar(robot) 
+        robot = strmatch(lower(robot),lower(model.name)); 
+      end
       items = strfind(lower({model.body.linkname}),linkname);
       ind = find(~cellfun(@isempty,items));
-      if (robot~=0), ind = ind([model.body(ind).robotnum]==robot); end
+      if (robot>=0), ind = ind(ismember([model.body(ind).robotnum],robot)); end
       if (length(ind)>0) % then handle removed fixed joints
         i=1;
         while i<=length(ind)
@@ -865,7 +941,11 @@ classdef RigidBodyManipulator < Manipulator
               ind(i)=[]; % not actually a match
               i=i-1;
             elseif subind>1
-              warning('Drake:RigidBodyManipulator:WeldedLinkInd',['found ', linkname,' but it has been welded to it''s parent link (and the link''s coordinate frame may have changed).']);
+              if nargin>3 && error_level>0
+                error('Drake:RigidBodyManipulator:WeldedLinkInd',['found ', linkname,' but it has been welded to it''s parent link (and the link''s coordinate frame may have changed).']);
+              else
+                warning('Drake:RigidBodyManipulator:WeldedLinkInd',['found ', linkname,' but it has been welded to it''s parent link (and the link''s coordinate frame may have changed).']);
+              end
             end
           end
           i=i+1;
@@ -873,7 +953,7 @@ classdef RigidBodyManipulator < Manipulator
       end
       if (length(ind)~=1)
         if (nargin<4 || error_level>0)
-          if robot == 0
+          if robot < 0
             error('Drake:RigidBodyManipulator:UniqueLinkNotFound', ...
               'couldn''t find unique link %s.',linkname);
           else
@@ -882,27 +962,31 @@ classdef RigidBodyManipulator < Manipulator
               linkname,robot);
           end
         else
-          body_ind=0;
+          body_id=ind;
           if (error_level==0)
             warning(['couldn''t find unique link ' ,linkname]);
           end
         end
       else
-        body_ind = ind;
+        body_id = ind;
       end
     end
 
     function body = findLink(model,linkname,varargin)
       % @ingroup Deprecated
-      error('the finkLink method has been deprecated.  if you really must get a *copy* of the body, then use finkLinkInd followed by getBody');
+      error('the finkLink method has been deprecated.  if you really must get a *copy* of the body, then use finkLinkId followed by getBody');
     end
 
     function is_valid = isValidLinkIndex(obj,idx)
+      model.warning_manager.warnOnce('Drake:RigidBodyManipulator:isValidLinkIndexDeprecated','isValidLinkIndex has been replaced with isValidLinkId.  please update your code');
+    end
+    
+    function is_valid = isValidLinkId(obj,id)
       % @ingroup Kinematic Tree
-      if ~isnumeric(idx)
-        is_valid=false(size(idx));
+      if ~isnumeric(id)
+        is_valid=false(size(id));
       else
-        is_valid = idx >= 1 & idx <= obj.getNumBodies() & mod(idx,1) == 0;
+        is_valid = id >= 1 & id <= obj.getNumBodies() & mod(id,1) == 0;
       end
     end
 
@@ -910,11 +994,11 @@ classdef RigidBodyManipulator < Manipulator
       % @param name is the string name to search for
       % @param robotnum if specified restricts the search to a particular
       % robot
-      if nargin<3, robotnum=0; end
+      if nargin<3, robotnum=-1; end
       if ~isempty(model.frame)
         items = strfind(lower({model.frame.name}),lower(name));
         ind = find(~cellfun(@isempty,items));
-        if (robotnum~=0), ind = ind([model.body(model.frame(ind).body_ind).robotnum]==robotnum); end
+        if (robotnum~=-1), ind = ind([model.body(model.frame(ind).body_ind).robotnum]==robotnum); end
       else
         ind = [];
       end
@@ -989,28 +1073,8 @@ classdef RigidBodyManipulator < Manipulator
           k=k+1;
         end
       end
-
-      for i=1:length(model.body)
-        model.body(i) = updateParams(model.body(i),fr.getPoly, p);
-      end
       
-      for i=1:length(model.force)
-        model.force{i} = updateParams(model.force{i}, fr.getPoly, p);
-      end
-
-      for i=1:length(model.sensor)
-        model.sensor{i} = updateParams(model.sensor{i}, fr.getPoly, p);
-      end
-
-      for i=1:length(model.actuator)
-        model.actuator(i) = updateParams(model.actuator(i), fr.getPoly, p);
-      end
-      
-      for i=1:length(model.frame)
-        model.frame(i) = updateParams(model.frame(i), fr.getPoly, p);
-      end
-      
-      
+      model = applyToAllRigidBodyElements(model,'updateParams',fr.getPoly,p);
 
       model = compile(model);
     end
@@ -1030,9 +1094,9 @@ classdef RigidBodyManipulator < Manipulator
       % @ingroup Kinematic Tree
       if ischar(body_ind_or_joint_name)
         if nargin>2
-          body_ind_or_joint_name = findJointInd(model,body_ind_or_joint_name,robot);
+          body_ind_or_joint_name = findJointId(model,body_ind_or_joint_name,robot);
         else
-          body_ind_or_joint_name = findJointInd(model,body_ind_or_joint_name);
+          body_ind_or_joint_name = findJointId(model,body_ind_or_joint_name);
         end
       end
 
@@ -1040,28 +1104,32 @@ classdef RigidBodyManipulator < Manipulator
       model.body(body_ind_or_joint_name).pitch = nan;
       model.dirty = true;
     end
+    
+    function body_ind = findJointInd(model,varargin)
+      model.warning_manager.warnOnce('Drake:RigidBodyManipulator:finkJointIndDeprecated','findJointInd has been replaced with findJointId.  please update your code');
+      body_ind = findJointId(model,varargin{:});
+    end
 
-    function body_ind = findJointInd(model,jointname,robot_num,error_level)
+    function body_id = findJointId(model,jointname,robot_num,error_level)
       % @param robot_num can be the robot number or the name of a robot
-      % robot_num=0 means look at all robots
+      % robot_num<0 means look at all robots
       % @ingroup Kinematic Tree
-      if nargin<3 || isempty(robot_num), robot_num=0; end
+      if nargin<3 || isempty(robot_num), robot_num=-1; end
       jointname = lower(jointname);
       if ischar(robot_num) robot_num = strmatch(lower(robot_num),lower({model.name})); end
-      items = strfind(lower({model.body.jointname}),jointname);
-      ind = find(~cellfun(@isempty,items));
-      if (robot_num~=0), ind = ind([model.body(ind).robotnum]==robot_num); end
+      ind = find(strcmp(jointname,lower({model.body.jointname})));
+      if (robot_num>=0), ind = ind([model.body(ind).robotnum]==robot_num); end
       if (length(ind)~=1)
         if (nargin<4 || error_level>0)
-          error(['couldn''t find unique joint ' ,jointname]);
+          error('Drake:RigidBodyManipulator:UniqueJointNotFound',['couldn''t find unique joint ' ,jointname]);
         else
-          body_ind=0;
+          body_id=0;
           if (error_level==0)
-            warning(['couldn''t find unique joint ' ,jointname]);
+            warning('Drake:RigidBodyManipulator:UniqueJointNotFound',['couldn''t find unique joint ' ,jointname]);
           end
         end
       else
-        body_ind = ind;
+        body_id = ind;
       end
     end
 
@@ -1121,31 +1189,36 @@ classdef RigidBodyManipulator < Manipulator
       %
       % See also RigidBodyGeometry/getTerrainContactPoints,
       % RigidBodyManipulator/terrainContactPositions
-      if nargin < 2
-        body_idx = 2:obj.getNumBodies(); % World-fixed objects can't collide
-                                         % with the terrain
-      end
-      if nargin >= 3
-        if all(cellfun(@ischar,contact_groups))
-          contact_groups = {contact_groups};
+      checkDirty(obj);
+      if nargin == 1 && ~isempty(obj.cached_terrain_contact_points_struct)
+        terrain_contact_point_struct = obj.cached_terrain_contact_points_struct;
+      else
+        if nargin < 2
+          body_idx = 2:obj.getNumBodies(); % World-fixed objects can't collide
+          % with the terrain
         end
-        if numel(contact_groups) == 1
-          contact_groups = repmat(contact_groups,size(body_idx));
-        else
-          sizecheck(contact_groups,size(body_idx));
-        end
-      end
-      terrain_contact_point_struct = struct('pts',{},'idx',{});
-      for i = 1:length(body_idx)
-        bi=body_idx(i);
-        if bi ~= 1
-          if nargin < 3
-            pts = getTerrainContactPoints(obj.body(bi));
-          else
-            pts = getTerrainContactPoints(obj.body(bi),contact_groups{i});
+        if nargin >= 3
+          if all(cellfun(@ischar,contact_groups))
+            contact_groups = {contact_groups};
           end
-          if ~isempty(pts)
-            terrain_contact_point_struct(end+1) = struct('pts',pts,'idx',bi);
+          if numel(contact_groups) == 1
+            contact_groups = repmat(contact_groups,size(body_idx));
+          else
+            sizecheck(contact_groups,size(body_idx));
+          end
+        end
+        terrain_contact_point_struct = struct('pts',{},'idx',{});
+        for i = 1:length(body_idx)
+          bi=body_idx(i);
+          if bi ~= 1
+            if nargin < 3
+              pts = getTerrainContactPoints(obj.body(bi));
+            else
+              pts = getTerrainContactPoints(obj.body(bi),contact_groups{i});
+            end
+            if ~isempty(pts)
+              terrain_contact_point_struct(end+1) = struct('pts',pts,'idx',bi);
+            end
           end
         end
       end
@@ -1174,7 +1247,7 @@ classdef RigidBodyManipulator < Manipulator
       %                          will be restricted. Optional.
       %                          @default 1:numel(model.name)
       if nargin < 3,          robotnum = 1:numel(model.name); end
-      if all(robotnum == 0),  robotnum = 0:numel(model.name); end
+      if all(robotnum == -1),  robotnum = 0:numel(model.name); end
       for i=1:length(model.body)
         if ismember(model.body(i).robotnum,robotnum)
           model.body(i) = removeCollisionGroups(model.body(i),contact_groups);
@@ -1183,7 +1256,7 @@ classdef RigidBodyManipulator < Manipulator
       model.dirty = true;
     end
 
-    function model = removeCollisionGroupsExcept(model,contact_groups,robotnum)
+    function model = removeCollisionGroupsExcept(model,contact_groups,robotnum,body_ids)
       % model = removeCollisionGroups(model,contact_groups,robotnum) returns
       % the model with all contact groups removed except for those specified
       %
@@ -1193,9 +1266,13 @@ classdef RigidBodyManipulator < Manipulator
       % @param robotnum       -- Vector of robot indices to which operation
       %                          will be restricted. Optional.
       %                          @default 1:numel(model.name)
+      % @param body_ids       -- Vector of body indices to which operation 
+      %                          will be restricted. Optional. 
+      %                          @default 1:numel(model.body)
+      if nargin < 4,          body_ids = 1:numel(model.body); end
       if nargin < 3,          robotnum = 1:numel(model.name); end
-      if all(robotnum == 0),  robotnum = 0:numel(model.name); end
-      for i=1:length(model.body)
+      if all(robotnum == -1),  robotnum = 0:numel(model.name); end
+      for i=body_ids
         if ismember(model.body(i).robotnum,robotnum)
           model.body(i) = removeCollisionGroupsExcept(model.body(i),contact_groups);
         end
@@ -1211,24 +1288,24 @@ classdef RigidBodyManipulator < Manipulator
       %                           * Numeric body index or frame id
       %                           * String containing body or frame name
       % @param robotnum       -- Scalar restricting the search to a particular
-      %                          robot. Optional. @default 0 (all robots)
+      %                          robot. Optional. @default -1 (all robots)
       %
       % @retval body_idx_or_frame_id  -- Numeric body index or frame id
       typecheck(body_or_frame,{'numeric','char'});
-      if nargin < 3, robotnum = 0; end
+      if nargin < 3, robotnum = -1; end
       if isnumeric(body_or_frame)
         sizecheck(body_or_frame,[1,1]);
         body_idx_or_frame_id = body_or_frame;
       else % then it's a string
         try
-          body_idx_or_frame_id = findLinkInd(obj,body_or_frame,robotnum);
+          body_idx_or_frame_id = findLinkId(obj,body_or_frame,robotnum);
         catch ex
           if strcmp(ex.identifier,'Drake:RigidBodyManipulator:UniqueLinkNotFound')
             try
               body_idx_or_frame_id = findFrameId(obj,body_or_frame,robotnum);
             catch ex2
               if strcmp(ex.identifier,'Drake:RigidBodyManipulator:UniqueLinkNotFound')
-                if robotnum == 0
+                if robotnum == -1
                   error('Drake:RigidBodyManipulator:UniqueFrameOrLinkNotFound', ...
                     'Cannot find unique link or frame named %s',body_or_frame);
                 else
@@ -1484,18 +1561,48 @@ classdef RigidBodyManipulator < Manipulator
       % looping every time (since the result is a constant between
       % compiles)
       if nargin < 2
-        robotnum = 0; % robot num of 0 means all robots
+        robotnum = -1; % robot num of -1 means all robots
       end
 
       m = 0;
       for i=1:length(model.body)
-        if robotnum == 0 || model.body(i).robotnum == robotnum
+        if isBodyPartOfRobot(model, model.body(i), robotnum)
           bm = model.body(i).mass;
           m = m + bm;
         end
       end
     end
 
+    function [T,U] = energy(model, x)  
+      % @param x the state vector
+      % @retval T the total kinetic energy
+      % @retval U the total potential energy
+      % todo: add support for an optional robotnum argument?
+      q = x(1:getNumPositions(model));
+      v = x(getNumPositions(model)+1:end);
+      H = manipulatorDynamics(model,q,v);
+      T = .5*v'*H*v;
+
+      if nargout>1
+        U = 0;
+        kinsol = doKinematics(model,q);
+        for i=1:length(model.body)
+          if model.body(i).robotnum<1, continue; end % don't include the world
+          mass = model.body(i).mass;
+          if (mass>0)
+            com = forwardKin(model,kinsol,i,model.body(i).com);
+            U = U - mass*model.gravity'*com;
+          end
+        end
+        
+        for i=1:length(model.force)
+          [thisT,thisU] = energy(model.force{i},model,q,v);
+          T = T+thisT;
+          U = U+thisU;
+        end
+      end
+    end
+    
     function body = newBody(model)
       % @ingroup Kinematic Tree
       errorDeprecatedFunction('RigidBody()');  % since it doesn't actually serve any purpose now that planar rigid bodies are rigid bodies.
@@ -1929,8 +2036,13 @@ classdef RigidBodyManipulator < Manipulator
     function fr = getPositionFrame(obj,robotnum)
       % if robotnum is not specified, then it returns a position frame
       % including all position variables (for all robots)
-      if nargin<2, 
-        fr = MultiCoordinateFrame.constructFrame(obj.robot_position_frames);
+      if getNumPositions(obj)<1, 
+        fr = CoordinateFrame('JointPositions',0); 
+        return;
+      end
+      
+      if nargin<2 || robotnum<0, 
+        fr = MultiCoordinateFrame.constructFrame(obj.robot_position_frames,[],true);
       else
         fr = obj.robot_position_frames{robotnum};
       end
@@ -1939,8 +2051,13 @@ classdef RigidBodyManipulator < Manipulator
     function fr = getVelocityFrame(obj,robotnum)
       % if robotnum is not specified, then it returns a velocity frame
       % including all velocity variables (for all robots)
-      if nargin<2, 
-        fr = MultiCoordinateFrame.constructFrame(obj.robot_velocity_frames);
+      if getNumVelocities(obj)<1, 
+        fr = CoordinateFrame('JointVelocities',0); 
+        return;
+      end
+      
+      if nargin<2 || robotnum<0,
+        fr = MultiCoordinateFrame.constructFrame(obj.robot_velocity_frames,[],true);
       else
         fr = obj.robot_velocity_frames{robotnum};
       end
@@ -1949,7 +2066,7 @@ classdef RigidBodyManipulator < Manipulator
     function fr = getStateFrame(obj,robotnum)
       % if robotnum is not specified, then it returns a state frame
       % including all state variables (for all robots)
-      if nargin<2,
+      if nargin<2 || robotnum<0,
         fr = getStateFrame@DrakeSystem(obj);
       else
         fr = obj.robot_state_frames{robotnum};
@@ -2025,7 +2142,7 @@ classdef RigidBodyManipulator < Manipulator
       pval=[]; pmin=[]; pmax=[];
       index=1;
       for i=1:min(numel(model.name),numel(model.param_db))
-        pn = fieldnames(model.param_db{i});
+        pn = fieldnames(struct(model.param_db{i}));
         frames{i} = CoordinateFrame([model.name{i},'Params'],numel(pn),'p',pn);
         for j=1:numel(pn)
           pval=vertcat(pval,model.param_db{i}.(pn{j}).value);
@@ -2091,6 +2208,7 @@ classdef RigidBodyManipulator < Manipulator
           model.body(i).position_num=0;
         end
       end
+      m = struct('NB',dof,'parent',[],'position_num',[],'pitch',[],'damping',[],'coulomb_friction',[],'static_friction',[],'coulomb_window',[],'Xtree',[],'X_joint_to_body',[],'I',[]);
       m.NB= dof;
       n=1;
       m.f_ext_map_from = inds;  % size is length(model.body) output is index into NB, or zero
@@ -2132,7 +2250,27 @@ classdef RigidBodyManipulator < Manipulator
           m.f_ext_map_to = [m.f_ext_map_to,n+5];
           n=n+6;
         elseif (b.floating==2)
-          error('dynamics for quaternion floating base not implemented yet');
+          if model.use_new_kinsol
+            % quick fix so that quaternion kinematics are usable
+            m.position_num(n+(0:6)) = b.position_num;
+            m.pitch(n+(0:6)) = nan;  % should not be used
+            m.damping(n+(0:6)) = 0;
+            m.coulomb_friction(n+(0:6)) = 0;
+            m.static_friction(n+(0:6)) = 0;
+            m.coulomb_window(n+(0:6)) = eps;
+            m.parent(n+(0:6)) = nan;
+            for j = 0 : 6
+              m.Xtree{n + j} = nan(6, 6);
+            end
+            b.X_joint_to_body = eye(6);
+            for j=0:6
+              m.I{n+j} = zeros(6);
+            end
+            m.f_ext_map_to = [m.f_ext_map_to,n+6];
+            n=n+7;
+          else
+            error('dynamics for quaternion floating base not implemented yet');
+          end
         else
           m.parent(n) = max(model.body(b.parent).position_num);
           m.position_num(n) = b.position_num;  % note: only need this for my floating hack above (remove it when gone)
@@ -2218,18 +2356,7 @@ classdef RigidBodyManipulator < Manipulator
           end
         end
 
-        for j=1:length(model.loop)
-          model.loop(j) = updateForRemovedLink(model.loop(j),model,i);
-        end
-        for j=1:length(model.sensor)
-          model.sensor{j} = updateForRemovedLink(model.sensor{j},model,i);
-        end
-        for j=1:length(model.force)
-          model.force{j} = updateForRemovedLink(model.force{j},model,i);
-        end
-        for j=1:length(model.frame)
-          model.frame(j) = updateForRemovedLink(model.frame(j),model,i);
-        end
+        model = applyToAllRigidBodyElements(model,'updateForRemovedLink',model,i);
         for key = model.collision_filter_groups.keys
           model.collision_filter_groups(key{1}) = updateForRemovedLink(model.collision_filter_groups(key{1}),model,i,parent.linkname,key{1});
         end
@@ -2313,7 +2440,7 @@ classdef RigidBodyManipulator < Manipulator
     end
 
     function id = findCollisionFilterGroupID(model,collision_fg_name)
-        id = uint16(find(~cellfun(@isempty,strfind(model.collision_filter_groups.keys(),collision_fg_name))));
+        id = find(strcmp(model.collision_filter_groups.keys(),collision_fg_name));
         if isempty(id)
           error('RigidBodyManipulator:findCollisionFilterGroupID', ...
                 'Unable to find collision filter group, %s',collision_fg_name);
@@ -2327,7 +2454,7 @@ classdef RigidBodyManipulator < Manipulator
       % In case no robots were loaded from urdf, initialize
       % collision_filter_groups here.
       if isempty(model.collision_filter_groups)
-        model.collision_filter_groups=containers.Map('KeyType','char','ValueType','any');
+        model.collision_filter_groups = PassByValueMap('KeyType','char','ValueType','any');
         model.collision_filter_groups('no_collision') = CollisionFilterGroup();
       end
       if model.contact_options.ignore_self_collisions
@@ -2387,7 +2514,7 @@ classdef RigidBodyManipulator < Manipulator
 
     function link_indices = findCollisionFilterGroupMemberIndices(model,collision_fg_name)
       [linknames,robotnums] = model.collision_filter_groups(collision_fg_name).getMembers();
-      link_indices = cellfun(@(name,num) findLinkInd(model,name,num), ...
+      link_indices = cellfun(@(name,num) findLinkId(model,name,num), ...
                              linknames,robotnums);
     end
 
@@ -2409,8 +2536,6 @@ classdef RigidBodyManipulator < Manipulator
       end
     end
 
-
-
     function model = updateBodyIndices(model,map_from_new_to_old)
       % @ingroup Kinematic Tree
       nold = length(model.body);
@@ -2421,24 +2546,35 @@ classdef RigidBodyManipulator < Manipulator
       map(map_from_new_to_old) = 1:length(model.body);
       map = [0,map];
       mapfun = @(i) map(i+1);
-
+      
+      model = applyToAllRigidBodyElements(model,'updateBodyIndices',mapfun);
+    end
+    
+    function model = applyToAllRigidBodyElements(model,fcn,varargin)
       for i=1:length(model.body)
-        model.body(i) = updateBodyIndices(model.body(i),mapfun);
+        model.body(i) = feval(fcn,model.body(i),varargin{:});
       end
       for i=1:length(model.actuator)
-        model.actuator(i) = updateBodyIndices(model.actuator(i),mapfun);
+        model.actuator(i) = feval(fcn,model.actuator(i),varargin{:});
       end
       for i=1:length(model.loop)
-        model.loop(i) = updateBodyIndices(model.loop(i),mapfun);
+        model.loop(i) = feval(fcn,model.loop(i),varargin{:});
       end
       for i=1:length(model.sensor)
-        model.sensor{i} = updateBodyIndices(model.sensor{i},mapfun);
+        model.sensor{i} = feval(fcn,model.sensor{i},varargin{:});
       end
       for i=1:length(model.force)
-        model.force{i} = updateBodyIndices(model.force{i},mapfun);
+        model.force{i} = feval(fcn,model.force{i},varargin{:});
       end
       for i=1:length(model.frame)
-        model.frame(i) = updateBodyIndices(model.frame(i),mapfun);
+        model.frame(i) = feval(fcn,model.frame(i),varargin{:});
+      end
+      for j=1:length(model.position_constraints)
+        % todo: generalize this by moving the updateConstraint logic above into
+        % drakeFunction.RBM
+        if isa(model.position_constraints{j},'DrakeFunctionConstraint') && isa(model.position_constraints{j}.fcn,'drakeFunction.kinematic.CableLength')
+          model = updatePositionEqualityConstraint(model,j,DrakeFunctionConstraint(model.position_constraints{j}.lb,model.position_constraints{j}.ub,feval(fcn,model.position_constraints{j}.fcn,varargin{:})));
+        end
       end
     end
 
