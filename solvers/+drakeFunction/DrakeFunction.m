@@ -75,6 +75,11 @@ classdef DrakeFunction
       if nargin < 3, same_input = false; end
       if isa(other,'drakeFunction.DrakeFunction')
         fcn = compose(Sum(obj.output_frame,2),Concatenated({obj,other},same_input));
+      elseif isnumeric(other)
+        assert(all(size(other)==[obj.output_frame.dim,1]), ...
+               ['Numeric constants can only be added to DrakeFunctions if ' ...
+                'their size matches the output_frame of the DrakeFunction']);
+        fcn = compose(Affine(obj.output_frame, obj.output_frame, eye(obj.output_frame.dim), other), obj);
       else
         error('Drake:drakeFunction:NotSupported', ...
           'Addition of DrakeFunctions with other classes is not supported');

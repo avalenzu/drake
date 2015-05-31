@@ -55,15 +55,16 @@ function revoluteJointResidualsNonlinearProgramTest()
 
   prog = InverseKinematics(r_max, q0);
   prog = prog.addDisplayFunction(@(q) displayFun(v_max,q), prog.q_idx);
-  %prog = prog.setQ(0*prog.Q);
+  prog = prog.setQ(0*prog.Q);
   prog = prog.addDecisionVariable(rbm.getNumPositions(), rbm.getPositionFrame().coordinates);
-  joint_angle_idx = (prog.num_vars-rbm.getNumPositions()):prog.num_vars;
+  joint_angle_idx = (prog.num_vars-rbm.getNumPositions()+1):prog.num_vars;
 
   quat_idx = reshape(prog.q_idx, 7, []);
   quat_idx(1:3,:) = [];
   norm_squared = NormSquared(drakeFunction.frames.Quaternion());
   [jlmin, jlmax] = rbm.getJointLimits();
   for i = 1:(n_bodies-1)
+    prog = prog.addConstraint(DrakeFunctionConstraint(1, 1, norm_squared), quat_idx(:,i));
     if rbm.findLinkId(parent_name{i}) ~= 1
       joint_residuals = RevoluteJointResiduals(r_max, parent_name{i}, ...
                                                   child_name{i}, ...
@@ -75,7 +76,6 @@ function revoluteJointResidualsNonlinearProgramTest()
  
       prog = prog.addConstraint(joint_residual_constraint, ...
                                 [prog.q_idx; joint_angle_idx(child_position_num{i})]);
-      prog = prog.addConstraint(DrakeFunctionConstraint(1, 1, norm_squared), quat_idx(:,i));
       prog = prog.addConstraint( ...
                 BoundingBoxConstraint(jlmin(child_position_num{i}), ...
                                       jlmax(child_position_num{i})), ...
@@ -83,13 +83,9 @@ function revoluteJointResidualsNonlinearProgramTest()
     end
   end
 
-  %% Test a basic RevoluteJointResiduals object
-  child = rbm.getBody(rbm.findLinkId('l_scap'));
-  test_fcn = RevoluteJointResiduals(rbm,'l_scap','l_clav', child.Ttree, ...
-                                        child.joint_axis);
+  prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(nq), -q_star), joint_angle_idx);
 
   [q, F, info] = prog.solve(q0);
-  keyboard
 
 end
 

@@ -146,21 +146,6 @@ classdef RigidBody < RigidBodyElement
       errorDeprecatedFunction('replaceCollisionGeometryWithConvexHull');
     end
 
-    function pts = getAxisAlignedBoundingBoxPoints(body)
-      pts = [];
-      for i = 1:length(body.collision_geometry)
-        pts = [pts, body.collision_geometry{i}.getBoundingBoxPoints()];
-      end
-      max_vals = repmat(max(pts,[],2),1,8);
-      min_vals = repmat(min(pts,[],2),1,8);
-      min_idx = logical([ 0 1 1 0 0 1 1 0;
-                          1 1 1 1 0 0 0 0;
-                          1 1 0 0 0 0 1 1]);
-      pts = zeros(3,8);
-      pts(min_idx) = min_vals(min_idx);
-      pts(~min_idx) = max_vals(~min_idx);
-    end
-    
     function body = replaceCollisionGeometryWithConvexHull(body,scale_factor)
       pts = [];
       for i = 1:length(body.collision_geometry)

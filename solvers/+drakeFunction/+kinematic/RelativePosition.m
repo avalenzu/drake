@@ -85,6 +85,11 @@ classdef RelativePosition < drakeFunction.kinematic.Kinematic
           end
         end
       else
+        %xyz_quat = reshape(q, 7, []);
+        %xyz = xyz_quat(1:3, :);
+        %quat = xyz_quat(4:7, :);
+        %quat = bsxfun(@rdivide, quat, sqrt(sum(quat.^2, 1)));
+        %q = reshape([xyz; quat], [], 1);
         kinsol = obj.rbm.doKinematics(q);
         if obj.frameA == 0
           [pts_in_world,JA] = getCOM(obj.rbm,kinsol);

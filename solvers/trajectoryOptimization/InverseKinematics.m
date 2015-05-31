@@ -56,7 +56,7 @@ classdef InverseKinematics < NonlinearProgram
       obj.q_idx = (1:obj.nq)';
       obj.qsc_weight_idx = [];
       [q_lb,q_ub] = obj.robot.getJointLimits();
-      [obj,obj.rbm_joint_bnd_cnstr_id] = obj.addBoundingBoxConstraint(BoundingBoxConstraint(q_lb,q_ub),obj.q_idx);
+      %[obj,obj.rbm_joint_bnd_cnstr_id] = obj.addBoundingBoxConstraint(BoundingBoxConstraint(q_lb,q_ub),obj.q_idx);
 
       [obj,kinsol_dataind] = obj.addSharedDataFunction(@obj.kinematicsData,{obj.q_idx});
       obj.kinsol_dataind = kinsol_dataind;

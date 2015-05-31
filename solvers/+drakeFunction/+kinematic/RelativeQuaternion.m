@@ -17,6 +17,9 @@ classdef RelativeQuaternion < drakeFunction.kinematic.Kinematic
       % @param frameB     -- Body/frame name or frame id/body idx
       %
       % @retval obj       -- RelativeQuaternion object
+      assert(rbm.use_new_kinsol, ...
+             ['drakeFunction.kinematic.RelativeQuaternion only supports ' ...
+              'manipulators with use_new_kinsol = true'])
       obj = obj@drakeFunction.kinematic.Kinematic(rbm,drakeFunction.frames.Quaternion());
       obj.frameA = obj.rbm.parseBodyOrFrameID(frameA);
       obj.frameB = obj.rbm.parseBodyOrFrameID(frameB);
@@ -31,6 +34,11 @@ classdef RelativeQuaternion < drakeFunction.kinematic.Kinematic
       % @param obj  -- drakeFunction.kinematic.RelativeQuaternion object
       % @param q    -- Column vector of joint positions
       if nargin < 3, kinsol_options = struct(); end
+      %xyz_quat = reshape(q, 7, []);
+      %xyz = xyz_quat(1:3, :);
+      %quat = xyz_quat(4:7, :);
+      %quat = bsxfun(@rdivide, quat, sqrt(sum(quat.^2, 1)));
+      %q = reshape([xyz; quat], [], 1);
       kinsol = obj.rbm.doKinematics(q, [], kinsol_options);
       options.base_or_frame_id = obj.frameB;
       options.rotation_type = 2;

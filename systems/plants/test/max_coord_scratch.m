@@ -87,19 +87,18 @@ gaze_constraint = cell(n_bodies-1, 1);
 position_constraint = cell(n_bodies-1, 1);
 conethreshold = 0;
 position_tol = 1e-6;
-lb = -position_tol*ones(3,1);
-ub = position_tol*ones(3,1);
 R3 = realCoordinateSpace(3);
 poseExp2poseQuat = [drakeFunction.Identity(R3); drakeFunction.geometry.Exp2Quat()];
 postureExp2postureQuat = poseExp2poseQuat.duplicate(r_max.getNumBodies() - 1);
 postureExp2postureQuat = compose(drakeFunction.Linear(postureExp2postureQuat.output_frame, r_max.getPositionFrame(), eye(r_max.getNumPositions())), postureExp2postureQuat);
 for i = 1:numel(relative_position_fun)
   if r.findLinkId(parent_name{i}) ~= 1
-    relative_position_fun{i} = RelativePosition(r_max, parent_name{i}, child_name{i}, child_xyz{i});
+    pts = [child_xyz{i}, child_xyz{i} + child_joint_axis{i}];
+    relative_position_fun{i} = RelativePosition(r_max, parent_name{i}, child_name{i}, pts);
     relative_position_fun{i} = relative_position_fun{i}(postureExp2postureQuat);
     %position_constraint{i} = Point2PointDistanceConstraint(r_max, parent_name{i}, child_name{i}, child_xyz{i}, zeros(3,1), 0, position_tol);
-    %position_constraint{i} = RelativePositionConstraint(r_max, child_xyz{i}, lb, ub, parent_name{i}, child_name{i});
-    %gaze_constraint{i} = RelativeGazeDirConstraint(r_max, child_name{i}, parent_name{i}, child_joint_axis{i}, child_joint_axis{i}, conethreshold);
+    %position_constraint{i} = RelativePositionConstraint(r_max, child_xyz{i}, lb_local, ub_local, parent_name{i}, child_name{i});
+    gaze_constraint{i} = RelativeGazeDirConstraint(r_max, child_name{i}, parent_name{i}, child_joint_axis{i}, child_joint_axis{i}, conethreshold);
   end
 end
 gaze_constraint = gaze_constraint(~cellfun(@isempty, gaze_constraint));
@@ -136,44 +135,56 @@ prog = prog.setSolverOptions('snopt', 'LineSearchTolerance', 0.9);
 prog = prog.setSolverOptions('snopt', 'MajorFeasibilityTolerance', 1e-4);
 prog = prog.setSolverOptions('snopt', 'MajorOptimalityTolerance', 1e-2);
 prog = prog.setSolverOptions('snopt', 'print', 'snopt.out');
-prog = prog.addDisplayFunction(@(q) displayFun(v_max,q), prog.q_idx);
+q_idx = 1:prog.num_vars;
+prog = prog.addDisplayFunction(@(q) displayFun(v_max,q), q_idx);
 lb = -1e-4*ones(3,1);
 ub = 1e-4*ones(3,1);
-quat_idx = reshape(prog.q_idx, 7, []);
-quat_idx(1:3,:) = [];
-norm_squared = NormSquared(Quaternion());
+expMap_idx = reshape(q_idx, 6, []);
+expMap_idx(1:3,:) = [];
+norm_squared = NormSquared(realCoordinateSpace(3));
 %cost = diag(prog.Q);
 %cost(:) = 1;
-%cost(quat_idx(:)) = 0;
+%cost(expMap_idx(:)) = 0;
 %cost(1:3) = 0;
-prog = prog.setQ(0*prog.Q);
+%prog = prog.setQ(0*prog.Q);
 
+lb = -position_tol*ones(3,1);
+ub = position_tol*ones(3,1);
 for i = 1:numel(relative_position_fun)
   if r.findLinkId(parent_name{i}) ~= 1
-    %prog = prog.addConstraint(DrakeFunctionConstraint(lb, ub, relative_position_fun{i}), prog.q_idx);
-    prog = prog.addConstraint(DrakeFunctionConstraint(1, 1, norm_squared), quat_idx(:,i));
+    lb_local = [lb; lb+child_joint_axis{i}];
+    ub_local = [ub; ub+child_joint_axis{i}];
+    prog = prog.addConstraint(DrakeFunctionConstraint(lb_local, ub_local, relative_position_fun{i}), q_idx);
+    %prog = prog.addConstraint(DrakeFunctionConstraint(1, 1, norm_squared), expMap_idx(:,i));
   end
 end
 
 squared = drakeFunction.ConstantPower(realCoordinateSpace(1), 2);
 for i = 2:numel(child_name)
-  quat_diff = RelativeQuaternion(r_max,child_name{i},parent_name{i});
-  quat_diff_cost1 = drakeFunction.Linear(Quaternion(), realCoordinateSpace(1), quat_des{i}');
-  quat_diff_cost = -1/(r_max.getNumBodies()-1)*squared(quat_diff_cost1(quat_diff));
-  cost = DrakeFunctionConstraint(-Inf, Inf, quat_diff_cost);
-  prog = prog.addCost(cost, prog.q_idx);
+  %quat_diff = RelativeQuaternion(r_max,child_name{i},parent_name{i});
+  %quat_diff_cost1 = drakeFunction.Linear(Quaternion(), realCoordinateSpace(1), quat_des{i}');
+  %quat_diff_cost = -1/(r_max.getNumBodies()-1)*squared(quat_diff_cost1(quat_diff));
+  %cost = DrakeFunctionConstraint(-Inf, Inf, quat_diff_cost);
+  %prog = prog.addCost(cost, q_idx);
   %[f,df_taylorvar] = geval(@(q) eval(quat_diff,q),q0,struct('grad_method','taylorvar'));
   %[f,df_user] = geval(@(q) eval(quat_diff,q),q0,struct('grad_method','user'));
   %plot((df_taylorvar-df_user)','.');
   %drawnow;
 end
-prog = prog.addConstraint(ConstantConstraint(q_nom(1:2)), prog.q_idx(1:2));
+prog = prog.addConstraint(ConstantConstraint(q_nom(1:2)), q_idx(1:2));
 %hand_constraint = DrakeFunctionConstraint(target - tol, target + tol, WorldPosition(r_max, 'r_hand', [0; -0.3; 0]));
-%prog = prog.addConstraint(hand_constraint, prog.q_idx);
+%prog = prog.addConstraint(hand_constraint, q_idx);
 keyboard
 end
 
 function displayFun(v, q)
-  v.draw(0,q);
+  q = reshape(q, 6, []);
+  xyz = q(1:3, :);
+  exp_map = q(4:6, :);
+  quat = zeros(4, size(exp_map, 2));
+  for i = 1:size(exp_map, 2)
+    quat(:, i) = expmap2quat(exp_map(:, i));
+  end
+  v.draw(0,reshape([xyz; quat], [], 1));
 end
 
