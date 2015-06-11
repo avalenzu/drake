@@ -84,7 +84,7 @@ classdef Concatenated < drakeFunction.DrakeFunction
     end
 
     function obj = setSparsityPattern(obj)
-      % [iCfun, jCvar] = getSparsityPattern(obj) returns the row and
+      % [iCfun, jCvar] = setSparsityPattern(obj) returns the row and
       %   column indices of the potentially non-zero elements of this
       %   function's Jacobian.
       %
@@ -95,9 +95,11 @@ classdef Concatenated < drakeFunction.DrakeFunction
       f_cell = cell(obj.n_contained_functions,1);
       df_cell = cell(obj.n_contained_functions,1);
       for i = 1:obj.n_contained_functions
-        f_cell{i} = NaN(obj.contained_functions{i}.getNumOutputs(),1);
-        df_cell{i} = ones(obj.contained_functions{i}.getNumOutputs(), ...
-                          obj.contained_functions{i}.getNumInputs());
+        f = obj.contained_functions{i};
+        f_cell{i} = NaN(f.getNumOutputs(),1);
+%         df_cell{i} = ones(obj.contained_functions{i}.getNumOutputs(), ...
+%                           obj.contained_functions{i}.getNumInputs());
+        df_cell{i} = sparse(f.iCfun, f.jCvar, ones(size(f.iCfun)), f.getNumOutputs(), f.getNumInputs());
       end
       [~,df] = combineOutputs(obj,f_cell,df_cell);
       [obj.iCfun, obj.jCvar] = find(df);

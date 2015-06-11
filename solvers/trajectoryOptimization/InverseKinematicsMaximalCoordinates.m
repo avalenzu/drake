@@ -16,11 +16,11 @@ classdef InverseKinematicsMaximalCoordinates < InverseKinematics
       for i = 2:obj.robot_max.getNumBodies()
         var_names = [var_names, ...
                      cellStrCat(obj.robot_max.getLinkName(i), ...
-                                {'x', 'y', 'z', 'v1', 'v2', 'v3'})]; %#ok
+                                {'x', 'y', 'z', 'qw', 'qx', 'qy', 'qz'})]; %#ok
       end
       old_num_vars = obj.num_vars;
       obj = obj.addDecisionVariable(numel(var_names), var_names);
-      obj.body_pose_idx = reshape((old_num_vars + 1):obj.num_vars, 6, []);
+      obj.body_pose_idx = reshape((old_num_vars + 1):obj.num_vars, 7, []);
     end
     
     function obj = addJointConstraints(obj)
@@ -34,28 +34,41 @@ classdef InverseKinematicsMaximalCoordinates < InverseKinematics
       postureExp2postureQuat = [postureExp2postureQuat;drakeFunction.Identity(R1)];
       for i = 2:obj.robot.getNumBodies()
         body = obj.robot.getBody(i);
+        parent_name = obj.robot.getLinkName(body.parent);
+        child_name = body.linkname;
+        parent_idx = obj.robot_max.findLinkId(parent_name) - 1;
+        child_idx = obj.robot_max.findLinkId(child_name) - 1;
+        child_Ttree = body.Ttree;
+        child_joint_axis = body.joint_axis;
+        child_position_num = body.position_num;
         if ~strcmp(body.jointname, 'base')
-          parent_name = obj.robot.getLinkName(body.parent); 
-          child_name = body.linkname; 
-          child_Ttree = body.Ttree;
-          child_joint_axis = body.joint_axis;
-          child_position_num = body.position_num;
-          joint_residual = RevoluteJointResiduals(obj.robot_max, parent_name, ...
-            child_name, ...
-            child_Ttree, ...
-            child_joint_axis);
-          joint_residual = joint_residual(postureExp2postureQuat);
+          joint_residual = RevoluteJointResiduals(child_Ttree, ...
+                                                  child_joint_axis);
+%           joint_residual = joint_residual(postureExp2postureQuat);
           joint_residual_constraint = DrakeFunctionConstraint(zeros(4,1), ...
             zeros(4,1), ...
             joint_residual);
 
           obj = obj.addConstraint(joint_residual_constraint, ...
-            [obj.body_pose_idx(:); obj.q_idx(child_position_num)]); 
-          obj = obj.addConstraint(BoundingBoxConstraint(-pi*ones(3,1), ...
-                                                        pi*ones(3,1)), ...
-                                  obj.body_pose_idx(4:6, i-1)); 
+            [reshape(obj.body_pose_idx(:,[parent_idx, child_idx]),[],1); obj.q_idx(child_position_num)]); 
         end
+        obj = obj.addConstraint(QuadraticConstraint(1, 1, 2*eye(4), zeros(4,1)), ...
+          obj.body_pose_idx(4:7, child_idx));
       end
+        obj = obj.addConstraint(BoundingBoxConstraint(-ones(numel(obj.body_pose_idx(4:7, :)),1), ones(numel(obj.body_pose_idx(4:7, :)),1)), obj.body_pose_idx(4:7, :));
+    end
+    
+    function [x,F,info,infeasible_constraint] = solve(obj,q_seed)
+      x0 = rand(obj.num_vars,1);
+      x0(obj.body_pose_idx(4,:), 1);
+      x0(obj.q_idx) = q_seed;
+      if(~isempty(obj.qsc_weight_idx))
+        x0(obj.qsc_weight_idx) = 1/length(obj.qsc_weight_idx);
+      end
+      [x,F,info,infeasible_constraint] = solve@NonlinearProgram(obj,x0);
+      q = x(obj.q_idx);
+      q = max([obj.x_lb(obj.q_idx) q],[],2);
+      q = min([obj.x_ub(obj.q_idx) q],[],2);
     end
   end
 
