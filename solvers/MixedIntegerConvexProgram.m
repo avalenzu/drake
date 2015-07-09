@@ -355,7 +355,7 @@ classdef MixedIntegerConvexProgram
       objective = obj.symbolic_objective;
 
       if nargin < 2 || isempty(params)
-        params = sdpsettings('solver', 'gurobi', 'verbose', 0);
+        params = sdpsettings('solver', 'gurobi', 'verbose', 1);
       end
 
       % Now add in any constraints or objectives which were declared non-symbolically

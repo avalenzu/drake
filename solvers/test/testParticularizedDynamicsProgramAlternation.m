@@ -30,15 +30,9 @@ for iter = 1:M
     end
   end
 
-  %prog = prog.addInitialVelocityConstraints([0;0;0],1);
-  %prog = prog.addInitialVelocityConstraints([0;0;0],2);
-  %prog = prog.addInitialVelocityConstraints([0;0;0],3);
-  %prog = prog.addInitialVelocityConstraints([0;0;0],4);
   prog = prog.addInitialVelocityConstraints([0;1;-1],1);
   prog = prog.addInitialVelocityConstraints([-1;0;1],2);
-  prog = prog.addInitialVelocityConstraints([1;-1;0],3);
-  %prog = prog.addInitialCOMPositionConstraint([0;0;0]);
-  %prog = prog.addParticlePositionConstraint(vertices, 1);
+  prog = prog.addInitialVelocityConstraints([1;-1;0],3);d
   [prog, solvertime, objval] = solve(prog);
   v_position{end+1} = prog.constructVisualizer();
   xtraj_position{end+1} = prog.extractXtraj();
