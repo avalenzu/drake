@@ -285,10 +285,16 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
           end
           % HACK
           if n < obj.N
-            obj = obj.addSymbolicConstraints(implies(sum(C(:, n+1),1) == 0, fc(:,n) == 0));
+            ri_next = obj.vars.(obj.positionName(i, n+1)).symb;
+            obj = obj.addSymbolicConstraints(implies(C(1, n) + C(1, n+1) == 2, ri == ri_next));
+            obj = obj.addSymbolicConstraints(implies(~C(1, n+1), fc(:,n) == 0));
           end
-          obj = obj.addSymbolicConstraints(implies(sum(C(:, n),1) == 0, ri(3) >= 0));
-          obj = obj.addSymbolicConstraints(implies(sum(C(:, n),1) == 1, vi == 0));
+          %obj = obj.addSymbolicConstraints(implies(~C(1, n), fc(:,n) == 0));
+          obj = obj.addSymbolicConstraints(implies(~C(1, n), ri(3) >= 0));
+          %if n > 1
+            %obj = obj.addSymbolicConstraints(implies(C(1, n-1), norm(vi) <= 0.05));
+          %end
+          %obj = obj.addSymbolicConstraints(implies(C(1, n), norm(vi) <= 0.05));
           % END_HACK
         end
       end
@@ -304,6 +310,9 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
           %gij = obj.vars.(obj.forceName(i, j, n)).symb;
           %obj = obj.addSymbolicCost(gij'*gij);
         end
+      end
+      for i = 1:obj.n_particles
+        g = [g; reshape(obj.vars.(obj.contactForceName(i)).symb, [], 1)];
       end
       obj = obj.addSymbolicCost(g'*g);
     end
