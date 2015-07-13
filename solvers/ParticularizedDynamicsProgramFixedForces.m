@@ -2,8 +2,8 @@ classdef ParticularizedDynamicsProgramFixedForces < MixedIntegerConvexProgram
   properties
     N = 2
     position_max = 100
-    velocity_max = 10
-    force_max = 1e2
+    velocity_max = 100
+    force_max = 1e4
     E = [1, 2; ...
          1, 3; ...
          1, 4; ...

@@ -5,12 +5,11 @@ N = 20;
 r_array = repmat(reshape(vertices, [], 1), [1, N]);
 %r_array = r_array + 0.01*randn(size(r_array));
 
-
 v_position = {};
 v_force_velocity = {};
 xtraj_position = {};
 xtraj_force_velocity = {};
-M = 5;
+M = 10;
 for iter = 1:M
   prog = ParticularizedDynamicsProgramFixedPositions.fromVertices(vertices, N, 0.05, r_array);
   if exist('v_array', 'var')
@@ -32,14 +31,22 @@ for iter = 1:M
 
   prog = prog.addInitialVelocityConstraints([0;1;-1],1);
   prog = prog.addInitialVelocityConstraints([-1;0;1],2);
-  prog = prog.addInitialVelocityConstraints([1;-1;0],3);d
+  prog = prog.addInitialVelocityConstraints([1;-1;0],3);
   [prog, solvertime, objval] = solve(prog);
   v_position{end+1} = prog.constructVisualizer();
   xtraj_position{end+1} = prog.extractXtraj();
   fprintf('Fixed position cost: %f\n', objval);
 
-  v_array = prog.extractVData();
-  g_array = prog.extractFData();
+  if exist('v_array', 'var')
+    v_array = 0.5*v_array + 0.5*prog.extractVData();
+  else
+    v_array = prog.extractVData();
+  end
+  if exist('g_array', 'var')
+    g_array = 0.5*g_array + 0.5*prog.extractFData();
+  else
+    g_array = prog.extractFData();
+  end
   g_array(g_array < sqrt(eps)) = 0;
   v_array(v_array < sqrt(eps)) = 0;
   prog_2 = ParticularizedDynamicsProgramFixedForces.fromVertices(vertices, N, 0.05, v_array, g_array);
@@ -52,6 +59,6 @@ for iter = 1:M
   [prog_2, solvertime, objval] = solve(prog_2);
   v_force_velocity{end+1} = prog_2.constructVisualizer();
   xtraj_force_velocity{end+1} = prog_2.extractXtraj();
-  r_array = prog_2.extractRData();
+  r_array = 0.5*r_array + 0.5*prog_2.extractRData();
   fprintf('Fixed force/velocity cost: %f\n', objval);
 end

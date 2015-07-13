@@ -2,7 +2,7 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
   properties
     N = 2
     position_max = 100
-    velocity_max = 1000
+    velocity_max = 100
     force_max = 1e2
     E = [1, 2; ...
          1, 3; ...
@@ -64,7 +64,8 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
       obj = obj.addDynamicsConstraints();
       obj = obj.addEdgeLengthConstraints();
       obj = obj.addForceConstraints();
-%       obj = obj.addPositionCosts();
+      %obj = obj.addPositionCosts();
+      %obj = obj.addPositionConstraints();
       obj = obj.addForceCosts();
       options.floating = true;
       %urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'FallingBrick.urdf');
@@ -229,6 +230,18 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
       end
       obj = obj.addSymbolicCost(sum((r_vars(:) - obj.r_array(:)).^2));
     end
+
+    function obj = addPositionConstraints(obj)
+      r_vars = [];
+      max_delta_r = 1;
+      for n = 1:obj.N
+        for i = 1:obj.n_particles
+          r_vars = [r_vars; obj.vars.(obj.positionName(i, n)).symb]; %#ok
+        end
+      end
+      obj = obj.addSymbolicConstraints(norm(r_vars(:) - obj.r_array(:)) <= max_delta_r);
+    end
+
     function obj = addInitialCOMPositionConstraint(obj, r_com_0_desired)
       r_com_0 = 0;
       for i = 1:obj.n_particles
@@ -276,17 +289,22 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
             normal = obj.contact_regions(k).normal;
             fc_perp = dot(normal, fc(:,n))*normal;
             fc_tan = fc(:,n) - fc_perp;
+            mu = obj.contact_regions(k).mu;
             obj = obj.addSymbolicConstraints(implies(C(k, n), ...
               obj.contact_regions(k).A_eq*ri == obj.contact_regions(k).b_eq));
+            %obj = obj.addSymbolicConstraints(implies(C(k, n), ...
+              %(fc_tan'*fc_tan) <= mu*(fc_perp'*fc_perp)));
             obj = obj.addSymbolicConstraints(implies(C(k, n), ...
-              fc_tan <= obj.contact_regions(k).mu*fc_perp));
-            obj = obj.addSymbolicConstraints(implies(C(k, n), ...
-              dot(normal, fc(:,n)) >= 0));
+              norm(fc_tan) <= mu*dot(normal, fc(:,n))));
+              %dot(normal, fc(:,n)) >= 0.5*norm(fc(:,n))));
           end
           % HACK
           if n < obj.N
             ri_next = obj.vars.(obj.positionName(i, n+1)).symb;
             obj = obj.addSymbolicConstraints(implies(C(1, n) + C(1, n+1) == 2, ri == ri_next));
+            %obj = obj.addSymbolicConstraints(implies(C(1, n), vi == 0));
+            %obj = obj.addSymbolicConstraints(implies(C(1, n), ri == ri_next));
+            %obj = obj.addSymbolicConstraints(implies(C(1, n) + C(1, n+1) == 2, vi == 0));
             obj = obj.addSymbolicConstraints(implies(~C(1, n+1), fc(:,n) == 0));
           end
           %obj = obj.addSymbolicConstraints(implies(~C(1, n), fc(:,n) == 0));
@@ -318,6 +336,7 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
     end
 
     function obj = addEdgeLengthConstraints(obj)
+      tol = 0.01;
       for k = 1:size(obj.E,2)
         e = obj.E(:, k);
         i = e(1);
@@ -330,7 +349,7 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
           vi = obj.vars.(obj.velocityName(i, n)).symb;
           vj = obj.vars.(obj.velocityName(j, n)).symb;
 %           obj = obj.addSymbolicConstraints(ri_fixed'*vi - rj_fixed'*vi - ri_fixed'*vj + rj_fixed'*vj == 0);
-          obj = obj.addSymbolicConstraints(sum((ri-rj)'*(ri_fixed-rj_fixed)) == obj.edge_length(k)^2);
+          obj = obj.addSymbolicConstraints(((1-tol)*obj.edge_length(k))^2 <=sum((ri-rj)'*(ri_fixed-rj_fixed)) <= ((1+tol)*obj.edge_length(k))^2);
         end
       end
     end
@@ -373,6 +392,17 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
       end
     end
 
+    function f_data = extractFData(obj)
+      f_data = zeros(size(obj.E,2), size(obj.E,2), obj.N);
+      for n = 1:obj.N
+        for k = 1:size(obj.E,2)
+          i = obj.E(1,k);
+          j = obj.E(2,k);
+          f_data(i, j, n) = obj.vars.(obj.forceName(i, j, n)).value;
+        end
+      end
+    end
+
     function ftraj = extractFtraj(obj)
       f_data = zeros(3*size(obj.E,2), obj.N);
       t = cumsum(repmat(obj.dt, 1, obj.N));
@@ -390,7 +420,8 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
       v = obj.vis_model.constructVisualizer(varargin{:});
     end
 
-    function plotAngularMomentum(obj)
+    function plotAngularMomentum(obj, filename)
+      print_to_file = nargin > 1;
       t = cumsum(repmat(obj.dt, 1, obj.N));
       r_data = obj.extractRData();
       v_data = obj.extractVData();
@@ -402,12 +433,18 @@ classdef ParticularizedDynamicsProgramTwoPositions < MixedIntegerConvexProgram
       v_data_3D = bsxfun(@minus, v_data_3D, v_com);
       momentum_3D = bsxfun(@times, obj.mass', v_data_3D);
       angular_momentum = squeeze(sum(cross(r_data_3D, momentum_3D),2));
+      if print_to_file
+        figure('visible','off')
+      end
       subplot(2,1,1)
       plot(t, angular_momentum);
       title('Angular momentum');
       subplot(2,1,2)
       plot(t, squeeze(v_com*sum(obj.mass)));
       title('Linear momentum');
+      if print_to_file
+        print(gcf,'-dpdf',filename);
+      end
     end
 
   end

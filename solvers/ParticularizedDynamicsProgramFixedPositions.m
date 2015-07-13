@@ -3,7 +3,7 @@ classdef ParticularizedDynamicsProgramFixedPositions < MixedIntegerConvexProgram
     N = 2
     position_max = 100
     velocity_max = 100
-    force_max = 1e2
+    force_max = 1e4
     E = [1, 2; ...
          1, 3; ...
          1, 4; ...
@@ -52,7 +52,7 @@ classdef ParticularizedDynamicsProgramFixedPositions < MixedIntegerConvexProgram
       obj = obj.addForceVariables();
       %obj = obj.addEdgeLengthSectorVariables();
       obj = obj.addDynamicsConstraints();
-      %obj = obj.addEdgeLengthConstraints();
+      obj = obj.addEdgeLengthConstraints();
       %obj = obj.addForceConstraints();
       %obj = obj.addForceCosts();
       options.floating = true;
@@ -150,10 +150,10 @@ classdef ParticularizedDynamicsProgramFixedPositions < MixedIntegerConvexProgram
           vi_mid = vi + 0.5*h/obj.mass(i)*fi;
           ri_next_desired = ri + h*vi_mid;
           vi_next_desired = vi_mid + 0.5*h/obj.mass(i)*fi_next;
-          %obj = obj.addSymbolicConstraints(ri_next == ri_next_desired);
-          %obj = obj.addSymbolicConstraints(vi_next == vi_next_desired);
-          obj = obj.addSymbolicCost(sum((ri_next - ri_next_desired).^2));
-          obj = obj.addSymbolicCost(sum((vi_next - vi_next_desired).^2));
+          obj = obj.addSymbolicConstraints(ri_next == ri_next_desired);
+          obj = obj.addSymbolicConstraints(vi_next == vi_next_desired);
+          %obj = obj.addSymbolicCost(sum((ri_next - ri_next_desired).^2));
+          %obj = obj.addSymbolicCost(sum((vi_next - vi_next_desired).^2));
         end
       end
     end
