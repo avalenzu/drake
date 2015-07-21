@@ -12,12 +12,13 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
     z_fixed_array
     F_fixed_array
     M_fixed_array
-    regions = struct('A', {}, 'b', {}, 'normal', {}, 'mu', {}, 'ncon', {});
+    regions = struct('A', {}, 'b', {}, 'Aeq', {}, 'beq', {}, 'normal', {}, 'mu', {}, 'ncon', {});
     feet
     friction_cone_normals = [0.5, -0.25,  -0.25; ...
                                  0,    0.433, -0.433; ...
                                  0.5,  0.5,    0.5];
     contact_point_slack_weight = 1;
+    fix_forces = false;
                               
   end
 
@@ -62,10 +63,14 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         obj = obj.addSymbolicCost(sum((obj.vars.w.symb(:) - obj.w_fixed_array(:)).^2));
         obj = obj.addSymbolicCost(sum((obj.vars.z.symb(:) - obj.z_fixed_array(:)).^2));
         %obj = obj.addSymbolicCost(obj.vars.contact_point_slack.symb);
-        %for i = 1:size(obj.contact_pts,2)
-          %obj = obj.addSymbolicCost(sum(sum((obj.vars.(sprintf('F%d',i)).symb - obj.F_fixed_array(:,:,i)).^2)));
-          %obj = obj.addSymbolicCost(sum(sum((obj.vars.(sprintf('M%d',i)).symb - obj.M_fixed_array(:,:,i)).^2)));
-        %end
+        for i = 1:numel(obj.feet)
+          obj = obj.addSymbolicCost(sum(sum((obj.vars.(sprintf('F%d',i)).symb - obj.F_fixed_array(:,:,i)).^2)));
+          obj = obj.addSymbolicCost(sum(sum((obj.vars.(sprintf('M%d',i)).symb - obj.M_fixed_array(:,:,i)).^2)));
+          %obj = obj.addSymbolicCost(sum(sum((obj.vars.(sprintf('r_foot%d',i)).symb - obj.feet(i).r_fixed).^2)));
+          obj = obj.addSymbolicCost(sum(sum(obj.vars.(sprintf('v_foot%d',i)).symb.^2)));
+          obj = obj.addSymbolicCost(sum(sum(obj.vars.(sprintf('F%d',i)).symb.^2)));
+          obj = obj.addSymbolicCost(sum(sum(obj.vars.(sprintf('M%d',i)).symb.^2)));
+        end
       else
         Q = zeros(obj.nv);
         c = zeros(obj.nv, 1);
@@ -98,6 +103,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           F_next = m*g; %#ok
           for i = 1:numel(obj.feet)
             Fname = sprintf('F%d', i);
+            rname = sprintf('r_foot%d', i);
             vname = sprintf('v_foot%d', i);
             F = F + obj.vars.(Fname).symb(:, n);
             F_next = F_next + obj.vars.(Fname).symb(:, n+1);
@@ -177,6 +183,8 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           for i = 1:numel(obj.feet)
             M_fixed = obj.M_fixed_array(:, n, i);
             F_fixed = obj.F_fixed_array(:, n, i);
+            M_next_fixed = obj.M_fixed_array(:, n, i);
+            F_next_fixed = obj.F_fixed_array(:, n, i);
             rname = sprintf('r_foot%d', i);
             r_foot = obj.vars.(rname).symb(:, n);
             r_foot_next = obj.vars.(rname).symb(:, n);
@@ -184,17 +192,19 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
             r_foot_next_fixed = obj.feet(i).r_fixed(:, n+1);
             Fname = sprintf('F%d', i);
             Mname = sprintf('M%d', i);
-            if obj.fix_forces
-              T = T + quatRotateVec(quatConjugate(z_fixed), obj.vars.(Mname).symb(:, n)) ...
-                + cross(obj.contact_pts(:, i) + r_foot, quatRotateVec(quatConjugate(z_fixed), obj.vars.(Fname).symb(:, n)));
-              T_next = T_next + quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Mname).symb(:, n+1)) ...
-                + cross(obj.contact_pts(:, i) + r_foot_next_fixed, quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Fname).symb(:, n+1)));
-            else
-              T = T + quatRotateVec(quatConjugate(z_fixed), obj.vars.(Mname).symb(:, n)) ...
-                + cross(obj.contact_pts(:, i) + r_foot_fixed, quatRotateVec(quatConjugate(z_fixed), obj.vars.(Fname).symb(:, n)));
-              T_next = T_next + quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Mname).symb(:, n+1)) ...
-                + cross(obj.contact_pts(:, i) + r_foot_next_fixed, quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Fname).symb(:, n+1)));
-            end
+            %if obj.fix_forces
+              %Ti = quatRotateVec(quatConjugate(z_fixed), obj.vars.(Mname).symb(:, n)) ...
+                %+ cross(r_foot, quatRotateVec(quatConjugate(z_fixed), F_fixed));
+              %Ti_next = quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Mname).symb(:, n+1)) ...
+                %+ cross(r_foot_next, quatRotateVec(quatConjugate(z_next_fixed), F_next_fixed));
+            %else
+              Ti = quatRotateVec(quatConjugate(z_fixed), obj.vars.(Mname).symb(:, n)) ...
+                + cross(r_foot_fixed, quatRotateVec(quatConjugate(z_fixed), obj.vars.(Fname).symb(:, n)));
+              Ti_next = quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Mname).symb(:, n+1)) ...
+                + cross(r_foot_next_fixed, quatRotateVec(quatConjugate(z_next_fixed), obj.vars.(Fname).symb(:, n+1)));
+            %end
+            T = T + Ti;
+            T_next = T_next + Ti_next;
           end
           Y_next_desired = quatRotateVec(A, ...
             quatRotateVec(A, I*w + h/2*T) ...
@@ -257,22 +267,29 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       if use_symbolic
         r = obj.vars.r.symb;
         z = obj.vars.z.symb;
-        for i = 1:size(obj.contact_pts, 2)
+        for i = 1:numel(obj.feet)
+          rname = sprintf('r_foot%d', i);
           R = obj.vars.(sprintf('R%d',i)).symb;
           obj = obj.addSymbolicConstraints(sum(R,1) == 1);
           for n = 1:obj.N
-            %p = obj.quatRotateVec2(z(:,n), z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
-            p = quatRotateVec(z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
+            r_foot = obj.vars.(rname).symb(:, n);
+            %p = obj.quatRotateVec2(z(:,n), z_fixed(:,n), obj.feet(i).r_fixed(:,n)) + r(:,n);
+            p = quatRotateVec(z_fixed(:,n), r_foot) + r(:,n);
+            %p = 0.5*(p + quatRotateVec(z_fixed(:,n), r_foot) + r(:,n));
             for j = 1:numel(obj.regions)
               if ~isempty(obj.regions(j).A)
                 obj = obj.addSymbolicConstraints(implies(R(j,n), ...
                   obj.regions(j).A*p <= obj.regions(j).b));
               end
               if ~isempty(obj.regions(j).Aeq)
-                error('No longer supported');
-                %obj = obj.addSymbolicConstraints(implies(R(j, n), ...
-                  %obj.regions(j).Aeq*p == obj.regions(j).beq));
+                obj = obj.addSymbolicConstraints(implies(R(j,n), ...
+                  obj.regions(j).Aeq*p == obj.regions(j).beq));
               end
+            end
+            for j = 1:numel(obj.feet(i).constraints)
+              center = obj.feet(i).constraints(j).center;
+              radius = obj.feet(i).constraints(j).radius;
+              obj = obj.addSymbolicConstraints(sum((r_foot - center).^2) <= radius.^2);
             end
           end
         end
@@ -324,22 +341,25 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         w = obj.vars.w.symb;
 
         z_fixed = obj.z_fixed_array;
-        for i = 1:size(obj.contact_pts, 2)
+        w_fixed = obj.w_fixed_array;
+        for i = 1:numel(obj.feet)
           R = obj.vars.(sprintf('R%d',i)).symb;
-          for n = 1:obj.N-1
+          for n = 1:obj.N
             %p = obj.quatRotateVec2(z(:,n), z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
             %p_next = obj.quatRotateVec2(z(:,n+1), z_fixed(:,n+1), obj.contact_pts(:,i)) + r(:,n+1);
-            p = quatRotateVec(z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
-            p_next = quatRotateVec(z_fixed(:,n+1), obj.contact_pts(:,i)) + r(:,n+1);
-            pd = v(:,n) + cross(w(:,n), obj.contact_pts(:,i));
+            %p = quatRotateVec(z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
+            %p_next = quatRotateVec(z_fixed(:,n+1), obj.contact_pts(:,i)) + r(:,n+1);
+            %pd = v(:,n) + cross(w(:,n), obj.feet(i).r_fixed(:,n));
+            pd = v(:,n) + cross(w_fixed(:,n), obj.vars.(sprintf('r_foot%d',i)).symb(:,n));
+            %pd = 0.5*(pd + v(:,n) + cross(w_fixed(:,n), obj.vars.(sprintf('r_foot%d',i)).symb(:,n)));
             F = obj.vars.(sprintf('F%d', i)).symb(:, n);
             M = obj.vars.(sprintf('M%d', i)).symb(:, n);
             for j = 1:numel(obj.regions)
               normal = obj.regions(j).normal;
               mu = obj.regions(j).mu;
               if isempty(normal)
-                obj = obj.addSymbolicConstraints(implies(R(j,n+1), F == 0));
-                obj = obj.addSymbolicConstraints(implies(R(j,n+1), M == 0));
+                obj = obj.addSymbolicConstraints(implies(R(j,n), F == 0));
+                obj = obj.addSymbolicConstraints(implies(R(j,n), M == 0));
               else
                 F_normal = dot(F, normal)*normal;
                 F_tan = F - F_normal;
@@ -347,9 +367,9 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
                 pd_tan = pd - pd_normal;
                 % HACK
                 %obj = obj.addSymbolicConstraints(cone(F_tan, mu*dot(F, obj.regions(j).normal)));
-                obj = obj.addSymbolicConstraints(implies(R(j,n+1), ...
-                                                 obj.friction_cone_normals'*F >= 0));
-                obj = obj.addSymbolicConstraints(implies(R(j,n+1), M == 0));
+                obj = obj.addSymbolicConstraints(implies(R(j,n), ...
+                                                 -obj.friction_cone_normals'*F <= 0));
+                obj = obj.addSymbolicConstraints(implies(R(j,n), M == 0));
                 % END_HACK
 %                 obj = obj.addSymbolicConstraints(implies(R(j,n) + R(j,n+1) == 2, pd == 0));
                 %obj = obj.addSymbolicConstraints(implies(R(j,n) + R(j,n+1) == 2, p == p_next));
@@ -472,8 +492,12 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       obj.regions(j).ncon = size(obj.regions(j).A, 1);
     end
     
-    function obj = addContactPoint(obj, p)
-      obj.contact_pts = [obj.contact_pts, p];
+    function obj = addFoot(obj, centers, radii, r_fixed)
+      obj.feet(end+1).r_fixed = r_fixed;
+      for j = 1:size(centers,2)
+        obj.feet(end).constraints(j).center = centers(:, j);
+        obj.feet(end).constraints(j).radius = radii(j);
+      end
     end
     
     function angular_momentum = extractAngularMomentum(obj)
