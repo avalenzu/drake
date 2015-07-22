@@ -106,10 +106,10 @@ for i = 1:M
   for j = 1:numel(prog.feet)
     delta_norm = delta_norm + sum(sum((F_fixed_array(:, :, j) - prog.vars.(sprintf('F%d',j)).value).^2));
     delta_norm = delta_norm + sum(sum((M_fixed_array(:, :, j) - prog.vars.(sprintf('M%d',j)).value).^2));
-    %delta_norm = delta_norm + sum(sum((r_foot_fixed_array(:, :, j) - prog.vars.(sprintf('r_foot%d',j)).value).^2));
+    delta_norm = delta_norm + sum(sum((r_foot_fixed_array(:, :, j) - prog.vars.(sprintf('r_foot%d',j)).value).^2));
     F_fixed_array(:, :, j) = (1-lam)*F_fixed_array(:, :, j) + lam*prog.vars.(sprintf('F%d',j)).value;
     M_fixed_array(:, :, j) = (1-lam)*M_fixed_array(:, :, j) + lam*prog.vars.(sprintf('M%d',j)).value;
-    %r_foot_fixed_array(:,:,j) = (1-lam)*r_foot_fixed_array(:, :, j) + lam*prog.vars.(sprintf('r_foot%d',j)).value;
+    r_foot_fixed_array(:,:,j) = (1-lam)*r_foot_fixed_array(:, :, j) + lam*prog.vars.(sprintf('r_foot%d',j)).value;
     R_seed(:,:,j) = prog.vars.(sprintf('R%d',j)).value;
   end
   M_fixed_array(abs(M_fixed_array) < 1e-6) = 0;
