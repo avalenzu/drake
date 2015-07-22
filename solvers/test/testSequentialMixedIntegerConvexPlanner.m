@@ -1,8 +1,10 @@
 if ~exist('continuation', 'var') || ~continuation
+  clear R_seed
   options = struct();
   options.floating = 'quat';
   options.use_new_kinsol = true;
-  urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'FallingBrick.urdf');
+  options.terrain = RigidBodyFlatTerrain;
+  urdf = fullfile(getDrakePath(), 'solvers', 'test', 'littleBrick.urdf');
   particle_urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'PointMass.urdf');
   rbm = RigidBodyManipulator(urdf, options);
   rbm_vis = rbm;
@@ -14,25 +16,30 @@ if ~exist('continuation', 'var') || ~continuation
     rbm_vis = rbm_vis.addRobotFromURDF(particle_urdf, [], [], options);
     body = rbm_vis.body(end);
     body.visual_geometry{1} = body.visual_geometry{1}.setColor(colors(:,j));
+    body.visual_geometry{1}.radius = 0.02;
     rbm_vis = rbm_vis.setBody(rbm_vis.getNumBodies(), body);
   end
   rbm_vis = rbm_vis.compile();
   v = rbm_vis.constructVisualizer();
   I = diag([1;6;3]);
   m = 1;
-  N = 20;
+  N = 10;
   M = 1000;
-  dt = 1/N;
-  r0 = [0; 0; 1];
+  dt = 2/N;
+  r0 = [0; 0; 0.5];
   z0 = rpy2quat([0; 0*pi/180; 0]);
+  zf = rpy2quat([0; 0*pi/180; 1*pi/180]);
   w0 = 0*[1e-3; 0; 0];
-  v0 = [0.5; 0; 0];
+  v0 = 0*[0.5; 0; 0];
   w_fixed_array = 0*rand(3, N);
-  z_fixed_array = repmat(z0, 1, N);
+  z_fixed_array = repmat(z0, 1, N) + 0.0*randn(4, N);
+  %z_fixed_array = linspacevec(z0, zf, N);
+  z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2,1)));
   M_fixed_array = zeros(3, N, 4);
   F_fixed_array = zeros(3, N, 4);
   lam = 1;
   tol = 1e-6;
+  v_des = 0.1;
   r_foot_fixed_array = zeros(3, N, 4);
   for j = 1:4 
     pt = rbm.getTerrainContactPoints(2).pts(:,2+j);
@@ -43,22 +50,23 @@ end
 
 total_solvertime = 0;
 total_time = tic;
+leg_length = 0.1;
 for i = 1:M
   prog = SequentialMixedIntegerConvexPlanner(I, m, N, dt, z_fixed_array, w_fixed_array, F_fixed_array, M_fixed_array, true);
   prog.force_max = 1e2;
-  prog.velocity_max = 1e2;
+  prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.foot_velocity_max = 1e1;
-  prog.contact_point_slack_weight = 1e3;
+  prog.stance_velocity_max = 1;
+  prog.swing_velocity_max = 1;
   prog.fix_forces = fix_forces;
   for j = 1:4 
     pt = rbm.getTerrainContactPoints(2).pts(:,2+j);
-    %centers = [pt, pt + [0; sign(pt(2))*sin(pi/6); -cos(pi/6)]];
-    centers = [pt+[0; -0.5 + sign(pt(2))*0.1; -1], pt+[0; 0.5 + sign(pt(2))*0.1; -1]];
-    prog = prog.addFoot(centers, [0.7, 0.7], r_foot_fixed_array(:,:,j));
+    centers = [pt, pt + [0; 1.5*sign(pt(2))*leg_length*sin(0*pi/180); -1.5*leg_length*cos(0*pi/180)]];
+    %centers = [pt+[0; -0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length], pt+[0; 0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length]];
+    prog = prog.addFoot(centers, [leg_length, leg_length], r_foot_fixed_array(:,:,j));
   end
-  prog = prog.addRegion([0, 0, -1], 0, [], [], [], []);
-  %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
+  prog = prog.addRegion([0, 0, -1], -0.05, [], [], [], []);
+  %prog = prog.addRegion([0, 0, -1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.06], [], [], [0; 0; 1], 1);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.05], [], [], [0; 0; 1], 1);
@@ -69,18 +77,24 @@ for i = 1:M
       prog.vars.(sprintf('R%d',j)).start = R_seed(:,:,j);
     end
   end
+  for j = 1:4
+    prog = prog.addSymbolicConstraints(prog.vars.(sprintf('r_foot%d',j)).symb(:,1) == prog.vars.(sprintf('r_foot%d',j)).symb(:,prog.N));
+  end
   %prog = prog.addOrientationConstraint(1, [1; 0; 0; 0]);
   prog = prog.addOrientationConstraint(1, z0);
+  %prog = prog.addOrientationConstraint(N, zf);
   %prog = prog.addPositionConstraint(1, r0 - [0; 0; 0.0], r0 + [0; 0; 0.8]);
-  prog = prog.addSymbolicConstraints(prog.vars.r.symb(3,1) == prog.vars.r.symb(3,prog.N));
+  %prog = prog.addSymbolicConstraints(prog.vars.z.symb(:,1) == prog.vars.z.symb(:,prog.N));
+  %prog = prog.addSymbolicConstraints(prog.vars.r.symb(3,1) == prog.vars.r.symb(3,prog.N));
   %prog = prog.addPositionConstraint(N, r0 + [1; 0; -0.8], r0 + [1; 0; 0.8]);
   %prog = prog.addSymbolicConstraints(0.5 <= prog.vars.r.symb(3,1) <= 1.1);
   prog = prog.addSymbolicConstraints(prog.vars.r.symb(1:2,1) == 0);
-  prog = prog.addAngularVelocityConstraint(1, w0, w0);
-  %prog = prog.addVelocityConstraint(1, v0-0.1, v0+0.1);
-  prog = prog.addSymbolicConstraints(prog.vars.v.symb(3,[1,N]) == 0);
-  prog = prog.addSymbolicConstraints(prog.vars.v.symb(1,1) == prog.vars.v.symb(1,prog.N));
-  prog = prog.addSymbolicConstraints(sum(prog.vars.v.symb(1,:)) == 0.5*prog.N);
+  %prog = prog.addAngularVelocityConstraint([1,N], 0, 0);
+  prog = prog.addSymbolicConstraints(sum(prog.vars.w.symb(3,:)) == pi/2*prog.N);
+  %prog = prog.addVelocityConstraint([1,N], 0, 0);
+  %prog = prog.addSymbolicConstraints(prog.vars.v.symb(3,[1,N]) == 0);
+  %prog = prog.addSymbolicConstraints(prog.vars.v.symb(1,1) == prog.vars.v.symb(1,prog.N));
+  %prog = prog.addSymbolicConstraints(sum(prog.vars.v.symb(1,:)) == v_des*prog.N);
   %for j = 1:size(prog.contact_pts,2)
     %prog.vars.(sprintf('F%d',j)).lb(:,prog.N) = 0;
     %prog.vars.(sprintf('F%d',j)).ub(:,prog.N) = 0;
@@ -100,7 +114,7 @@ for i = 1:M
   w_fixed_array = (1-lam)*w_fixed_array + lam*prog.vars.w.value;
   w_fixed_array(abs(w_fixed_array) < 1e-6) = 0;
   z_fixed_array = (1-lam)*z_fixed_array + lam*prog.vars.z.value;
-  z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2, 1)));
+  %z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2, 1)));
   z_fixed_array(abs(z_fixed_array) < 1e-6) = 0;
   R_seed = false([numel(prog.regions), prog.N, numel(prog.feet)]);
   for j = 1:numel(prog.feet)
@@ -129,8 +143,9 @@ for i = 1:M
   foot_positions]));
   position_traj = position_traj.setOutputFrame(rbm_vis.getPositionFrame());
   v.playback(position_traj)
+  keyboard
   if objval < tol && delta_norm < tol, break; end
-  if delta_norm < tol, break; end
+  %if delta_norm < tol, break; end
   fix_forces = ~fix_forces;
 end
 toc(total_time);
