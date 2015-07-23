@@ -14,7 +14,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
     z_fixed_array
     F_fixed_array
     M_fixed_array
-    regions = struct('A', {}, 'b', {}, 'Aeq', {}, 'beq', {}, 'normal', {}, 'mu', {}, 'ncon', {});
+    regions = struct('A', {}, 'b', {}, 'Aeq', {}, 'beq', {}, 'normal', {}, 'mu', {}, 'ncons', {});
     feet
     friction_cone_normals = [0.5, -0.25,  -0.25; ...
                                  0,    0.433, -0.433; ...
@@ -41,7 +41,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       
       obj = obj.addPositionVariables();
       obj = obj.addVelocityVariables();
-      obj = obj.addVariable('slack', 'C', [1, obj.N], 0, 1e3);
+      %obj = obj.addVariable('slack', 'C', [1, obj.N], 0, 1e3);
       for i = 1:numel(obj.feet)
         % Add foot position & velocity variables
         obj = obj.addVariable(sprintf('r_foot%d',i), 'C', [3, obj.N], -obj.foot_position_max, obj.foot_position_max);
@@ -49,6 +49,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         
         % Add binary variables for contact region assignment
         obj = obj.addVariable(sprintf('R%d',i), 'B', [numel(obj.regions), obj.N], 0, 1);
+        obj = obj.addVariable(sprintf('RR%d',i), 'B', [numel(obj.regions), obj.N-1], 0, 1);
         
         % Add continuous variables for contact forces and moments
         obj = obj.addVariable(sprintf('F%d',i), 'C', [3, obj.N], ...
@@ -59,12 +60,12 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       end
       obj = obj.addTranslationalDynamicConstraints(false);
       obj = obj.addRotationalDynamicConstraints(false);
-      obj = obj.addContactPointConstraints(true);
-      obj = obj.addContactForceConstraints(true);
+      obj = obj.addContactPointConstraints(false);
+      obj = obj.addContactForceConstraints(false);
       if obj.has_symbolic
         obj = obj.addSymbolicCost(sum((obj.vars.w.symb(:) - obj.w_fixed_array(:)).^2));
         obj = obj.addSymbolicCost(sum((obj.vars.z.symb(:) - obj.z_fixed_array(:)).^2));
-        obj = obj.addSymbolicCost(sum(obj.vars.slack.symb(:).^2));
+        %obj = obj.addSymbolicCost(sum(obj.vars.slack.symb(:).^2));
         %obj = obj.addSymbolicCost(sum(obj.vars.slack.symb(:)));
         %obj = obj.addSymbolicCost(obj.vars.contact_point_slack.symb);
         for i = 1:numel(obj.feet)
@@ -82,8 +83,25 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         c(obj.vars.w.i(:)) = -2*obj.w_fixed_array(:);
         Q(obj.vars.z.i(:), obj.vars.z.i(:)) = eye(numel(obj.z_fixed_array));
         c(obj.vars.z.i(:)) = -2*obj.z_fixed_array(:);
+        alpha = 0;
+        for i = 1:numel(obj.feet)
+          Q(obj.vars.(sprintf('F%d',i)).i(:), obj.vars.(sprintf('F%d',i)).i(:)) = 2*eye(numel(obj.F_fixed_array(:,:,i)));
+          Q(obj.vars.(sprintf('M%d',i)).i(:), obj.vars.(sprintf('M%d',i)).i(:)) = 2*eye(numel(obj.M_fixed_array(:,:,i)));
+          Q(obj.vars.(sprintf('r_foot%d',i)).i(:), obj.vars.(sprintf('r_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
+          c(obj.vars.(sprintf('F%d',i)).i(:)) = -2*obj.F_fixed_array(:,:,i);
+          c(obj.vars.(sprintf('M%d',i)).i(:)) = -2*obj.M_fixed_array(:,:,i);
+          c(obj.vars.(sprintf('r_foot%d',i)).i(:)) = -2*obj.feet(i).r_fixed(:);
+          alpha = alpha + sum(obj.feet(i).r_fixed(:).^2);
+          %obj = obj.addSymbolicCost(sum(sum(obj.vars.(sprintf('v_foot%d',i)).symb.^2)));
+          %obj = obj.addSymbolicCost(1e3*sum(sum(obj.vars.(sprintf('F%d',i)).symb.^2)));
+          %obj = obj.addSymbolicCost(1e3*sum(sum(obj.vars.(sprintf('M%d',i)).symb.^2)));
+        end
         %Q(obj.vars.contact_point_slack.i(:), obj.vars.contact_point_slack.i(:)) = obj.contact_point_slack_weight;
-        alpha = sum(obj.w_fixed_array(:).^2) + sum(obj.z_fixed_array(:).^2);
+        alpha = alpha ...
+                + sum(obj.w_fixed_array(:).^2) ...
+                + sum(obj.z_fixed_array(:).^2) ...
+                + sum(obj.F_fixed_array(:).^2) ...
+                + sum(obj.M_fixed_array(:).^2);
         %alpha = 0*alpha;
         obj = obj.addCost(Q, c, alpha);
       end
@@ -316,16 +334,20 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         end
       else
         
-        n_contacts = size(obj.contact_pts, 2);
-        M = obj.position_max;
+        n_contacts = numel(obj.feet);
+        big_M = obj.position_max;
 
         Aeq = zeros(n_contacts*obj.N, obj.nv);
         beq = zeros(n_contacts*obj.N, 1);
-        A = zeros(n_contacts*sum([obj.regions.ncon]), obj.nv);
-        b = zeros(n_contacts*sum([obj.regions.ncon]), 1);
+        A = zeros(n_contacts*sum([obj.regions.ncons]), obj.nv);
+        b = zeros(n_contacts*sum([obj.regions.ncons]), 1);
+        ncons_quad_total = sum([obj.feet.ncons]);
+        quadcon = struct('Qc', repmat({sparse(obj.nv, obj.nv)}, 1, ncons_quad_total), 'q', repmat({zeros(obj.nv, 1)}, 1, ncons_quad_total), 'rhs', repmat({0}, 1, ncons_quad_total));
         offset = 0;
         offset_eq = 0;
-        for i = 1:size(obj.contact_pts, 2)
+        offset_quad = 0;
+        for i = 1:numel(obj.feet)
+          rname = sprintf('r_foot%d', i);
           for n = 1:obj.N
             % sum(R) == 1
             Aeq(offset_eq+1, obj.vars.(sprintf('R%d',i)).i(:,n)) = 1;
@@ -336,20 +358,44 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
               if ~isempty(obj.regions(j).A)
                 % R(j,n) -> A*p <= b
                 % formulated as
-                % A*p <= b + M*(1 - R(j,n))
-                ncon = size(obj.regions(j).A, 1);
-                indices = offset + (1:ncon);
+                % A*p <= b + big_M*(1 - R(j,n))
+                ncons = size(obj.regions(j).A, 1);
+                indices = offset + (1:ncons);
                 A(indices, obj.vars.r.i(:,n)) = obj.regions(j).A;
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = M*ones(ncon,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(ncons,1);
                 A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n)) = obj.regions(j).A*R_body_to_world;
-                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncon,1);
-                b(indices) = obj.regions(j).b + M;
-                offset = offset + ncon;
+                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncons,1);
+                b(indices) = obj.regions(j).b + big_M;
+                offset = offset + ncons;
+              end
+              if ~isempty(obj.regions(j).Aeq)
+                % R(j,n) -> Aeq*p == beq
+                % formulated as
+                % A*p <= b + big_M*(1 - R(j,n))
+                % -A*p <= -b + big_M*(1 - R(j,n))
+                ncons = 2*size(obj.regions(j).Aeq, 1);
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.r.i(:,n)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
+                A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq]*R_body_to_world;
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(ncons,1);
+                b(indices) = [obj.regions(j).beq; -obj.regions(j).beq] + big_M;
+                offset = offset + ncons;
               end
             end
+            ncons = obj.feet(i).ncons;
+            for j = 1:ncons
+              index = offset_quad + j;
+              center = obj.feet(i).constraints(j).center;
+              radius = obj.feet(i).constraints(j).radius;
+              quadcon(index).Qc = sparse(obj.vars.(rname).i(:,n), obj.vars.(rname).i(:,n), ones(3,1), obj.nv, obj.nv);
+              quadcon(index).q = full(sparse(obj.vars.(rname).i(:,n), ones(3,1), -2*center, obj.nv, 1));
+              quadcon(index).rhs = radius^2 - center'*center;
+            end
+            offset_quad = offset_quad + ncons;
           end
         end
         obj = obj.addLinearConstraints(A, b, Aeq, beq);
+        obj = obj.addQuadcon(quadcon);
       end
     end
     
@@ -364,6 +410,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         w_fixed = obj.w_fixed_array;
         for i = 1:numel(obj.feet)
           R = obj.vars.(sprintf('R%d',i)).symb;
+          RR = obj.vars.(sprintf('RR%d',i)).symb;
           for n = 1:obj.N
             %p = obj.quatRotateVec2(z(:,n), z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
             %p_next = obj.quatRotateVec2(z(:,n+1), z_fixed(:,n+1), obj.contact_pts(:,i)) + r(:,n+1);
@@ -411,7 +458,19 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
                 % END_HACK
 %                 obj = obj.addSymbolicConstraints(implies(R(j,n) + R(j,n+1) == 2, pd == 0));
                 if n < obj.N
-                  obj = obj.addSymbolicConstraints(implies(R(j,n) + R(j,n+1) == 2, p == p_next));
+                  big_M = 5;
+                  obj = obj.addSymbolicConstraints(R(j,n) + R(j,n+1) <= RR(j,n)+1);
+                  %obj = obj.addSymbolicConstraints(RR(j,n) + R(j,n+1) <= R(j,n)+1);
+                  %obj = obj.addSymbolicConstraints(RR(j,n) + R(j,n) <= R(j,n+1)+1);
+                  %obj = obj.addSymbolicConstraints(RR(j,n) <= R(j,n));
+                  %obj = obj.addSymbolicConstraints(RR(j,n) <= R(j,n+1));
+                  %obj = obj.addSymbolicConstraints(big_M*RR(j,n) + R(j,n) + R(j,n+1) - 2 <= big_M);
+                  %obj = obj.addSymbolicConstraints(big_M*RR(j,n) - R(j,n) - R(j,n+1) + 2 <= big_M);
+                  big_M = 2*(obj.position_max+obj.foot_position_max);
+                  %obj = obj.addSymbolicConstraints(implies(R(j,n) + R(j,n+1) == 2, p - p_next == 0));
+                  obj = obj.addSymbolicConstraints(big_M*RR(j,n) + (p - p_next) <= big_M);
+                  obj = obj.addSymbolicConstraints(big_M*RR(j,n) - (p - p_next) <= big_M);
+                  %obj = obj.addSymbolicConstraints(binary_implies_linearnegativeconstraint(p - p_next, R(j,n)+R(j,n+1) == 2, big_M));
                   %obj = obj.addSymbolicConstraints(implies(R(j,n), p == p_next));
                 end
                   %obj = obj.addSymbolicConstraints(implies(R(j,n), pd_tan == 0));
@@ -426,15 +485,16 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         big_M = obj.force_max;
         n_free_regions = sum(cellfun(@isempty, {obj.regions.normal}));
         n_contact_regions = numel(obj.regions) - n_free_regions;
-        n_contacts = size(obj.contact_pts, 2);
+        n_contacts = numel(obj.feet);
         n_fc_faces = size(obj.friction_cone_normals,2);
-        ncon_total = (obj.N-1)*n_contacts*(12*n_free_regions + (12 + n_fc_faces)*n_contact_regions);
-        A = zeros(ncon_total, obj.nv);
-        b = zeros(ncon_total, 1);
+        ncons_total = n_contacts*(obj.N*12*n_free_regions + ((obj.N-1)*13 + 6 + obj.N*n_fc_faces)*n_contact_regions);
+        A = zeros(ncons_total, obj.nv);
+        b = zeros(ncons_total, 1);
         offset = 0;
-        for i = 1:size(obj.contact_pts, 2)
-          pt_cross = vectorToSkewSymmetric(obj.contact_pts(:,i));
-          for n = 1:obj.N-1
+        for i = 1:numel(obj.feet)
+          for n = 1:obj.N
+            pt_cross = vectorToSkewSymmetric(obj.feet(i).r_fixed(:,n));
+            R_body_to_world = quat2rotmat(obj.z_fixed_array(:,n));
             for j = 1:numel(obj.regions)
               normal = obj.regions(j).normal;
               mu = obj.regions(j).mu;
@@ -444,44 +504,44 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
                 % F <= big_M*(1 - R(j,n))
                 % and
                 % -F <= big_M*(1 - R(j,n));
-                ncon = 6;
-                indices = offset + (1:ncon);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n+1)) = big_M*ones(6,1);
+                ncons = 6;
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('F%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
-                offset = offset + ncon;
+                offset = offset + ncons;
 
                 % R(j,n+1) -> M <= 0 && 0 <= M
                 % formulated as
                 % M <= big_M*(1 - R(j,n))
                 % and
                 % -M <= big_M*(1 - R(j,n));
-                ncon = 6;
-                indices = offset + (1:ncon);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n+1)) = big_M*ones(6,1);
+                ncons = 6;
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
-                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncon,1);
+                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncons,1);
                 b(indices) = big_M;
-                offset = offset + ncon;
+                offset = offset + ncons;
               else
                 % HACK
                 % R(j,n+1) -> -fc_normals'*F <= 0
                 % formulated as
                 % -fc_normals'*F <= big_M*(1 - R(j, n+1))
                 fc_normals = obj.regions(j).friction_cone_normals;
-                ncon = size(fc_normals, 2);
-                indices = offset + (1:ncon);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n+1)) = big_M*ones(ncon, 1);
+                ncons = size(fc_normals, 2);
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n)) = big_M*ones(ncons, 1);
                 A(indices, obj.vars.(sprintf('F%d',i)).i(:, n)) = -fc_normals';
-                b(indices) = big_M*ones(ncon, 1);
-                offset = offset + ncon;
+                b(indices) = big_M*ones(ncons, 1);
+                offset = offset + ncons;
 
-                ncon = 6;
-                indices = offset + (1:ncon);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n+1)) = big_M*ones(6,1);
+                ncons = 6;
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
-                offset = offset + ncon;
+                offset = offset + ncons;
                 % END_HACK
                 % R(j,n) -> (dp/dt)_tangential == 0
                 % <=>
@@ -493,16 +553,45 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
                 % formulated as
                 %  (I3 - normal*normal')*(v - pt_i x w) <= big_M*(1 - R(j,n))
                 % -(I3 - normal*normal')*(v - pt_i x w) <= big_M*(1 - R(j,n))
-                big_M = obj.velocity_max;
-                ncon = 6;
-                indices = offset + (1:ncon);
-                C = eye(3) - normal*normal';
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
-                A(indices, obj.vars.v.i(:,n)) = [C; -C];
-                A(indices, obj.vars.w.i(:,n)) = -[C; -C]*pt_cross;
-                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncon,1);
-                b(indices) = big_M*ones(ncon, 1);
-                offset = offset + ncon;
+                %big_M = obj.velocity_max;
+                %ncons = 6;
+                %indices = offset + (1:ncons);
+                %C = eye(3) - normal*normal';
+                %A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                %A(indices, obj.vars.v.i(:,n)) = [C; -C];
+                %A(indices, obj.vars.(sprintf('v_foot%d',i)).i(:,n)) = [C; -C]*R_body_to_world;
+                %A(indices, obj.vars.w.i(:,n)) = -[C; -C]*R_body_to_world*pt_cross;
+                %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncons,1);
+                %b(indices) = big_M*ones(ncons, 1);
+                %offset = offset + ncons;
+
+                % R(j,n) & R(j,n+1) --> p - p_next == 0
+                % where 
+                % p = r(n) + R_body_to_world(n)*r_foot(n)
+                % p_next = r(n+1) + R_body_to_world(n+1)*r_foot(n+1)
+                % formulated as
+                % R(j,n) + R(j,n+1) <= RR(j,n) + 1
+                % r(n) - r(n+1) + R_body_to_world(n)*r_foot(n) - R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
+                % -r(n) + r(n+1) - R_body_to_world(n)*r_foot(n) + R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
+                if n < obj.N
+                  Rname = sprintf('R%d',i);
+                  RRname = sprintf('RR%d',i);
+                  A(offset + 1, obj.vars.(Rname).i(j,n:n+1)) = 1;
+                  A(offset + 1, obj.vars.(RRname).i(j,n)) = -1;
+                  b(offset + 1) = 1;
+                  offset = offset + 1;
+                  R_body_to_world_next = quat2rotmat(obj.z_fixed_array(:,n+1));
+                  big_M = 2*(obj.position_max+obj.foot_position_max);
+                  ncons = 6;
+                  indices = offset + (1:ncons);
+                  A(indices, obj.vars.r.i(:,n)) = [eye(3); -eye(3)];
+                  A(indices, obj.vars.r.i(:,n+1)) = [-eye(3); eye(3)];
+                  A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n)) = [R_body_to_world; -R_body_to_world];
+                  A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n+1)) = [-R_body_to_world_next; R_body_to_world_next];
+                  A(indices, obj.vars.(RRname).i(j,n)) = big_M*ones(ncons,1);
+                  b(indices) = big_M;
+                  offset = offset + ncons;
+                end
               end
             end
           end
@@ -532,12 +621,14 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       if ~isempty(mu)
         obj.regions(j).mu = mu;
       end
-      obj.regions(j).ncon = size(obj.regions(j).A, 1);
+      obj.regions(j).ncons = size(obj.regions(j).A, 1) ...
+                            + 2*size(obj.regions(j).Aeq,1);
     end
     
     function obj = addFoot(obj, centers, radii, r_fixed)
       obj.feet(end+1).r_fixed = r_fixed;
-      for j = 1:size(centers,2)
+      obj.feet(end).ncons = size(centers, 2);
+      for j = 1:obj.feet(end).ncons
         obj.feet(end).constraints(j).center = centers(:, j);
         obj.feet(end).constraints(j).radius = radii(j);
       end

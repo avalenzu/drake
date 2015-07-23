@@ -23,7 +23,7 @@ if ~exist('continuation', 'var') || ~continuation
   v = rbm_vis.constructVisualizer();
   I = diag([1;6;3]);
   m = 1;
-  N = 10;
+  N = 20;
   M = 1000;
   dt = 2/N;
   r0 = [0; 0; 0.5];
@@ -52,7 +52,7 @@ total_solvertime = 0;
 total_time = tic;
 leg_length = 0.1;
 for i = 1:M
-  prog = SequentialMixedIntegerConvexPlanner(I, m, N, dt, z_fixed_array, w_fixed_array, F_fixed_array, M_fixed_array, true);
+  prog = SequentialMixedIntegerConvexPlanner(I, m, N, dt, z_fixed_array, w_fixed_array, F_fixed_array, M_fixed_array, false);
   prog.force_max = 1e2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
@@ -77,20 +77,25 @@ for i = 1:M
       prog.vars.(sprintf('R%d',j)).start = R_seed(:,:,j);
     end
   end
-  for j = 1:4
-    prog = prog.addSymbolicConstraints(prog.vars.(sprintf('r_foot%d',j)).symb(:,1) == prog.vars.(sprintf('r_foot%d',j)).symb(:,prog.N));
-  end
+  %for j = 1:4
+    %prog = prog.addSymbolicConstrints(prog.vars.(sprintf('r_foot%d',j)).symb(:,1) == prog.vars.(sprintf('r_foot%d',j)).symb(:,prog.N));
+  %end
   %prog = prog.addOrientationConstraint(1, [1; 0; 0; 0]);
   prog = prog.addOrientationConstraint(1, z0);
   %prog = prog.addOrientationConstraint(N, zf);
-  %prog = prog.addPositionConstraint(1, r0 - [0; 0; 0.0], r0 + [0; 0; 0.8]);
+  prog = prog.addPositionConstraint(1, r0 - [0; 0; 0.5], r0 + [0; 0; 0.8]);
   %prog = prog.addSymbolicConstraints(prog.vars.z.symb(:,1) == prog.vars.z.symb(:,prog.N));
   %prog = prog.addSymbolicConstraints(prog.vars.r.symb(3,1) == prog.vars.r.symb(3,prog.N));
-  %prog = prog.addPositionConstraint(N, r0 + [1; 0; -0.8], r0 + [1; 0; 0.8]);
+  prog = prog.addPositionConstraint(N, r0 + [1; 0; -0.8], r0 + [1; 0; 0.8]);
   %prog = prog.addSymbolicConstraints(0.5 <= prog.vars.r.symb(3,1) <= 1.1);
-  prog = prog.addSymbolicConstraints(prog.vars.r.symb(1:2,1) == 0);
+  %prog = prog.addSymbolicConstraints(prog.vars.r.symb(1:2,1) == 0);
   %prog = prog.addAngularVelocityConstraint([1,N], 0, 0);
-  prog = prog.addSymbolicConstraints(sum(prog.vars.w.symb(3,:)) == pi/2*prog.N);
+  prog = prog.addVelocityConstraint([1,N], 0, 0);
+  Aeq = zeros(1, prog.nv);
+  beq = pi/2*prog.N;
+  Aeq(1, prog.vars.w.i(3,:)) = 1;
+  %prog = prog.addLinearConstraints([], [], Aeq, beq);
+  %prog = prog.addSymbolicConstraints(sum(prog.vars.w.symb(3,:)) == pi/2*prog.N);
   %prog = prog.addVelocityConstraint([1,N], 0, 0);
   %prog = prog.addSymbolicConstraints(prog.vars.v.symb(3,[1,N]) == 0);
   %prog = prog.addSymbolicConstraints(prog.vars.v.symb(1,1) == prog.vars.v.symb(1,prog.N));
@@ -102,12 +107,12 @@ for i = 1:M
     %prog.vars.(sprintf('M%d',j)).ub(:,prog.N) = 0;
   %end
   params = struct();
-  %params.mipgap = 0.5;
+  params.mipgap = 0.9;
   params.outputflag = 1;
-  params.solver = 'gurobi';
+  %params.solver = 'gurobi';
   %params.threads = 12;
-  %[prog, solvertime, objval] = prog.solveGurobi(params);
-  [prog, solvertime, objval] = prog.solve();
+ [prog, solvertime, objval] = prog.solveGurobi(params);
+  %[prog, solvertime, objval] = prog.solve();
   delta_norm = sum((w_fixed_array(:) - prog.vars.w.value(:)).^2) ...
                 + sum((z_fixed_array(:) - prog.vars.z.value(:)).^2);
   total_solvertime = total_solvertime + solvertime;
@@ -143,9 +148,9 @@ for i = 1:M
   foot_positions]));
   position_traj = position_traj.setOutputFrame(rbm_vis.getPositionFrame());
   v.playback(position_traj)
-  keyboard
-  if objval < tol && delta_norm < tol, break; end
-  %if delta_norm < tol, break; end
+  %keyboard
+  %if objval < tol && delta_norm < tol, break; end
+  if delta_norm < tol, break; end
   fix_forces = ~fix_forces;
 end
 toc(total_time);
