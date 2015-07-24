@@ -28,7 +28,7 @@ if ~exist('continuation', 'var') || ~continuation
   dt = 2/N;
   r0 = [0; 0; 0.5];
   z0 = rpy2quat([0; 0*pi/180; 0]);
-  zf = rpy2quat([0; 0*pi/180; 1*pi/180]);
+  zf = rpy2quat([0; 0*pi/180; 60*pi/180]);
   w0 = 0*[1e-3; 0; 0];
   v0 = 0*[0.5; 0; 0];
   w_fixed_array = 0*rand(3, N);
@@ -56,7 +56,7 @@ for i = 1:M
   prog.force_max = 1e2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.stance_velocity_max = 1;
+  prog.stance_velocity_max = 0.2;
   prog.swing_velocity_max = 1;
   prog.fix_forces = fix_forces;
   for j = 1:4 
@@ -70,7 +70,8 @@ for i = 1:M
   %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.06], [], [], [0; 0; 1], 1);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.05], [], [], [0; 0; 1], 1);
-  prog = prog.addRegion([], [], [0, 0, 1], 0, [0; 0; 1], 1);
+  prog = prog.addRegion([0, 0, 1], 0.3, [0, 0, 1], 0, [0; 0; 1], 1);
+  prog = prog.addRegion([0, 0, -1], -0.7, [0, 0, 1], 0.2, [0; 0; 1], 1);
   prog = prog.addDefaultConstraintsAndCosts();
   if exist('R_seed','var')
     for j = 1:numel(prog.feet)
@@ -86,15 +87,23 @@ for i = 1:M
   prog = prog.addPositionConstraint(1, r0 - [0; 0; 0.5], r0 + [0; 0; 0.8]);
   %prog = prog.addSymbolicConstraints(prog.vars.z.symb(:,1) == prog.vars.z.symb(:,prog.N));
   %prog = prog.addSymbolicConstraints(prog.vars.r.symb(3,1) == prog.vars.r.symb(3,prog.N));
-  prog = prog.addPositionConstraint(N, r0 + [1; 0; -0.8], r0 + [1; 0; 0.8]);
+  prog = prog.addPositionConstraint(N, r0 + [1; -1; -0.8], r0 + [1; 1; 0.8]);
   %prog = prog.addSymbolicConstraints(0.5 <= prog.vars.r.symb(3,1) <= 1.1);
   %prog = prog.addSymbolicConstraints(prog.vars.r.symb(1:2,1) == 0);
   %prog = prog.addAngularVelocityConstraint([1,N], 0, 0);
   prog = prog.addVelocityConstraint([1,N], 0, 0);
   Aeq = zeros(1, prog.nv);
-  beq = pi/2*prog.N;
+  beq = pi/6*prog.N;
   Aeq(1, prog.vars.w.i(3,:)) = 1;
   %prog = prog.addLinearConstraints([], [], Aeq, beq);
+
+  Q = zeros(prog.nv);
+  c = zeros(prog.nv, 1);
+  zf_indices = prog.vars.z.i(:, N);
+  Q(zf_indices, zf_indices) = 1e3*eye(4);
+  c(zf_indices) = -2*zf;
+  alpha = sum(zf.^2);
+  %prog = prog.addCost(Q, c, alpha);
   %prog = prog.addSymbolicConstraints(sum(prog.vars.w.symb(3,:)) == pi/2*prog.N);
   %prog = prog.addVelocityConstraint([1,N], 0, 0);
   %prog = prog.addSymbolicConstraints(prog.vars.v.symb(3,[1,N]) == 0);
@@ -107,7 +116,7 @@ for i = 1:M
     %prog.vars.(sprintf('M%d',j)).ub(:,prog.N) = 0;
   %end
   params = struct();
-  params.mipgap = 0.9;
+  params.mipgap = 0.5;
   params.outputflag = 1;
   %params.solver = 'gurobi';
   %params.threads = 12;
@@ -121,7 +130,7 @@ for i = 1:M
   z_fixed_array = (1-lam)*z_fixed_array + lam*prog.vars.z.value;
   %z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2, 1)));
   z_fixed_array(abs(z_fixed_array) < 1e-6) = 0;
-  R_seed = false([numel(prog.regions), prog.N, numel(prog.feet)]);
+  %R_seed = false([numel(prog.regions), prog.N, numel(prog.feet)]);
   for j = 1:numel(prog.feet)
     delta_norm = delta_norm + sum(sum((F_fixed_array(:, :, j) - prog.vars.(sprintf('F%d',j)).value).^2));
     delta_norm = delta_norm + sum(sum((M_fixed_array(:, :, j) - prog.vars.(sprintf('M%d',j)).value).^2));
@@ -129,11 +138,11 @@ for i = 1:M
     F_fixed_array(:, :, j) = (1-lam)*F_fixed_array(:, :, j) + lam*prog.vars.(sprintf('F%d',j)).value;
     M_fixed_array(:, :, j) = (1-lam)*M_fixed_array(:, :, j) + lam*prog.vars.(sprintf('M%d',j)).value;
     r_foot_fixed_array(:,:,j) = (1-lam)*r_foot_fixed_array(:, :, j) + lam*prog.vars.(sprintf('r_foot%d',j)).value;
-    R_seed(:,:,j) = prog.vars.(sprintf('R%d',j)).value;
+    %R_seed(:,:,j) = prog.vars.(sprintf('R%d',j)).value;
   end
   M_fixed_array(abs(M_fixed_array) < 1e-6) = 0;
   F_fixed_array(abs(F_fixed_array) < 1e-6) = 0;
-  fprintf('Objective Value: %f\tNorm squared of delta: %f\n', objval, delta_norm);
+  fprintf('\nObjective Value: %f\tNorm squared of delta: %f\n\n', objval, delta_norm);
   t = cumsum([0, repmat(prog.dt, [1, prog.N-1])]);
   foot_positions = zeros(4*7, prog.N);
   for n = 1:prog.N

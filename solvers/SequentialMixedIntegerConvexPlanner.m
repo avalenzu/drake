@@ -88,6 +88,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           Q(obj.vars.(sprintf('F%d',i)).i(:), obj.vars.(sprintf('F%d',i)).i(:)) = 2*eye(numel(obj.F_fixed_array(:,:,i)));
           Q(obj.vars.(sprintf('M%d',i)).i(:), obj.vars.(sprintf('M%d',i)).i(:)) = 2*eye(numel(obj.M_fixed_array(:,:,i)));
           Q(obj.vars.(sprintf('r_foot%d',i)).i(:), obj.vars.(sprintf('r_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
+          Q(obj.vars.(sprintf('v_foot%d',i)).i(:), obj.vars.(sprintf('v_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
           c(obj.vars.(sprintf('F%d',i)).i(:)) = -2*obj.F_fixed_array(:,:,i);
           c(obj.vars.(sprintf('M%d',i)).i(:)) = -2*obj.M_fixed_array(:,:,i);
           c(obj.vars.(sprintf('r_foot%d',i)).i(:)) = -2*obj.feet(i).r_fixed(:);
