@@ -150,8 +150,8 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
         end
       else
         offset = 0;
-        Aeq = zeros(9*obj.N-1, obj.nv);
-        beq = zeros(9*obj.N-1, 1);
+        Aeq = zeros((6+3*numel(obj.feet))*(obj.N-1), obj.nv);
+        beq = zeros((6+3*numel(obj.feet))*(obj.N-1), 1);
         for n = 1:(obj.N-1)
 
           % Position
@@ -176,11 +176,11 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
             % r_foot_next - r_foot - h/2*v_foot - h/2*v_foot_next == 0
             rname = sprintf('r_foot%d', i);
             vname = sprintf('v_foot%d', i);
-            Aeq(offset+(7:9), obj.vars.(rname).i(:,n:n+1)) = [eye(3), -eye(3)];
-            Aeq(offset+(7:9), obj.vars.(vname).i(:,n:n+1)) = -h/2*[eye(3), eye(3)];
+            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(rname).i(:,n:n+1)) = [-eye(3), eye(3)];
+            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(vname).i(:,n:n+1)) = -h/2*[eye(3), eye(3)];
           end
           beq(offset+(4:6)) = h*g;
-          offset = offset + 9;
+          offset = offset + 6 + 3*numel(obj.feet);
         end
         obj = obj.addLinearConstraints([], [], Aeq, beq);
       end

@@ -67,7 +67,7 @@ for i = 1:M
   prog.force_max = prog.m*9.81/2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.stance_velocity_max = 0.1;
+  prog.stance_velocity_max = 0.05;
   prog.swing_velocity_max = 1;
   prog.fix_forces = fix_forces;
   prog.slack_max = slack_max;
@@ -144,20 +144,20 @@ for i = 1:M
   end
   prog = prog.addLinearConstraints(A, b, [], []);
 
-  ncons = prog.N;
-  A = zeros(ncons, prog.nv);
-  b = 2*ones(ncons, 1);
-  for j = 1:numel(prog.feet)
-    A(:, prog.vars.(sprintf('R%d',j)).i(1,:)) = eye(ncons);
-  end
-  prog = prog.addLinearConstraints(A, b, [], []);
+  %ncons = prog.N;
+  %A = zeros(ncons, prog.nv);
+  %b = 2*ones(ncons, 1);
+  %for j = 1:numel(prog.feet)
+    %A(:, prog.vars.(sprintf('R%d',j)).i(1,:)) = eye(ncons);
+  %end
+  %prog = prog.addLinearConstraints(A, b, [], []);
 
-  Q = zeros(prog.nv);
-  c = zeros(prog.nv, 1);
-  zf_indices = prog.vars.z.i(:, N);
-  Q(zf_indices, zf_indices) = 1e3*eye(4);
-  c(zf_indices) = -2*zf;
-  alpha = sum(zf.^2);
+  %Q = zeros(prog.nv);
+  %c = zeros(prog.nv, 1);
+  %zf_indices = prog.vars.z.i(:, N);
+  %Q(zf_indices, zf_indices) = 1e3*eye(4);
+  %c(zf_indices) = -2*zf;
+  %alpha = sum(zf.^2);
   %prog = prog.addCost(Q, c, alpha);
   %prog = prog.addSymbolicConstraints(sum(prog.vars.w.symb(3,:)) == pi/2*prog.N);
   %prog = prog.addVelocityConstraint([1,N], 0, 0);
