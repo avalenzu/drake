@@ -9,6 +9,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
     foot_position_max = 2e0
     stance_velocity_max = 1e1
     swing_velocity_max = 1e-1
+    slack_max = 1e3;
     dt = 1e-3
     w_fixed_array
     z_fixed_array
@@ -19,7 +20,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
     friction_cone_normals = [0.5, -0.25,  -0.25; ...
                                  0,    0.433, -0.433; ...
                                  0.5,  0.5,    0.5];
-    contact_point_slack_weight = 1;
+   
     fix_forces = false;
                               
   end
@@ -41,7 +42,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
       
       obj = obj.addPositionVariables();
       obj = obj.addVelocityVariables();
-      %obj = obj.addVariable('slack', 'C', [1, obj.N], 0, 1e3);
+      obj = obj.addVariable('slack', 'C', [3, obj.N], -obj.slack_max, obj.slack_max);
       for i = 1:numel(obj.feet)
         % Add foot position & velocity variables
         obj = obj.addVariable(sprintf('r_foot%d',i), 'C', [3, obj.N], -obj.foot_position_max, obj.foot_position_max);
@@ -88,7 +89,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           Q(obj.vars.(sprintf('F%d',i)).i(:), obj.vars.(sprintf('F%d',i)).i(:)) = 2*eye(numel(obj.F_fixed_array(:,:,i)));
           Q(obj.vars.(sprintf('M%d',i)).i(:), obj.vars.(sprintf('M%d',i)).i(:)) = 2*eye(numel(obj.M_fixed_array(:,:,i)));
           Q(obj.vars.(sprintf('r_foot%d',i)).i(:), obj.vars.(sprintf('r_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
-          Q(obj.vars.(sprintf('v_foot%d',i)).i(:), obj.vars.(sprintf('v_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
+          %Q(obj.vars.(sprintf('v_foot%d',i)).i(:), obj.vars.(sprintf('v_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
           c(obj.vars.(sprintf('F%d',i)).i(:)) = -2*obj.F_fixed_array(:,:,i);
           c(obj.vars.(sprintf('M%d',i)).i(:)) = -2*obj.M_fixed_array(:,:,i);
           c(obj.vars.(sprintf('r_foot%d',i)).i(:)) = -2*obj.feet(i).r_fixed(:);
@@ -97,7 +98,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           %obj = obj.addSymbolicCost(1e3*sum(sum(obj.vars.(sprintf('F%d',i)).symb.^2)));
           %obj = obj.addSymbolicCost(1e3*sum(sum(obj.vars.(sprintf('M%d',i)).symb.^2)));
         end
-        %Q(obj.vars.contact_point_slack.i(:), obj.vars.contact_point_slack.i(:)) = obj.contact_point_slack_weight;
+        Q(obj.vars.slack.i(:), obj.vars.slack.i(:)) = eye(3*obj.N);
         alpha = alpha ...
                 + sum(obj.w_fixed_array(:).^2) ...
                 + sum(obj.z_fixed_array(:).^2) ...
@@ -272,8 +273,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           Aeq(offset+4, obj.vars.z.i([1,2,4],n)) = deltaZ([4,3,1]);
           Aeq(offset+4, obj.vars.z.i(3,n)) = -deltaZ(2);
 
-          % R(A)'*I*w_next - R(A)*I*w - h/2*(R(A)*T + R(B)*T_next <= slack)
-          % -(R(A)'*I*w_next - R(A)*I*w - h/2*(R(A)*T + R(B)*T_next) <= slack)
+          % R(A)'*I*w_next - R(A)*I*w - h/2*(R(A)*T + R(B)*T_next == slack)
           % where
           %   T = sum( R(z_f)'*Mi + pt_i x R(z_f)'*Fi )
           RA = quat2rotmat(expmap2quat(-h/2*w_mid_fixed));
@@ -290,6 +290,7 @@ classdef SequentialMixedIntegerConvexPlanner < MixedIntegerConvexProgram
           end
           Aeq(offset + (5:7), obj.vars.w.i(:,n+1)) = RA'*I; %#ok
           Aeq(offset + (5:7), obj.vars.w.i(:,n)) = -RA*I; %#ok
+          Aeq(offset + (5:7), obj.vars.slack.i(:,n)) = eye(3);
           %beq(offset + (5:7)) = h/2*(RA*T + RB*T_next);
           offset = offset + 7;
         end

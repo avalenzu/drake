@@ -1,5 +1,5 @@
 if ~exist('continuation', 'var') || ~continuation
-  clear R_seed
+  clear R_seed RR_seed
   options = struct();
   options.floating = 'quat';
   options.use_new_kinsol = true;
@@ -7,10 +7,14 @@ if ~exist('continuation', 'var') || ~continuation
   particle_urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'PointMass.urdf');
   rbm = RigidBodyManipulator(urdf, options);
   rbm_vis = rbm;
-  step_height = 0.2;
-  platform1 = RigidBodyBox([1; 1; 0.1], [0.3-0.5; 0; -0.05], [0; 0; 0]);
+  step_height = 0.0;
+  platform1_start = -0.5;
+  platform1_end = 0.3;
+  platform2_start = 0.5;
+  platform2_end = 1.5;
+  platform1 = RigidBodyBox([platform1_end-platform1_start; 1; 0.1], [(platform1_end+platform1_start)/2; 0; -0.05], [0; 0; 0]);
   platform1.c = [0.2; 0.2; 0.2];
-  platform2 = RigidBodyBox([1; 1; 0.1], [0.5+0.5; 0; step_height - 0.05], [0; 0; 0]);
+  platform2 = RigidBodyBox([platform2_end-platform2_start; 1; 0.1], [(platform2_end+platform2_start)/2; 0; step_height-0.05], [0; 0; 0]);
   platform2.c = [0.2; 0.2; 0.2];
   rbm_vis = rbm_vis.addVisualGeometryToBody(1, platform1);
   rbm_vis = rbm_vis.addVisualGeometryToBody(1, platform2);
@@ -29,7 +33,7 @@ if ~exist('continuation', 'var') || ~continuation
   v = rbm_vis.constructVisualizer();
   I = diag([1;6;3]);
   m = 1;
-  N = 20;
+  N = 16;
   M = 1000;
   dt = 2/N;
   r0 = [0; 0; 0.5];
@@ -52,6 +56,7 @@ if ~exist('continuation', 'var') || ~continuation
     r_foot_fixed_array(:, :, j) = repmat(pt, [1, N]);
   end
   fix_forces = false;
+  slack_max = 1e3;
 end
 
 total_solvertime = 0;
@@ -59,30 +64,32 @@ total_time = tic;
 leg_length = 0.1;
 for i = 1:M
   prog = SequentialMixedIntegerConvexPlanner(I, m, N, dt, z_fixed_array, w_fixed_array, F_fixed_array, M_fixed_array, false);
-  prog.force_max = 1e2;
+  prog.force_max = prog.m*9.81/2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.stance_velocity_max = 0.2;
+  prog.stance_velocity_max = 0.1;
   prog.swing_velocity_max = 1;
   prog.fix_forces = fix_forces;
+  prog.slack_max = slack_max;
   for j = 1:4 
     pt = rbm.getTerrainContactPoints(2).pts(:,2+j);
-    centers = [pt, pt + [0; 1.5*sign(pt(2))*leg_length*sin(0*pi/180); -1.5*leg_length*cos(0*pi/180)]];
+    centers = [pt, pt + [0; 1*sign(pt(2))*leg_length*sin(0*pi/180); -1.5*leg_length*cos(0*pi/180)]];
     %centers = [pt+[0; -0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length], pt+[0; 0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length]];
     prog = prog.addFoot(centers, [leg_length, leg_length], r_foot_fixed_array(:,:,j));
   end
-  prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; 0.7], [], [], [], []);
-  prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -0.7], [], [], [], []);
-  %prog = prog.addRegion([0, 0, -1], 0, [], [], [], []);
+  %prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; 0.7], [], [], [], []);
+  %prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -0.7], [], [], [], []);
+  prog = prog.addRegion([0, 0, -1], -0.05, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.06], [], [], [0; 0; 1], 1);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.05], [], [], [0; 0; 1], 1);
-  prog = prog.addRegion([1, 0, 0], 0.5, [0, 0, 1], 0, [0; 0; 1], 1);
-  prog = prog.addRegion([-1, 0, 0], -0.7, [0, 0, 1], step_height, [0; 0; 1], 1);
+  prog = prog.addRegion([1, 0, 0], platform1_end, [0, 0, 1], 0, [0; 0; 1], 1);
+  prog = prog.addRegion([-1, 0, 0], -platform2_start, [0, 0, 1], step_height, [0; 0; 1], 1);
   prog = prog.addDefaultConstraintsAndCosts();
-  if exist('R_seed','var')
+  if exist('R_seed', 'var') && exist('RR_seed', 'var')
     for j = 1:numel(prog.feet)
       prog.vars.(sprintf('R%d',j)).start = R_seed(:,:,j);
+      prog.vars.(sprintf('RR%d',j)).start = RR_seed(:,:,j);
     end
   end
   %for j = 1:4
@@ -94,15 +101,56 @@ for i = 1:M
   prog = prog.addPositionConstraint(1, r0 - [0; 0; 0.5], r0 + [0; 0; 0.8]);
   %prog = prog.addSymbolicConstraints(prog.vars.z.symb(:,1) == prog.vars.z.symb(:,prog.N));
   %prog = prog.addSymbolicConstraints(prog.vars.r.symb(3,1) == prog.vars.r.symb(3,prog.N));
-  prog = prog.addPositionConstraint(N, r0 + [1; -1; -0.8], r0 + [1; 1; 0.8]);
+  prog = prog.addPositionConstraint(N, r0 + [1; -1; -0.5], r0 + [1; 1; 0.8]);
   %prog = prog.addSymbolicConstraints(0.5 <= prog.vars.r.symb(3,1) <= 1.1);
   %prog = prog.addSymbolicConstraints(prog.vars.r.symb(1:2,1) == 0);
-  %prog = prog.addAngularVelocityConstraint([1,N], 0, 0);
+  prog = prog.addAngularVelocityConstraint([1,N], 0, 0);
+
   prog = prog.addVelocityConstraint([1,N], 0, 0);
-  Aeq = zeros(1, prog.nv);
-  beq = pi/6*prog.N;
-  Aeq(1, prog.vars.w.i(3,:)) = 1;
+  %Aeq = zeros(1, prog.nv);
+  %beq = pi/6*prog.N;
+  %Aeq(1, prog.vars.w.i(3,:)) = 1;
   %prog = prog.addLinearConstraints([], [], Aeq, beq);
+  
+
+  % Don't transition directly from one contact region to another
+  ncons = 2*(prog.N-1)*numel(prog.feet);
+  A = zeros(ncons, prog.nv);
+  b = ones(ncons, 1);
+  offset = 0;
+  for j = 1:numel(prog.feet)
+    indices = offset + (1:prog.N-1);
+    R2_indices = prog.vars.(sprintf('R%d',j)).i(2,1:prog.N-1);
+    R3_indices = prog.vars.(sprintf('R%d',j)).i(3,2:prog.N);
+    A(indices, R2_indices) = eye(prog.N-1);
+    A(indices, R3_indices) = eye(prog.N-1);
+    offset = offset + prog.N - 1;
+    indices = offset + (1:prog.N-1);
+    R2_indices = prog.vars.(sprintf('R%d',j)).i(2,2:prog.N);
+    R3_indices = prog.vars.(sprintf('R%d',j)).i(3,1:prog.N-1);
+    A(indices, R2_indices) = eye(prog.N-1);
+    A(indices, R3_indices) = eye(prog.N-1);
+    offset = offset + prog.N - 1;
+  end
+  prog = prog.addLinearConstraints(A, b, [], []);
+
+  % Start and end in a contact region
+  ncons = 2;
+  A = zeros(ncons, prog.nv);
+  b = zeros(ncons, 1);
+  for j = 1:numel(prog.feet)
+    A(1, prog.vars.(sprintf('R%d',j)).i(1,1)) = 1;
+    A(2, prog.vars.(sprintf('R%d',j)).i(1,prog.N)) = 1;
+  end
+  prog = prog.addLinearConstraints(A, b, [], []);
+
+  ncons = prog.N;
+  A = zeros(ncons, prog.nv);
+  b = 2*ones(ncons, 1);
+  for j = 1:numel(prog.feet)
+    A(:, prog.vars.(sprintf('R%d',j)).i(1,:)) = eye(ncons);
+  end
+  prog = prog.addLinearConstraints(A, b, [], []);
 
   Q = zeros(prog.nv);
   c = zeros(prog.nv, 1);
@@ -123,10 +171,10 @@ for i = 1:M
     %prog.vars.(sprintf('M%d',j)).ub(:,prog.N) = 0;
   %end
   params = struct();
-  params.mipgap = 0.5;
+  %params.mipgap = 0.2;
   params.outputflag = 1;
   %params.solver = 'gurobi';
-  %params.threads = 12;
+  params.threads = 12;
  [prog, solvertime, objval] = prog.solveGurobi(params);
   %[prog, solvertime, objval] = prog.solve();
   delta_norm = sum((w_fixed_array(:) - prog.vars.w.value(:)).^2) ...
@@ -135,9 +183,14 @@ for i = 1:M
   w_fixed_array = (1-lam)*w_fixed_array + lam*prog.vars.w.value;
   w_fixed_array(abs(w_fixed_array) < 1e-6) = 0;
   z_fixed_array = (1-lam)*z_fixed_array + lam*prog.vars.z.value;
+  for n = 2:prog.N
+    z_fixed_array(:, n) = quatProduct(z_fixed_array(:, n-1), ...
+                                      expmap2quat(prog.dt*0.5*sum(w_fixed_array(:,n-1:n),2)));
+  end
   %z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2, 1)));
-  z_fixed_array(abs(z_fixed_array) < 1e-6) = 0;
+  %z_fixed_array(abs(z_fixed_array) < 1e-6) = 0;
   R_seed = false([numel(prog.regions), prog.N, numel(prog.feet)]);
+  RR_seed = false([numel(prog.regions), prog.N-1, numel(prog.feet)]);
   for j = 1:numel(prog.feet)
     delta_norm = delta_norm + sum(sum((F_fixed_array(:, :, j) - prog.vars.(sprintf('F%d',j)).value).^2));
     delta_norm = delta_norm + sum(sum((M_fixed_array(:, :, j) - prog.vars.(sprintf('M%d',j)).value).^2));
@@ -146,6 +199,7 @@ for i = 1:M
     M_fixed_array(:, :, j) = (1-lam)*M_fixed_array(:, :, j) + lam*prog.vars.(sprintf('M%d',j)).value;
     r_foot_fixed_array(:,:,j) = (1-lam)*r_foot_fixed_array(:, :, j) + lam*prog.vars.(sprintf('r_foot%d',j)).value;
     R_seed(:,:,j) = prog.vars.(sprintf('R%d',j)).value;
+    RR_seed(:,:,j) = prog.vars.(sprintf('RR%d',j)).value;
   end
   M_fixed_array(abs(M_fixed_array) < 1e-6) = 0;
   F_fixed_array(abs(F_fixed_array) < 1e-6) = 0;
@@ -166,8 +220,9 @@ for i = 1:M
   v.playback(position_traj)
   %keyboard
   %if objval < tol && delta_norm < tol, break; end
-  if delta_norm < tol, break; end
+  if slack_max < tol && delta_norm < tol, break; end
   fix_forces = ~fix_forces;
+  slack_max = slack_max*1e-1;
 end
 toc(total_time);
 %%
