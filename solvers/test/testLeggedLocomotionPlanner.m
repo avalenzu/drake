@@ -7,6 +7,7 @@ if ~exist('continuation', 'var') || ~continuation
   particle_urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'PointMass.urdf');
   rbm = RigidBodyManipulator(urdf, options);
   rbm_vis = rbm;
+  %step_height = 0.2;
   step_height = 0.0;
   platform1_start = -0.5;
   platform1_end = 0.3;
@@ -33,9 +34,9 @@ if ~exist('continuation', 'var') || ~continuation
   v = rbm_vis.constructVisualizer();
   I = diag([1;6;3]);
   m = 1;
-  N = 10;
+  N = 20;
   M = 1000;
-  dt = 2/N;
+  dt = 1/N;
   r0 = [0; 0; 0.5];
   z0 = rpy2quat([0; 0*pi/180; 0]);
   zf = rpy2quat([0; 0*pi/180; 60*pi/180]);
@@ -67,19 +68,18 @@ for i = 1:M
   prog.foot_mass = 0.2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.stance_velocity_max = 0.05;
-  prog.swing_velocity_max = 1;
+  prog.foot_velocity_max = prog.velocity_max;
   prog.fix_forces = fix_forces;
   prog.slack_max = slack_max;
   for j = 1:4 
     pt = rbm.getTerrainContactPoints(2).pts(:,2+j);
-    centers = [pt, pt + [0; 1*sign(pt(2))*leg_length*sin(0*pi/180); -1.5*leg_length*cos(0*pi/180)]];
+    centers = [pt, pt + [0; 1*sign(pt(2))*leg_length*sin(0*pi/180); -1*leg_length*cos(0*pi/180)]];
     %centers = [pt+[0; -0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length], pt+[0; 0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length]];
     prog = prog.addFoot(centers, [leg_length, leg_length], r_foot_fixed_array(:,:,j));
   end
-  prog.force_max = (prog.m + sum([prog.feet.m]))*9.81/3;
-  %prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; 0.7], [], [], [], []);
-  %prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -0.7], [], [], [], []);
+  prog.force_max = (prog.m + sum([prog.feet.m]))*9.81;
+  %prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; platform2_start], [], [], [], []);
+  %prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -platform1_end], [], [], [], []);
   prog = prog.addRegion([0, 0, -1], -0.05, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.06], [], [], [0; 0; 1], 1);
@@ -144,6 +144,18 @@ for i = 1:M
     A(2, prog.vars.(sprintf('R%d',j)).i(1,prog.N)) = 1;
   end
   prog = prog.addLinearConstraints(A, b, [], []);
+
+  % Feet start and end with zero velocity
+  ncons = 6*numel(prog.feet);
+  Aeq = zeros(ncons, prog.nv);
+  beq = zeros(ncons, 1);
+  offset = 0;
+  for j = 1:numel(prog.feet)
+    Aeq(offset + (1:3), prog.vars.(sprintf('v_foot%d',j)).i(:,1)) = eye(3);
+    Aeq(offset + (4:6), prog.vars.(sprintf('v_foot%d',j)).i(:,prog.N)) = eye(3);
+    offset = offset + 6;
+  end
+  prog = prog.addLinearConstraints([], [], Aeq, beq);
 
   %ncons = prog.N;
   %A = zeros(ncons, prog.nv);
