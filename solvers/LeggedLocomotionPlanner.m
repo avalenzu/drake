@@ -515,12 +515,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
         n_contact_regions = numel(obj.regions) - n_free_regions;
         n_contacts = numel(obj.feet);
         n_fc_faces = size(obj.friction_cone_normals,2);
-        ncons_total = n_contacts*(obj.N*12*n_free_regions + ((obj.N-1)*13 + 6 + obj.N*(n_fc_faces+6))*n_contact_regions);
+        %ncons_total = n_contacts*(obj.N*12*n_free_regions + ((obj.N-1)*13 + 6 + obj.N*(n_fc_faces+6))*n_contact_regions);
+        ncons_total = n_contacts*(obj.N*12*n_free_regions + ((obj.N-1)*0 + 0 + obj.N*(n_fc_faces+6+6))*n_contact_regions);
         A = zeros(ncons_total, obj.nv);
         b = zeros(ncons_total, 1);
         offset = 0;
         for i = 1:numel(obj.feet)
-          for n = 1:obj.N
+          for n = 1:obj.N-1
+            n_or_n_plus_1 = min(n+1, obj.N);
             pt_cross = vectorToSkewSymmetric(obj.feet(i).r_fixed(:,n));
             R_body_to_world = quat2rotmat(obj.z_fixed_array(:,n));
             for j = 1:numel(obj.regions)
@@ -534,7 +536,7 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % -F <= big_M*(1 - R(j,n));
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_or_n_plus_1)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('F_foot%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
                 offset = offset + ncons;
@@ -546,7 +548,7 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % -M <= big_M*(1 - R(j,n));
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_or_n_plus_1)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncons,1);
                 b(indices) = big_M;
@@ -559,14 +561,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 fc_normals = obj.regions(j).friction_cone_normals;
                 ncons = size(fc_normals, 2);
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n)) = big_M*ones(ncons, 1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n_or_n_plus_1)) = big_M*ones(ncons, 1);
                 A(indices, obj.vars.(sprintf('F_foot%d',i)).i(:, n)) = -fc_normals';
                 b(indices) = big_M*ones(ncons, 1);
                 offset = offset + ncons;
 
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_or_n_plus_1)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
                 offset = offset + ncons;
@@ -584,12 +586,22 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 big_M = obj.velocity_max;
                 ncons = 6;
                 indices = offset + (1:ncons);
-                %C = eye(3) - normal*normal';
-                C = eye(3);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                C = eye(3) - normal*normal';
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_or_n_plus_1)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('v_foot%d',i)).i(:,n)) = [C; -C];
                 b(indices) = big_M*ones(ncons, 1);
                 offset = offset + ncons;
+
+
+                %big_M = obj.force_max;
+                %ncons = 3;
+                %n_or_n_plus_1 = min(n+1, obj.N);
+                %indices = offset + (1:ncons);
+                %A(indices, obj.vars.(sprintf('F%d',i)).i(:,n)) = eye(3);
+                %A(indices, obj.vars.(sprintf('F_foot%d',i)).i(:,n)) = -eye(3);
+                %A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_or_n_plus_1)) = big_M*ones(3,1);
+                %b(indices) = big_M*ones(ncons, 1);
+                %offset = offset + ncons;
 
                 % R(j,n) & R(j,n+1) --> p - p_next == 0
                 % where 
@@ -599,25 +611,25 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % R(j,n) + R(j,n+1) <= RR(j,n) + 1
                 % r(n) - r(n+1) + R_body_to_world(n)*r_foot(n) - R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
                 % -r(n) + r(n+1) - R_body_to_world(n)*r_foot(n) + R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
-                if n < obj.N
-                  Rname = sprintf('R%d',i);
-                  RRname = sprintf('RR%d',i);
-                  A(offset + 1, obj.vars.(Rname).i(j,n:n+1)) = 1;
-                  A(offset + 1, obj.vars.(RRname).i(j,n)) = -1;
-                  b(offset + 1) = 1;
-                  offset = offset + 1;
-                  R_body_to_world_next = quat2rotmat(obj.z_fixed_array(:,n+1));
-                  big_M = 2*(obj.position_max+obj.foot_position_max);
-                  ncons = 6;
-                  indices = offset + (1:ncons);
-                  A(indices, obj.vars.r.i(:,n)) = [eye(3); -eye(3)];
-                  A(indices, obj.vars.r.i(:,n+1)) = [-eye(3); eye(3)];
-                  A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n)) = [R_body_to_world; -R_body_to_world];
-                  A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n+1)) = [-R_body_to_world_next; R_body_to_world_next];
-                  A(indices, obj.vars.(RRname).i(j,n)) = big_M*ones(ncons,1);
-                  b(indices) = big_M;
-                  offset = offset + ncons;
-                end
+                %if n < obj.N
+                  %Rname = sprintf('R%d',i);
+                  %RRname = sprintf('RR%d',i);
+                  %A(offset + 1, obj.vars.(Rname).i(j,n:n+1)) = 1;
+                  %A(offset + 1, obj.vars.(RRname).i(j,n)) = -1;
+                  %b(offset + 1) = 1;
+                  %offset = offset + 1;
+                  %R_body_to_world_next = quat2rotmat(obj.z_fixed_array(:,n+1));
+                  %big_M = 2*(obj.position_max+obj.foot_position_max);
+                  %ncons = 6;
+                  %indices = offset + (1:ncons);
+                  %A(indices, obj.vars.r.i(:,n)) = [eye(3); -eye(3)];
+                  %A(indices, obj.vars.r.i(:,n+1)) = [-eye(3); eye(3)];
+                  %A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n)) = [R_body_to_world; -R_body_to_world];
+                  %A(indices, obj.vars.(sprintf('r_foot%d',i)).i(:,n+1)) = [-R_body_to_world_next; R_body_to_world_next];
+                  %A(indices, obj.vars.(RRname).i(j,n)) = big_M*ones(ncons,1);
+                  %b(indices) = big_M;
+                  %offset = offset + ncons;
+                %end
               end
             end
           end
