@@ -36,7 +36,7 @@ classdef Affine < drakeFunction.DrakeFunction
     function fcn = concatenate(obj, varargin)
       if islogical(varargin{end})
         same_input = varargin{end};
-        fcns = [obj, varargin(1:end-1)];
+        fcns = [{obj}, varargin(1:end-1)];
       else
         same_input = false;
         fcns = [{obj}, varargin];
@@ -54,6 +54,29 @@ classdef Affine < drakeFunction.DrakeFunction
       else
         % punt to DrakeFunction
         fcn = concatenate@drakeFunction.DrakeFunction(obj, varargin{:});
+      end
+    end
+
+    function fcn = plus(obj, varargin)
+      other = varargin{1};
+      if isa(other, 'drakeFunction.Affine')
+        if nargin < 3 
+          same_input = false; 
+        else
+          same_input = varargin{2};
+        end
+        valuecheck(obj.dim_output, other.dim_output);
+        if same_input
+          valuecheck(obj.dim_input, other.dim_input);
+          A_plus = obj.A + other.A;
+        else
+          A_plus = [obj.A, other.A];
+        end
+        b_plus = obj.b + other.b;
+        fcn = drakeFunction.Affine(A_plus,b_plus);
+      else
+        % punt to DrakeFunction
+        fcn = plus@drakeFunction.DrakeFunction(obj, varargin{:});
       end
     end
   end
