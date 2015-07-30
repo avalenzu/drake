@@ -7,8 +7,8 @@ if ~exist('continuation', 'var') || ~continuation
   particle_urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'PointMass.urdf');
   rbm = RigidBodyManipulator(urdf, options);
   rbm_vis = rbm;
-  %step_height = 0.2;
-  step_height = 0.0;
+  step_height = -0.1;
+  %step_height = 0.0;
   platform1_start = -0.5;
   platform1_end = 0.3;
   platform2_start = 0.5;
@@ -34,9 +34,9 @@ if ~exist('continuation', 'var') || ~continuation
   v = rbm_vis.constructVisualizer();
   I = diag([1;6;3]);
   m = 1;
-  N = 20;
+  N = 16;
   M = 1000;
-  dt = 1/N;
+  dt = 2/N;
   r0 = [0; 0; 0.5];
   z0 = rpy2quat([0; 0*pi/180; 0]);
   zf = rpy2quat([0; 0*pi/180; 60*pi/180]);
@@ -68,7 +68,7 @@ for i = 1:M
   prog.foot_mass = 0.2;
   prog.velocity_max = 2;
   prog.position_max = 1e1;
-  prog.foot_velocity_max = prog.velocity_max;
+  prog.foot_velocity_max = 0.5*prog.velocity_max;
   prog.fix_forces = fix_forces;
   prog.slack_max = slack_max;
   for j = 1:4 
@@ -77,20 +77,19 @@ for i = 1:M
     %centers = [pt+[0; -0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length], pt+[0; 0.5*leg_length + sign(pt(2))*0.1*leg_length; -leg_length]];
     prog = prog.addFoot(centers, [leg_length, leg_length], r_foot_fixed_array(:,:,j));
   end
-  prog.force_max = (prog.m + sum([prog.feet.m]))*9.81;
-  %prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; platform2_start], [], [], [], []);
-  %prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -platform1_end], [], [], [], []);
-  prog = prog.addRegion([0, 0, -1], -0.05, [], [], [], []);
+  prog.force_max = (prog.m + sum([prog.feet.m]))*9.81/4;
+  prog = prog.addRegion([0, 0, -1; 1, 0, 0], [-0.05; platform2_start - 0.2], [], [], [], []);
+  prog = prog.addRegion([0, 0, -1; -1, 0, 0], [-(step_height + 0.05); -platform1_end], [], [], [], []);
+  %prog = prog.addRegion([0, 0, -1], -0.05, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1], 0, [], [], [], []);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.06], [], [], [0; 0; 1], 1);
   %prog = prog.addRegion([0, 0, 1; 0, 0, -1], [0; 0.05], [], [], [0; 0; 1], 1);
   prog = prog.addRegion([1, 0, 0], platform1_end, [0, 0, 1], 0, [0; 0; 1], 1);
   prog = prog.addRegion([-1, 0, 0], -platform2_start, [0, 0, 1], step_height, [0; 0; 1], 1);
   prog = prog.addDefaultConstraintsAndCosts();
-  if exist('R_seed', 'var') && exist('RR_seed', 'var')
+  if exist('R_seed', 'var')
     for j = 1:numel(prog.feet)
       prog.vars.(sprintf('R%d',j)).start = R_seed(:,:,j);
-      prog.vars.(sprintf('RR%d',j)).start = RR_seed(:,:,j);
     end
   end
   %for j = 1:4
@@ -184,7 +183,7 @@ for i = 1:M
     %prog.vars.(sprintf('M%d',j)).ub(:,prog.N) = 0;
   %end
   params = struct();
-  %params.mipgap = 0.2;
+  params.mipgap = 0.2;
   params.outputflag = 1;
   %params.solver = 'gurobi';
   params.threads = 12;
@@ -203,7 +202,6 @@ for i = 1:M
   %z_fixed_array = bsxfun(@rdivide, z_fixed_array, sqrt(sum(z_fixed_array.^2, 1)));
   %z_fixed_array(abs(z_fixed_array) < 1e-6) = 0;
   R_seed = false([numel(prog.regions), prog.N, numel(prog.feet)]);
-  RR_seed = false([numel(prog.regions), prog.N-1, numel(prog.feet)]);
   for j = 1:numel(prog.feet)
     delta_norm = delta_norm + sum(sum((F_fixed_array(:, :, j) - prog.vars.(sprintf('F%d',j)).value).^2));
     delta_norm = delta_norm + sum(sum((M_fixed_array(:, :, j) - prog.vars.(sprintf('M%d',j)).value).^2));
@@ -212,7 +210,6 @@ for i = 1:M
     M_fixed_array(:, :, j) = (1-lam)*M_fixed_array(:, :, j) + lam*prog.vars.(sprintf('M%d',j)).value;
     r_foot_fixed_array(:,:,j) = (1-lam)*r_foot_fixed_array(:, :, j) + lam*prog.vars.(sprintf('r_foot%d',j)).value;
     R_seed(:,:,j) = prog.vars.(sprintf('R%d',j)).value;
-    RR_seed(:,:,j) = prog.vars.(sprintf('RR%d',j)).value;
   end
   M_fixed_array(abs(M_fixed_array) < 1e-6) = 0;
   F_fixed_array(abs(F_fixed_array) < 1e-6) = 0;

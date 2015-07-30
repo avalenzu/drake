@@ -52,6 +52,8 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
         % Add binary variables for contact region assignment
         obj = obj.addVariable(sprintf('R%d',i), 'B', [numel(obj.regions), obj.N], 0, 1);
         obj = obj.addVariable(sprintf('RR%d',i), 'B', [numel(obj.regions), obj.N-1], 0, 1);
+        obj = obj.addVariable(sprintf('in_contact%d',i), 'B', [1, obj.N], 0, 1);
+        obj = obj.addVariable(sprintf('contact_changed%d',i), 'I', [1, obj.N-1], -1, 1);
         
         % Add continuous variables for contact forces and moments
         obj = obj.addVariable(sprintf('F%d',i), 'C', [3, obj.N], ...
@@ -95,12 +97,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
           c(obj.vars.(sprintf('r_foot%d',i)).i(:)) = -2*obj.feet(i).r_fixed(:);
           alpha = alpha + sum(obj.feet(i).r_fixed(:).^2);
           Q(obj.vars.(sprintf('v_foot%d',i)).i(:), obj.vars.(sprintf('v_foot%d',i)).i(:)) = eye(numel(obj.feet(i).r_fixed));
-          R_indices = obj.vars.(sprintf('R%d',i)).i(:,1:end-1); 
-          R_plus_indices = obj.vars.(sprintf('R%d',i)).i(:,2:end); 
-          Q(R_indices, R_indices) = eye(numel(R_indices));
-          Q(R_plus_indices, R_plus_indices) = eye(numel(R_indices));
-          Q(R_indices, R_plus_indices) = -eye(numel(R_indices));
-          Q(R_plus_indices, R_indices) = -eye(numel(R_indices));
+          contact_changed_indices = obj.vars.(sprintf('contact_changed%d',i)).i;
+          Q(contact_changed_indices, contact_changed_indices) = eye(numel(contact_changed_indices));
+          %R_indices = obj.vars.(sprintf('R%d',i)).i(:,1:end-1); 
+          %R_plus_indices = obj.vars.(sprintf('R%d',i)).i(:,2:end); 
+          %Q(R_indices, R_indices) = eye(numel(R_indices));
+          %Q(R_plus_indices, R_plus_indices) = eye(numel(R_indices));
+          %Q(R_indices, R_plus_indices) = -eye(numel(R_indices));
+          %Q(R_plus_indices, R_indices) = -eye(numel(R_indices));
         end
         alpha = alpha ...
                 + sum(obj.w_fixed_array(:).^2) ...
@@ -184,7 +188,7 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
             % v_foot_mid = v_foot + h/(2*m_foot)*(F_ext_i - Fi) + h*g/2
             % Fi is force exerted on body by foot
             % Thus we have
-            % R(z_f_next)*r_foot_next + r_next - R(z_f)*r_foot - r - h*v_foot - h^2/(2*m_foot)*(F_ext_i - Fi) + h^2*g/2
+            % R(z_f_next)*r_foot_next + r_next - R(z_f)*r_foot - r - h*v_foot - h^2/(2*m_foot)*(F_ext_i - Fi) - h^2*g/2
             rname = sprintf('r_foot%d', i);
             vname = sprintf('v_foot%d', i);
             Fname = sprintf('F%d', i);
@@ -192,13 +196,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
             Aeq(offset+6+(i-1)*3+(1:3), obj.vars.r.i(:,n:n+1)) = [-eye(3), eye(3)];
             Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(rname).i(:,n:n+1)) = [-R_body_to_world, R_body_to_world_next];
             Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(vname).i(:,n)) = -h*eye(3);
-            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(Fname).i(:,n)) = h/(2*obj.feet(i).m)*eye(3);
-            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(Fextname).i(:,n)) = -h/(2*obj.feet(i).m)*eye(3);
+            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(Fname).i(:,n)) = h^2/(2*obj.feet(i).m)*eye(3);
+            Aeq(offset+6+(i-1)*3+(1:3), obj.vars.(Fextname).i(:,n)) = -h^2/(2*obj.feet(i).m)*eye(3);
+            beq(offset+6+(i-1)*3+(1:3)) = h^2*g/2;
 
             % Foot velocity
-            % v_foot_next - v_foot_mid - h/(2*m)*(Fext_i_next - Fi_next) + h*g/2  == 0
+            % v_foot_next - v_foot_mid - h/(2*m)*(Fext_i_next - Fi_next) - h*g/2  == 0
             % Thus we have
-            % v_foot_next - v_foot - h/(2*m_foot)*(Fext_i + Fext_i_next - Fi - Fi_next) + h*g
+            % v_foot_next - v_foot - h/(2*m_foot)*(Fext_i + Fext_i_next - Fi - Fi_next) == h*g
             Aeq(offset+6+(i-1)*3+(4:6), obj.vars.(vname).i(:,n:n+1)) = [-eye(3), eye(3)];
             Aeq(offset+6+(i-1)*3+(4:6), obj.vars.(Fname).i(:,n:n+1)) = h/(2*obj.feet(i).m)*[eye(3), eye(3)];
             Aeq(offset+6+(i-1)*3+(4:6), obj.vars.(Fextname).i(:,n:n+1)) = -h/(2*obj.feet(i).m)*[eye(3), eye(3)];
@@ -438,7 +443,7 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
         w_fixed = obj.w_fixed_array;
         for i = 1:numel(obj.feet)
           R = obj.vars.(sprintf('R%d',i)).symb;
-          RR = obj.vars.(sprintf('RR%d',i)).symb;
+          %RR = obj.vars.(sprintf('RR%d',i)).symb;
           for n = 1:obj.N
             %p = obj.quatRotateVec2(z(:,n), z_fixed(:,n), obj.contact_pts(:,i)) + r(:,n);
             %p_next = obj.quatRotateVec2(z(:,n+1), z_fixed(:,n+1), obj.contact_pts(:,i)) + r(:,n+1);
@@ -510,19 +515,46 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
           end
         end
       else
+        h = obj.dt;
+        g = [0; 0; -9.81];
         big_M = obj.force_max;
         n_free_regions = sum(cellfun(@isempty, {obj.regions.normal}));
         n_contact_regions = numel(obj.regions) - n_free_regions;
         n_contacts = numel(obj.feet);
         n_fc_faces = size(obj.friction_cone_normals,2);
-        ncons_total = n_contacts*(obj.N*12*n_free_regions + ((obj.N-1)*13 + 6 + obj.N*(n_fc_faces+6))*n_contact_regions);
+        %ncons_total = n_contacts*((obj.N-1)*12*n_free_regions + ((obj.N-1)*1 + (obj.N-1)*(n_fc_faces+12))*n_contact_regions);
+        nt = obj.N;
+        ncons_total = n_contacts*(1 + (nt-1)*2 + nt*13*n_free_regions + ((nt-1)*7 + nt*(n_fc_faces+7))*n_contact_regions);
         A = zeros(ncons_total, obj.nv);
         b = zeros(ncons_total, 1);
+        ncons_eq_total = n_contacts*(obj.N-1);
+        Aeq = zeros(ncons_eq_total, obj.nv);
+        beq = zeros(ncons_eq_total, 1);
         offset = 0;
+        offset_eq = 0;
+        ncons_quad_total = numel(obj.feet);
+        quadcon = struct('Qc', repmat({sparse(obj.nv, obj.nv)}, 1, ncons_quad_total), 'q', repmat({zeros(obj.nv, 1)}, 1, ncons_quad_total), 'rhs', repmat({0}, 1, ncons_quad_total));
         for i = 1:numel(obj.feet)
+          Rname = sprintf('R%d',i);
+          RRname = sprintf('RR%d',i);
+          in_contact_name = sprintf('in_contact%d',i);
+          contact_changed_name = sprintf('contact_changed%d',i);
+          quadcon(i).Qc(obj.vars.(contact_changed_name).i(:), obj.vars.(contact_changed_name).i(:)) = eye(numel(obj.vars.(contact_changed_name).i));
+          quadcon(i).rhs = 4;
           for n = 1:obj.N
+            n_plus_1_or_N = min(n+1, obj.N);
             pt_cross = vectorToSkewSymmetric(obj.feet(i).r_fixed(:,n));
             R_body_to_world = quat2rotmat(obj.z_fixed_array(:,n));
+            if n < obj.N
+                ncons = 1;
+                indices = offset_eq + (1:ncons);
+                % ~contact_changed(n) --> in_contact(n+1) - in_contact(n) == 0
+                % formulated as
+                %  in_contact(n+1) - in_contact(n) - contact_changed == 0
+                Aeq(indices, obj.vars.(in_contact_name).i(n:n+1)) = [-1; 1];
+                Aeq(indices, obj.vars.(contact_changed_name).i(n)) = -1;
+                offset_eq = offset_eq + ncons;
+            end
             for j = 1:numel(obj.regions)
               normal = obj.regions(j).normal;
               mu = obj.regions(j).mu;
@@ -534,7 +566,7 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % -F <= big_M*(1 - R(j,n));
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_plus_1_or_N)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('F_foot%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
                 offset = offset + ncons;
@@ -546,10 +578,18 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % -M <= big_M*(1 - R(j,n));
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_plus_1_or_N)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 %A(indices, obj.vars.contact_point_slack.i) = -1*ones(ncons,1);
                 b(indices) = big_M;
+                offset = offset + ncons;
+
+                in_contact_name = sprintf('in_contact%d',i);
+                ncons = 1;
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(Rname).i(j,n)) = 1;
+                A(indices, obj.vars.(in_contact_name).i(n)) = 1;
+                b(indices) = 1;
                 offset = offset + ncons;
               else
                 % HACK
@@ -559,14 +599,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 fc_normals = obj.regions(j).friction_cone_normals;
                 ncons = size(fc_normals, 2);
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n)) = big_M*ones(ncons, 1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j, n_plus_1_or_N)) = big_M*ones(ncons, 1);
                 A(indices, obj.vars.(sprintf('F_foot%d',i)).i(:, n)) = -fc_normals';
                 b(indices) = big_M*ones(ncons, 1);
                 offset = offset + ncons;
 
                 ncons = 6;
                 indices = offset + (1:ncons);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
+                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_plus_1_or_N)) = big_M*ones(6,1);
                 A(indices, obj.vars.(sprintf('M%d',i)).i(:,n)) = [eye(3); -eye(3)];
                 b(indices) = big_M;
                 offset = offset + ncons;
@@ -581,15 +621,19 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % formulated as
                 %  (I3 - normal*normal')*(v_foot_i) <= big_M*(1 - R(j,n))
                 % -(I3 - normal*normal')*(v_foot_i) <= big_M*(1 - R(j,n))
-                big_M = obj.velocity_max;
-                ncons = 6;
-                indices = offset + (1:ncons);
+                %big_M = obj.foot_velocity_max + h/obj.feet(i).m*obj.force_max;
+                %big_M = 10*big_M;
+                %ncons = 6;
+                %indices = offset + (1:ncons);
                 %C = eye(3) - normal*normal';
-                C = eye(3);
-                A(indices, obj.vars.(sprintf('R%d',i)).i(j,n)) = big_M*ones(6,1);
-                A(indices, obj.vars.(sprintf('v_foot%d',i)).i(:,n)) = [C; -C];
-                b(indices) = big_M*ones(ncons, 1);
-                offset = offset + ncons;
+                %Fname = sprintf('F%d', i);
+                %Fextname = sprintf('F_foot%d', i);
+                %A(indices, obj.vars.(sprintf('R%d',i)).i(j,n_plus_1_or_N)) = big_M*ones(6,1);
+                %A(indices, obj.vars.(sprintf('v_foot%d',i)).i(:,n)) = [C; -C];
+                %A(indices, obj.vars.(Fname).i(:,n)) = -h/(2*obj.feet(i).m)*[C; -C];
+                %A(indices, obj.vars.(Fextname).i(:,n)) = h/(2*obj.feet(i).m)*[C; -C];
+                %b(indices) = -[C; -C]*h*g/2 + big_M*ones(ncons, 1);
+                %offset = offset + ncons;
 
                 % R(j,n) & R(j,n+1) --> p - p_next == 0
                 % where 
@@ -599,9 +643,14 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
                 % R(j,n) + R(j,n+1) <= RR(j,n) + 1
                 % r(n) - r(n+1) + R_body_to_world(n)*r_foot(n) - R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
                 % -r(n) + r(n+1) - R_body_to_world(n)*r_foot(n) + R_body_to_world(n+1)*r_foot(n+1) <= M*(1 - RR(j,n))
+                in_contact_name = sprintf('in_contact%d',i);
+                ncons = 1;
+                indices = offset + (1:ncons);
+                A(indices, obj.vars.(Rname).i(j,n)) = 1;
+                A(indices, obj.vars.(in_contact_name).i(n)) = -1;
+                offset = offset + ncons;
+
                 if n < obj.N
-                  Rname = sprintf('R%d',i);
-                  RRname = sprintf('RR%d',i);
                   A(offset + 1, obj.vars.(Rname).i(j,n:n+1)) = 1;
                   A(offset + 1, obj.vars.(RRname).i(j,n)) = -1;
                   b(offset + 1) = 1;
@@ -622,7 +671,8 @@ classdef LeggedLocomotionPlanner < MixedIntegerConvexProgram
             end
           end
         end
-        obj = obj.addLinearConstraints(A, b, [], []);
+        obj = obj.addLinearConstraints(A, b, Aeq, beq);
+        obj = obj.addQuadcon(quadcon);
       end
     end
     
