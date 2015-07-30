@@ -7,6 +7,7 @@ classdef Affine < drakeFunction.DrakeFunction
     A
     b
   end
+
   methods
     function obj = Affine(A,b)
       % obj = drakeFunction.Affine(input_frame,output_frame,A,b) returns
@@ -77,6 +78,46 @@ classdef Affine < drakeFunction.DrakeFunction
       else
         % punt to DrakeFunction
         fcn = plus@drakeFunction.DrakeFunction(obj, varargin{:});
+      end
+    end
+
+    function fcn = mtimes(obj, other)
+      fallback = true;
+      if isnumeric(obj)
+        fcn_orig = other;
+        value = obj;
+        fallback = false;
+      elseif isnumeric(other)
+        fcn_orig = obj;
+        value = other;
+        fallback = false;
+      end
+      if ~fallback && sizecheck(value, [NaN, fcn_orig.dim_output])
+        A_new = value*fcn_orig.A;
+        b_new = value*fcn_orig.b;
+        fcn = drakeFunction.Affine(A_new, b_new);
+      else
+        fcn = mtimes@drakeFunction.DrakeFunction(obj, other);
+      end
+    end
+
+    function fcn = times(obj, other)
+      fallback = true;
+      if isnumeric(obj)
+        fcn_orig = other;
+        value = obj;
+        fallback = false;
+      elseif isnumeric(other)
+        fcn_orig = obj;
+        value = other;
+        fallback = false;
+      end
+      if ~fallback && isscalar(value)
+        A_new = value.*fcn_orig.A;
+        b_new = value.*fcn_orig.b;
+        fcn = drakeFunction.Affine(A_new, b_new);
+      else
+        fcn = times@drakeFunction.DrakeFunction(obj, other);
       end
     end
   end

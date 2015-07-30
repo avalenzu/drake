@@ -111,17 +111,28 @@ classdef DrakeFunction
 
     function fcn = times(obj,other)
       import drakeFunction.ConstantMultiple
-      if isnumeric(obj)
-        fcn_orig = other;
-        value = obj;
-      elseif isnumeric(other)
-        fcn_orig = obj;
-        value = other;
+      if isnumeric(obj) || isnumeric(other)
+        if isnumeric(obj)
+          fcn_orig = other;
+          value = obj;
+        elseif isnumeric(other)
+          fcn_orig = obj;
+          value = other;
+        end
+        fcn = compose(ConstantMultiple(fcn_orig.dim_output,value),fcn_orig);
+      elseif obj.dim_output == 1  || other.dim_output == 1
+        if obj.dim_output == 1
+          fcn_orig = other;
+          value = obj;
+        elseif other.dim_output == 1
+          fcn_orig = obj;
+          value = other;
+        end
+        fcn = compose(drakeFunction.ScalarProduct(fcn_orig.dim_output), [value; fcn_orig]);
       else
         error('Drake:drakeFunction:DrakeFunction:NoDrakeFunctionProducts', ...
           'Elementwise products of two DrakeFunctions are not yet imiplemented');
       end
-      fcn = compose(ConstantMultiple(fcn_orig.dim_input,value),fcn_orig);
     end
 
     function fcn = vertcat(obj,varargin)
