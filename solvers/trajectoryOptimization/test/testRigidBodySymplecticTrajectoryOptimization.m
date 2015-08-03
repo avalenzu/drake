@@ -7,7 +7,7 @@ if nargin < 2, random_seed = false; end
 t0 = 0;
 tf = 3;
 N = 20;
-r0 = [0.5; 0; 1];
+r0 = [1; 0; 0.5];
 z0 = rpy2quat([pi/2; 0; 0]);
 v0 = [0; 0; 0];
 w0 = 0*[1e-1; 2*pi; 0];
@@ -36,7 +36,7 @@ fixed_point_vel_constraint = DrakeFunctionConstraint(zeros(3,1), ...
                                                      relative_vel_fcn);
 options = struct();
 options.time_option = 2;
-wrench.knots = ceil(N/4):N;
+wrench.knots = ceil(N/5):N;
 wrench.num_forces = 1;
 lb = zeros(3,1);
 ub = zeros(3,1);
@@ -50,16 +50,16 @@ prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, 1));
 prog = prog.addConstraint(BoundingBoxConstraint(tf/(2*N)*ones(size(prog.h_inds)), 2*tf/N*ones(size(prog.h_inds))), prog.h_inds);
 prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(prog.F_inds)), repmat(-[0; 0; -9.81], prog.N, 1)), prog.F_inds(:));
 prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(prog.h_inds)), zeros(numel(prog.h_inds),1)), prog.h_inds(:));
-prog = prog.addConstraint(ConstantConstraint(zeros(size(prog.r_inds(2,:)))), prog.r_inds(2,:));
+% prog = prog.addConstraint(ConstantConstraint(zeros(size(prog.r_inds(2,:)))), prog.r_inds(2,:));
 % prog = prog.addConstraint(ConstantConstraint(r0), prog.r_inds(:, prog.N));
 % prog = prog.addConstraint(ConstantConstraint(0), prog.x_inds(13, prog.N));
 % prog = prog.addConstraint(ConstantConstraint(0), prog.F_inds(3, 1));
 % prog = prog.addConstraint(ConstantConstraint(0), prog.F_inds(3, prog.N));
 for n = wrench.knots
   prog = prog.addConstraint(fixed_point_constraint, [prog.z_inds(:,n); prog.r_inds(:,n)]);
-  if n < prog.N
-    prog = prog.addConstraint(fixed_point_vel_constraint, [prog.v_inds(:,n+1); prog.z_inds(:,n+1); prog.w_inds(:,n+1)]);
-  end
+%   if n < prog.N
+    prog = prog.addConstraint(fixed_point_vel_constraint, [prog.v_inds(:,n); prog.z_inds(:,n); prog.w_inds(:,n)]);
+%   end
 end
 prog = prog.setSolverOptions('snopt', 'SuperbasicsLimit', 2000);
 prog = prog.setSolverOptions('snopt', 'LinesearchTolerance', 0.99);
