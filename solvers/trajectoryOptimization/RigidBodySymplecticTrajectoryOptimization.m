@@ -153,13 +153,13 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
         num_force_vars = 3*num_forces*num_knots;
         
         var_names = cellStrCat(sprintf('f%d', i), {'x', 'y', 'z'}, ...
-                               '_', num2cellStr(contact_wrench_struct.knots));
+                               '_', num2cellStr(contact_wrench_struct(i).knots));
         obj = obj.addDecisionVariable(num_force_vars, var_names);
         f_inds = obj.num_vars - num_force_vars + (1:num_force_vars);
         f_inds = reshape(f_inds, [3, num_forces*num_knots]);
         
         var_names = cellStrCat(sprintf('p%d', i), {'x', 'y', 'z'}, ...
-                               '_', num2cellStr(contact_wrench_struct.knots));
+                               '_', num2cellStr(contact_wrench_struct(i).knots));
         obj = obj.addDecisionVariable(num_force_vars, var_names);
         p_inds = obj.num_vars - num_force_vars + (1:num_force_vars);
         p_inds = reshape(p_inds, [3, num_forces*num_knots]);
@@ -167,18 +167,27 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
         offset = 0;
         for n = contact_wrench_struct(i).knots
           indices = offset + (1:num_forces);
-          obj.contact_inds(n).forces = f_inds(:, indices);
-          obj.contact_inds(n).points = p_inds(:, indices);
+          obj.contact_inds(n).forces = [obj.contact_inds(n).forces, f_inds(:, indices)];
+          obj.contact_inds(n).points = [obj.contact_inds(n).points, p_inds(:, indices)];
           for j = 1:num_constraints
             xinds = [];
-            if ismember('x', contact_wrench_struct(i).vars{j})
-              xinds = [xinds; reshape(obj.x_inds(:,n), [], 1)];
-            end
             if ismember('f', contact_wrench_struct(i).vars{j})
               xinds = [xinds; reshape(f_inds(:, indices), [], 1)];
             end
             if ismember('p', contact_wrench_struct(i).vars{j})
               xinds = [xinds; reshape(p_inds(:, indices), [], 1)];
+            end
+            if ismember('r', contact_wrench_struct(i).vars{j})
+              xinds = [xinds; reshape(obj.r_inds(:,n), [], 1)];
+            end
+            if ismember('z', contact_wrench_struct(i).vars{j})
+              xinds = [xinds; reshape(obj.z_inds(:,n), [], 1)];
+            end
+            if ismember('w', contact_wrench_struct(i).vars{j})
+              xinds = [xinds; reshape(obj.w_inds(:,n), [], 1)];
+            end
+            if ismember('v', contact_wrench_struct(i).vars{j})
+              xinds = [xinds; reshape(obj.v_inds(:,n), [], 1)];
             end
             obj = obj.addConstraint(contact_wrench_struct(i).constraint{j}, xinds);
           end

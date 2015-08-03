@@ -5,16 +5,16 @@ import drakeFunction.*
 if nargin < 1, visualize = false; end
 if nargin < 2, random_seed = false; end
 t0 = 0;
-tf = 3;
+tf = 1.5;
 N = 20;
-r0 = [1; 0; 0.5];
-z0 = rpy2quat([pi/2; 0; 0]);
+r0 = [0; 0; 0.15];
+z0 = rpy2quat([0; 0; 0]);
 v0 = [0; 0; 0];
 w0 = 0*[1e-1; 2*pi; 0];
 x0 = [r0; z0; w0; v0];
 
 urdf = fullfile(getDrakePath(), 'solvers', 'test', 'littleBrick.urdf');
-urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'FallingBrick.urdf');
+%urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'FallingBrick.urdf');
 options.floating = 'quat';
 options.use_new_kinsol = true;
 rbm = RigidBodyManipulator(urdf, options);
@@ -23,47 +23,90 @@ m = rbm.getMass();
 I = inertiaCalculator('box', m, rbm.body(2).visual_geometry{1}.size);
 % I = diag([1; 4; 8]);
 
-pt_in_body = [-1; 0; 0];
-relative_pos_fcn = compose(RotateVectorByQuaternion(), [Identity(4); Affine(zeros(3,0), [-1; 0; 0])]) + Identity(3);
-point0 = quatRotateVec(z0, pt_in_body) + [1; 0; 0];
-fixed_point_constraint = DrakeFunctionConstraint(point0, point0, ...
-                                                 relative_pos_fcn);
-relative_vel_fcn = Identity(3) - compose(RotateVectorByQuaternion(), ...
+dim_x = rbm.body(2).visual_geometry{1}.size(1);
+dim_y = rbm.body(2).visual_geometry{1}.size(2);
+dim_z = rbm.body(2).visual_geometry{1}.size(3);
+feet.LH.pt_in_body = [-dim_x/2;  dim_y/2;  -dim_z/2];
+feet.RH.pt_in_body = [-dim_x/2; -dim_y/2;  -dim_z/2];
+feet.LF.pt_in_body = [ dim_x/2;  dim_y/2;  -dim_z/2];
+feet.RF.pt_in_body = [ dim_x/2; -dim_y/2;  -dim_z/2];
+for field = fields(feet)'
+  foot = field{1};
+  feet.(foot).relative_position_fcn = Identity(3) - Identity(3) - compose(RotateVectorByQuaternion(), [Identity(4); Affine(zeros(3,0), feet.(foot).pt_in_body)]);
+  feet.(foot).relative_velocity_fcn = Identity(3) - compose(RotateVectorByQuaternion(), ...
                                          [Identity(4); ...
-                                          Linear(vectorToSkewSymmetric(pt_in_body))]);
-fixed_point_vel_constraint = DrakeFunctionConstraint(zeros(3,1), ...
-                                                     zeros(3,1), ...
-                                                     relative_vel_fcn);
+                                          Linear(vectorToSkewSymmetric(feet.(foot).pt_in_body))]);
+end
+
+
+contact_wrench_struct(1).foot = 'LH';
+contact_wrench_struct(1).knots = 1:N;
+contact_wrench_struct(1).num_forces = 1;
+contact_wrench_struct(1).pt_in_world = [-dim_x/2; dim_y/2; 0];
+
+contact_wrench_struct(2).foot = 'RH';
+contact_wrench_struct(2).knots = 1:N;
+contact_wrench_struct(2).num_forces = 1;
+contact_wrench_struct(2).pt_in_world = [-dim_x/2; -dim_y/2; 0];
+
+contact_wrench_struct(3).foot = 'LF';
+contact_wrench_struct(3).knots = 1:N;
+contact_wrench_struct(3).num_forces = 1;
+contact_wrench_struct(3).pt_in_world = [dim_x/2; dim_y/2; 0];
+
+contact_wrench_struct(4).foot = 'RF';
+contact_wrench_struct(4).knots = 1:N;
+contact_wrench_struct(4).num_forces = 1;
+contact_wrench_struct(4).pt_in_world = [dim_x/2; -dim_y/2; 0];
+
+tol = dim_z/2;
+for i = 1:numel(contact_wrench_struct)
+  lb = contact_wrench_struct(i).pt_in_world;
+  ub = lb;
+  contact_wrench_struct(i).constraint{1} = BoundingBoxConstraint(lb, ub);
+  contact_wrench_struct(i).vars{1} = {'p'};
+  lb = -tol*ones(3,1);
+  ub = tol*ones(3,1);
+  contact_wrench_struct(i).constraint{2} = DrakeFunctionConstraint(lb, ub, ...
+    feet.(contact_wrench_struct(i).foot).relative_position_fcn);
+  contact_wrench_struct(i).vars{2} = {'p','r','z'};
+end
+
 options = struct();
-options.time_option = 2;
-wrench.knots = ceil(N/5):N;
-wrench.num_forces = 1;
-lb = zeros(3,1);
-ub = zeros(3,1);
-wrench.constraint{1} = BoundingBoxConstraint(lb, ub);
-wrench.vars{1} = {'p'};
-contact_wrench_struct(1) = wrench;
+options.time_option = 1;
 prog = RigidBodySymplecticTrajectoryOptimization(m, I, contact_wrench_struct, ...
                                                  N, [tf; tf], options);
 % prog = prog.setCheckGrad(true);
 prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, 1));
 prog = prog.addConstraint(BoundingBoxConstraint(tf/(2*N)*ones(size(prog.h_inds)), 2*tf/N*ones(size(prog.h_inds))), prog.h_inds);
-prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(prog.F_inds)), repmat(-[0; 0; -9.81], prog.N, 1)), prog.F_inds(:));
+f_inds = [];
+for n = 1:prog.N
+  f_inds = [f_inds; prog.contact_inds(n).forces(:)]; %#ok
+end
+%prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(f_inds)), zeros(numel(f_inds),1)), f_inds(:));
+prog = prog.addCost(QuadraticConstraint(-Inf, Inf, [zeros(3*prog.N), eye(3*prog.N); eye(3*prog.N), zeros(3*prog.N)], zeros(6*prog.N,1)), [prog.F_inds(:); prog.v_inds(:)]);
 prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(prog.h_inds)), zeros(numel(prog.h_inds),1)), prog.h_inds(:));
 % prog = prog.addConstraint(ConstantConstraint(zeros(size(prog.r_inds(2,:)))), prog.r_inds(2,:));
-% prog = prog.addConstraint(ConstantConstraint(r0), prog.r_inds(:, prog.N));
-% prog = prog.addConstraint(ConstantConstraint(0), prog.x_inds(13, prog.N));
+ prog = prog.addConstraint(BoundingBoxConstraint(dim_z*ones(prog.N,1), Inf(prog.N,1)), prog.r_inds(3, :));
+ %prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, prog.N));
+ prog = prog.addConstraint(ConstantConstraint(0), prog.v_inds(3, prog.N));
 % prog = prog.addConstraint(ConstantConstraint(0), prog.F_inds(3, 1));
 % prog = prog.addConstraint(ConstantConstraint(0), prog.F_inds(3, prog.N));
-for n = wrench.knots
-  prog = prog.addConstraint(fixed_point_constraint, [prog.z_inds(:,n); prog.r_inds(:,n)]);
-%   if n < prog.N
-    prog = prog.addConstraint(fixed_point_vel_constraint, [prog.v_inds(:,n); prog.z_inds(:,n); prog.w_inds(:,n)]);
-%   end
-end
+%for n = contact_wrench_struct(1).knots
+  %ind = n;
+  %prog = prog.addConstraint(fixed_point_constraint_A, [prog.z_inds(:,n); prog.r_inds(:,n)]);
+  %prog = prog.addConstraint(fixed_point_vel_constraint_A, [prog.v_inds(:,ind); prog.z_inds(:,ind); prog.w_inds(:,ind)]);
+%end
+%for n = contact_wrench_struct(2).knots
+  %ind = n;
+  %prog = prog.addConstraint(fixed_point_constraint_B, [prog.z_inds(:,n); prog.r_inds(:,n)]);
+  %prog = prog.addConstraint(fixed_point_vel_constraint_B, [prog.v_inds(:,ind); prog.z_inds(:,ind); prog.w_inds(:,ind)]);
+%end
 prog = prog.setSolverOptions('snopt', 'SuperbasicsLimit', 2000);
-prog = prog.setSolverOptions('snopt', 'LinesearchTolerance', 0.99);
+%prog = prog.setSolverOptions('snopt', 'LinesearchTolerance', 0.99);
 prog = prog.setSolverOptions('snopt', 'IterationsLimit', 1e5);
+prog = prog.setSolverOptions('snopt', 'MajorIterationsLimit', 2e2);
+prog = prog.setSolverOptions('snopt', 'print', 'snopt.out');
 
 if visualize
   v = rbm.constructVisualizer();
@@ -103,7 +146,8 @@ function displayCallback(z, prog, v)
 %   subplot(2, 1, 1);
   plot(t, x(1:3,:)', '.-');
   drawnow;
-%   xtraj = PPTrajectory(zoh(t, x(1:7, :)));
-%   xtraj = xtraj.setOutputFrame(v.getInputFrame());
-%   v.playback(xtraj);
+  %v.playback_speed = 2;
+   %xtraj = PPTrajectory(zoh(t, x(1:7, :)));
+   %xtraj = xtraj.setOutputFrame(v.getInputFrame());
+   %v.playback(xtraj);
 end
