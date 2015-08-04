@@ -6,7 +6,7 @@ if nargin < 1, visualize = false; end
 if nargin < 2, random_seed = false; end
 t0 = 0;
 tf = 1.5;
-N = 20;
+N = 30;
 r0 = [0; 0; 0.15];
 z0 = rpy2quat([0; 0; 0]);
 v0 = [0; 0; 0];
@@ -14,10 +14,23 @@ w0 = 0*[1e-1; 2*pi; 0];
 x0 = [r0; z0; w0; v0];
 
 urdf = fullfile(getDrakePath(), 'solvers', 'test', 'littleBrick.urdf');
+particle_urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'PointMass.urdf');
 %urdf = fullfile(getDrakePath(), 'systems', 'plants', 'test', 'FallingBrick.urdf');
 options.floating = 'quat';
 options.use_new_kinsol = true;
 rbm = RigidBodyManipulator(urdf, options);
+
+rbm_vis = rbm;
+options.collision = false;
+colors = [0, 0, 1; 0, 1, 0; 1, 0, 0; 0.5, 0.5, 0.5]';
+for j = 1:4
+  rbm_vis = rbm_vis.addRobotFromURDF(particle_urdf, [], [], options);
+  body = rbm_vis.body(end);
+  body.visual_geometry{1} = body.visual_geometry{1}.setColor(colors(:,j));
+  body.visual_geometry{1}.radius = 0.02;
+  rbm_vis = rbm_vis.setBody(rbm_vis.getNumBodies(), body);
+end
+rbm_vis = rbm_vis.compile();
 
 m = rbm.getMass();
 I = inertiaCalculator('box', m, rbm.body(2).visual_geometry{1}.size);
@@ -38,26 +51,63 @@ for field = fields(feet)'
                                           Linear(vectorToSkewSymmetric(feet.(foot).pt_in_body))]);
 end
 
+M = floor(N/5);
 
 contact_wrench_struct(1).foot = 'LH';
-contact_wrench_struct(1).knots = 1:N;
+contact_wrench_struct(1).knots = 1:2*M;
 contact_wrench_struct(1).num_forces = 1;
 contact_wrench_struct(1).pt_in_world = [-dim_x/2; dim_y/2; 0];
+contact_wrench_struct(1).normal = [0; 0; 1];
+contact_wrench_struct(1).mu = 1;
 
 contact_wrench_struct(2).foot = 'RH';
-contact_wrench_struct(2).knots = 1:N;
+contact_wrench_struct(2).knots = 1:2*M;
 contact_wrench_struct(2).num_forces = 1;
 contact_wrench_struct(2).pt_in_world = [-dim_x/2; -dim_y/2; 0];
+contact_wrench_struct(2).normal = [0; 0; 1];
+contact_wrench_struct(2).mu = 1;
 
 contact_wrench_struct(3).foot = 'LF';
-contact_wrench_struct(3).knots = 1:N;
+contact_wrench_struct(3).knots = 1:M;
 contact_wrench_struct(3).num_forces = 1;
 contact_wrench_struct(3).pt_in_world = [dim_x/2; dim_y/2; 0];
+contact_wrench_struct(3).normal = [0; 0; 1];
+contact_wrench_struct(3).mu = 1;
 
 contact_wrench_struct(4).foot = 'RF';
-contact_wrench_struct(4).knots = 1:N;
+contact_wrench_struct(4).knots = 1:M;
 contact_wrench_struct(4).num_forces = 1;
 contact_wrench_struct(4).pt_in_world = [dim_x/2; -dim_y/2; 0];
+contact_wrench_struct(4).normal = [0; 0; 1];
+contact_wrench_struct(4).mu = 1;
+
+contact_wrench_struct(5).foot = 'LF';
+contact_wrench_struct(5).knots = 3*M:5*M;
+contact_wrench_struct(5).num_forces = 1;
+contact_wrench_struct(5).pt_in_world = [dim_x/2; dim_y/2; 0] + [dim_x/2; 0; 0];
+contact_wrench_struct(5).normal = [0; 0; 1];
+contact_wrench_struct(5).mu = 1;
+
+contact_wrench_struct(6).foot = 'RF';
+contact_wrench_struct(6).knots = 3*M:5*M;
+contact_wrench_struct(6).num_forces = 1;
+contact_wrench_struct(6).pt_in_world = [dim_x/2; -dim_y/2; 0] + [dim_x/2; 0; 0];
+contact_wrench_struct(6).normal = [0; 0; 1];
+contact_wrench_struct(6).mu = 1;
+
+contact_wrench_struct(7).foot = 'LH';
+contact_wrench_struct(7).knots = 4*M:5*M;
+contact_wrench_struct(7).num_forces = 1;
+contact_wrench_struct(7).pt_in_world = [-dim_x/2; dim_y/2; 0] + [dim_x/2; 0; 0];
+contact_wrench_struct(7).normal = [0; 0; 1];
+contact_wrench_struct(7).mu = 1;
+
+contact_wrench_struct(8).foot = 'RH';
+contact_wrench_struct(8).knots = 4*M:5*M;
+contact_wrench_struct(8).num_forces = 1;
+contact_wrench_struct(8).pt_in_world = [-dim_x/2; -dim_y/2; 0] + [dim_x/2; 0; 0];
+contact_wrench_struct(8).normal = [0; 0; 1];
+contact_wrench_struct(8).mu = 1;
 
 tol = dim_z/2;
 for i = 1:numel(contact_wrench_struct)
@@ -65,26 +115,48 @@ for i = 1:numel(contact_wrench_struct)
   ub = lb;
   contact_wrench_struct(i).constraint{1} = BoundingBoxConstraint(lb, ub);
   contact_wrench_struct(i).vars{1} = {'p'};
+
   lb = -tol*ones(3,1);
   ub = tol*ones(3,1);
   contact_wrench_struct(i).constraint{2} = DrakeFunctionConstraint(lb, ub, ...
     feet.(contact_wrench_struct(i).foot).relative_position_fcn);
   contact_wrench_struct(i).vars{2} = {'p','r','z'};
+
+  % dot(f, normal) > 0
+  lb = 0;
+  ub = Inf;
+  normal = contact_wrench_struct(i).normal;
+  mu = contact_wrench_struct(i).mu;
+  constraint = LinearConstraint(lb, ub, normal');
+  contact_wrench_struct(i).constraint{3} = constraint;
+  contact_wrench_struct(i).vars{3} = {'f'};
+
+  % dot(f, normal)^2 - mu^2 ||f||^2 > 0
+  % f'*normal*normal'*f - f'*mu^2*eye(3)*f > 0
+  % f'*(normal*normal' - mu^2*eye(3))*f > 0
+  Q = normal*normal' - 1/(mu^2+1)*eye(3);
+  constraint = QuadraticConstraint(lb, ub, Q, zeros(3,1));
+  contact_wrench_struct(i).constraint{4} = constraint;
+  contact_wrench_struct(i).vars{4} = {'f'};
 end
 
 options = struct();
 options.time_option = 1;
 prog = RigidBodySymplecticTrajectoryOptimization(m, I, contact_wrench_struct, ...
-                                                 N, [tf; tf], options);
+                                                 N, [tf/2; 2*tf], options);
 % prog = prog.setCheckGrad(true);
-prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, 1));
-prog = prog.addConstraint(BoundingBoxConstraint(tf/(2*N)*ones(size(prog.h_inds)), 2*tf/N*ones(size(prog.h_inds))), prog.h_inds);
+%prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, 1));
+tol = eps;
+prog = prog.addConstraint(BoundingBoxConstraint(x0-tol, x0+tol), prog.x_inds(:, 1));
+xf = x0; xf(1) = xf(1) + dim_x/2;
+prog = prog.addConstraint(BoundingBoxConstraint(xf-tol, xf+tol), prog.x_inds(:, N));
+%prog = prog.addConstraint(BoundingBoxConstraint(tf/(2*N)*ones(size(prog.h_inds)), 2*tf/N*ones(size(prog.h_inds))), prog.h_inds);
 f_inds = [];
 for n = 1:prog.N
   f_inds = [f_inds; prog.contact_inds(n).forces(:)]; %#ok
 end
-%prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(f_inds)), zeros(numel(f_inds),1)), f_inds(:));
-prog = prog.addCost(QuadraticConstraint(-Inf, Inf, [zeros(3*prog.N), eye(3*prog.N); eye(3*prog.N), zeros(3*prog.N)], zeros(6*prog.N,1)), [prog.F_inds(:); prog.v_inds(:)]);
+prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(f_inds)), zeros(numel(f_inds),1)), f_inds(:));
+%prog = prog.addCost(QuadraticConstraint(-Inf, Inf, [zeros(3*prog.N), eye(3*prog.N); eye(3*prog.N), zeros(3*prog.N)], zeros(6*prog.N,1)), [prog.F_inds(:); prog.v_inds(:)]);
 prog = prog.addCost(QuadraticConstraint(-Inf, Inf, eye(numel(prog.h_inds)), zeros(numel(prog.h_inds),1)), prog.h_inds(:));
 % prog = prog.addConstraint(ConstantConstraint(zeros(size(prog.r_inds(2,:)))), prog.r_inds(2,:));
  prog = prog.addConstraint(BoundingBoxConstraint(dim_z*ones(prog.N,1), Inf(prog.N,1)), prog.r_inds(3, :));
@@ -130,6 +202,7 @@ end
   z_data = x_data(4:7, :);
   w_data = x_data(8:10, :);
   v_data = x_data(11:13, :);
+  t = cumsum([0; z(prog.h_inds(:))]);
   
   k_data = zeros(size(w_data));
   KE_data = zeros(1, N);
