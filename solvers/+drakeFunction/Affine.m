@@ -20,7 +20,7 @@ classdef Affine < drakeFunction.DrakeFunction
       % @retval obj           -- drakeFunction.Affine object
       [dim_output, dim_input] = size(A);
       obj = obj@drakeFunction.DrakeFunction(dim_input, dim_output);
-      obj.A = A;
+      obj.A = sparse(A);
       obj.b = b;
       obj = obj.setSparsityPattern();
     end
