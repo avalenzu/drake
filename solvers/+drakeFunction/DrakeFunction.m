@@ -126,6 +126,35 @@ classdef DrakeFunction
           'Addition of DrakeFunctions with other classes is not supported');
       end
     end
+
+    function fcn = dot(obj,other,same_input)
+      % fcn = dot(obj,other,same_input) returns a DrakeFunction whose output
+      %   is the sum of the outputs of obj and other. If same_input = true, the
+      %   returned DrakeFunction has an input of the same size as that of obj
+      %   and other. If same_input = false, the returned DrakeFunction has an
+      %   input whose length is the sum of those of the inputs of obj and other
+      %
+      % fcn = dot(obj,other) is equivalent to dot(obj,other,false)
+      %
+      % @param obj          -- DrakeFunction object
+      % @param other        -- DrakeFunction object
+      % @param same_input   -- Logical scalar indicating whether the functions
+      %                        to be summed should share the same input.
+      %                        Optional. @default false
+      %
+      % @retval fcn         -- DrakeFunction which evaluates the sum of obj and
+      %                        other
+      import drakeFunction.*      
+      import drakeFunction.geometry.Dot
+
+      if nargin < 3, same_input = false; end
+      if isa(other,'drakeFunction.DrakeFunction')
+        fcn = compose(Dot,concatenate(obj,other,same_input));
+      else
+        error('Drake:drakeFunction:NotSupported', ...
+          'Addition of DrakeFunctions with other classes is not supported');
+      end
+    end
     
     function fcn = mtimes(obj,other)
       if isnumeric(obj) && isscalar(obj)
