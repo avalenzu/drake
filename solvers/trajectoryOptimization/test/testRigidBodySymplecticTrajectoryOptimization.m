@@ -64,89 +64,28 @@ end
 
 M = floor(N/7);
 
-contact_wrench_struct(1).foot = 'LH';
-contact_wrench_struct(1).knots = 1:2*M;
-contact_wrench_struct(1).num_forces = 1;
-contact_wrench_struct(1).pt_in_world = [-dim_x/2; dim_y/2; 0];
-contact_wrench_struct(1).normal = [0; 0; 1];
-contact_wrench_struct(1).mu = 1;
-
-contact_wrench_struct(2).foot = 'RH';
-contact_wrench_struct(2).knots = 1:2*M;
-contact_wrench_struct(2).num_forces = 1;
-contact_wrench_struct(2).pt_in_world = [-dim_x/2; -dim_y/2; 0];
-contact_wrench_struct(2).normal = [0; 0; 1];
-contact_wrench_struct(2).mu = 1;
-
-contact_wrench_struct(3).foot = 'LF';
-contact_wrench_struct(3).knots = 1:M;
-contact_wrench_struct(3).num_forces = 1;
-contact_wrench_struct(3).pt_in_world = [dim_x/2; dim_y/2; 0];
-contact_wrench_struct(3).normal = [0; 0; 1];
-contact_wrench_struct(3).mu = 1;
-
-contact_wrench_struct(4).foot = 'RF';
-contact_wrench_struct(4).knots = 1:M;
-contact_wrench_struct(4).num_forces = 1;
-contact_wrench_struct(4).pt_in_world = [dim_x/2; -dim_y/2; 0];
-contact_wrench_struct(4).normal = [0; 0; 1];
-contact_wrench_struct(4).mu = 1;
-
-contact_wrench_struct(5).foot = 'LF';
-contact_wrench_struct(5).knots = 2*M:4*M;
-contact_wrench_struct(5).num_forces = 1;
-contact_wrench_struct(5).pt_in_world = [dim_x/2; dim_y/2; 0] + [stride_length; 0; 0];
-contact_wrench_struct(5).normal = [0; 0; 1];
-contact_wrench_struct(5).mu = 1;
-
-contact_wrench_struct(6).foot = 'RF';
-contact_wrench_struct(6).knots = 2*M:4*M;
-contact_wrench_struct(6).num_forces = 1;
-contact_wrench_struct(6).pt_in_world = [dim_x/2; -dim_y/2; 0] + [stride_length; 0; 0];
-contact_wrench_struct(6).normal = [0; 0; 1];
-contact_wrench_struct(6).mu = 1;
-
-contact_wrench_struct(7).foot = 'LH';
-contact_wrench_struct(7).knots = 3*M:5*M;
-contact_wrench_struct(7).num_forces = 1;
-contact_wrench_struct(7).pt_in_world = [-dim_x/2; dim_y/2; 0] + [1.5*stride_length; 0; 0];
-contact_wrench_struct(7).normal = [0; 0; 1];
-contact_wrench_struct(7).mu = 1;
-
-contact_wrench_struct(8).foot = 'RH';
-contact_wrench_struct(8).knots = 3*M:5*M;
-contact_wrench_struct(8).num_forces = 1;
-contact_wrench_struct(8).pt_in_world = [-dim_x/2; -dim_y/2; 0] + [1.5*stride_length; 0; 0];
-contact_wrench_struct(8).normal = [0; 0; 1];
-contact_wrench_struct(8).mu = 1;
-
-contact_wrench_struct(9).foot = 'LF';
-contact_wrench_struct(9).knots = 5*M:7*M;
-contact_wrench_struct(9).num_forces = 1;
-contact_wrench_struct(9).pt_in_world = [dim_x/2; dim_y/2; 0] + [2*stride_length; 0; 0];
-contact_wrench_struct(9).normal = [0; 0; 1];
-contact_wrench_struct(9).mu = 1;
-
-contact_wrench_struct(10).foot = 'RF';
-contact_wrench_struct(10).knots = 5*M:7*M;
-contact_wrench_struct(10).num_forces = 1;
-contact_wrench_struct(10).pt_in_world = [dim_x/2; -dim_y/2; 0] + [2*stride_length; 0; 0];
-contact_wrench_struct(10).normal = [0; 0; 1];
-contact_wrench_struct(10).mu = 1;
-
-contact_wrench_struct(11).foot = 'LH';
-contact_wrench_struct(11).knots = 6*M:7*M;
-contact_wrench_struct(11).num_forces = 1;
-contact_wrench_struct(11).pt_in_world = [-dim_x/2; dim_y/2; 0] + [2*stride_length; 0; 0];
-contact_wrench_struct(11).normal = [0; 0; 1];
-contact_wrench_struct(11).mu = 1;
-
-contact_wrench_struct(12).foot = 'RH';
-contact_wrench_struct(12).knots = 6*M:7*M;
-contact_wrench_struct(12).num_forces = 1;
-contact_wrench_struct(12).pt_in_world = [-dim_x/2; -dim_y/2; 0] + [2*stride_length; 0; 0];
-contact_wrench_struct(12).normal = [0; 0; 1];
-contact_wrench_struct(12).mu = 1;
+foot_pts{1} = {[ dim_x/2;  dim_y/2;  -dim_z/2], ...;
+               [ dim_x/2;  dim_y/2;  -dim_z/2-leg_length]};
+foot_pts{2} = {[ dim_x/2;  -dim_y/2;  -dim_z/2], ...;
+               [ dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]};
+foot_pts{3} = {[ -dim_x/2;  dim_y/2;  -dim_z/2], ...;
+               [ -dim_x/2;  dim_y/2;  -dim_z/2-leg_length]};
+foot_pts{4} = {[ -dim_x/2;  -dim_y/2;  -dim_z/2], ...;
+               [ -dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]};
+radii = repmat({leg_length*ones(1,2)}, 1, 4);
+planner = LeggedRobotPlanner({'LF', 'RF', 'LH', 'RH'}, foot_pts, radii);
+planner = planner.addFootstep('LF', [dim_x/2; dim_y/2; 0], [0; 0; 1], 1, 1:M);
+planner = planner.addFootstep('RF', [dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 1:M);
+planner = planner.addFootstep('LH', [-dim_x/2; dim_y/2; 0], [0; 0; 1], 1, 1:2*M);
+planner = planner.addFootstep('RH', [-dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 1:2*M);
+planner = planner.addFootstep('LF', [dim_x/2; dim_y/2; 0], [0; 0; 1], 1, 2*M:4*M);
+planner = planner.addFootstep('RF', [dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 2*M:4*M);
+planner = planner.addFootstep('LH', [-dim_x/2; dim_y/2; 0], [0; 0; 1], 1,  3*M:5*M);
+planner = planner.addFootstep('RH', [-dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 3*M:5*M);
+planner = planner.addFootstep('LF', [dim_x/2; dim_y/2; 0], [0; 0; 1], 1,  5*M:7*M);
+planner = planner.addFootstep('RF', [dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 5*M:7*M);
+planner = planner.addFootstep('LH', [-dim_x/2; dim_y/2; 0], [0; 0; 1], 1,  6*M:7*M);
+planner = planner.addFootstep('RH', [-dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 6*M:7*M);
 
 for i = 1:numel(contact_wrench_struct)
   lb = contact_wrench_struct(i).pt_in_world;
