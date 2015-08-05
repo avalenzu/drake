@@ -36,6 +36,8 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
       import drakeFunction.*
       import drakeFunction.geometry.*
       if ~isempty(obj.m)
+        dyn_fcn_cell = cell(obj.N-1, 1);
+        xinds_cell = cell(obj.N-1, 1);
         for n = 1:obj.N-1
           exp_fcn = ExpMap2Quat();
           quatProduct_fcn = QuaternionProduct();
@@ -131,14 +133,21 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
           
           xinds = [obj.h_inds(n); reshape(obj.x_inds(:, n:n+1), [], 1); ...
             reshape(obj.u_inds(:, n:n+1), [], 1)];
+          lb_all = []; ub_all = [];
           lb = zeros(r_fcn.dim_output, 1); ub = lb;
-          obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, r_fcn), xinds);
+          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
+          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, r_fcn), xinds);
           lb = zeros(z_fcn.dim_output, 1); ub = lb;
-          obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, z_fcn), xinds);
+          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
+          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, z_fcn), xinds);
           lb = zeros(v_fcn.dim_output, 1); ub = lb;
-          obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, v_fcn), xinds);
+          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
+          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, v_fcn), xinds);
           lb = zeros(w_fcn.dim_output, 1); ub = lb;
-          obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, w_fcn), xinds);
+          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
+          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, w_fcn), xinds);
+          dyn_fcn = Concatenated({r_fcn; z_fcn; v_fcn; w_fcn}, true);
+          obj = obj.addConstraint(DrakeFunctionConstraint(lb_all, ub_all, dyn_fcn), xinds);
         end
       end
     end
@@ -205,25 +214,29 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
       f = Identity(3);
       T_i = compose(RotateVectorByQuaternion(), [z_conj; cross(p-r, f)]);
       T_i = T_i.addInputs(3, false);
+      xinds_cell = cell(obj.N,1);
+      T_err_cell = cell(obj.N,1);
       for n = 1:obj.N
         A = [eye(3), -repmat(eye(3), [1, size(obj.contact_inds(n).forces, 2)])];
         b = obj.m*obj.g;
         xinds = [obj.F_inds(:,n); obj.contact_inds(n).forces(:)];
         obj = obj.addConstraint(LinearConstraint(b, b, A), xinds);
         
-        xinds = [obj.T_inds(:,n); obj.z_inds(:,n); obj.contact_inds(n).points(:); ...
+        xinds_cell{n} = [obj.T_inds(:,n); obj.z_inds(:,n); obj.contact_inds(n).points(:); ...
                  obj.r_inds(:,n); obj.contact_inds(n).forces(:)];
-        T_err = Linear([eye(3), zeros(3, numel(xinds) - 3)]);
+        T_err = Linear([eye(3), zeros(3, numel(xinds_cell{n}) - 3)]);
         num_contacts = size(obj.contact_inds(n).forces, 2);
         for i = 1:num_contacts
           selection_matrix = [zeros(3, 3*(i-1)), eye(3), zeros(3, 3*(num_contacts-i))];
           A = blkdiag(eye(3), eye(4), selection_matrix, eye(3), selection_matrix);
           T_err = minus(T_err, compose(T_i, Linear(A)), true);
         end
-        obj = obj.addConstraint(DrakeFunctionConstraint(zeros(3,1), ...
-                                                        zeros(3,1), ...
-                                                        T_err), xinds);
+        T_err_cell{n} = T_err;
       end
+      T_err = Concatenated(T_err_cell);
+      obj = obj.addConstraint(DrakeFunctionConstraint(zeros(3*obj.N,1), ...
+        zeros(3*obj.N,1), ...
+        T_err), cell2mat(xinds_cell));
     end
     
     function obj = addRunningCost(obj, running_cost_function)
