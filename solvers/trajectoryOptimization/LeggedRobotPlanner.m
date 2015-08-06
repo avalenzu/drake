@@ -61,6 +61,20 @@ classdef LeggedRobotPlanner
     end
 
     function [obj, prog] = addPositionConstraints(obj, prog)
+      p_inds = [];
+      r_foot_inds = [];
+      for i = 1:numel(obj.contact_wrench_struct)
+        foot = obj.contact_wrench_struct.foot;
+        knots = obj.contact_wrench_struct.knots;
+        p_inds = [p_inds, prog.p_inds_by_contact{i}];
+        r_foot_inds = [r_foot_inds, obj.feet.(foot).r_inds(:, knots)];
+      end
+      ncons = numel(p_inds);
+      lb = zeros(ncons,1);
+      ub = zeros(ncons,1);
+      A = [speye(ncons), -speye(ncons)];
+      xinds = [p_inds(:), r_foot_inds(:)];
+      prog = prog.addConstraint(LinearConstraint(lb, ub, A), xinds);
     end
 
     function [obj, prog] = addVelocityConstraints(obj, prog)
