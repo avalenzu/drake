@@ -9,6 +9,8 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
            % (in world frame)
     T_inds % 3 x N array of indices for the resultant torque about the center of
            % mass of the rigid body (in body frame)
+    f_inds_by_contact
+    p_inds_by_contact
     I = []
     m = []
     g = [0; 0; -9.81]
@@ -35,6 +37,7 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
     function obj = addDynamicConstraints(obj)
       import drakeFunction.*
       import drakeFunction.geometry.*
+      import drakeFunction.integration.*
       if ~isempty(obj.m)
         dyn_fcn_cell = cell(obj.N-1, 1);
         xinds_cell = cell(obj.N-1, 1);
@@ -72,32 +75,6 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
           T1_inds = offset + (1:3); offset = offset + 3;
           n_inputs = offset;
           
-          v_mid = v0 + (0.5/obj.m)*h.*F0;     % [v0; h; F0]
-          r1_des = r0 + h.*v_mid;             % [r0; h; v0; h; F0]
-          r_fcn = r1 - r1_des;                % [r1; r0; h; v0; h; F0]
-          
-          % Distribute inputs
-          A = zeros(r_fcn.dim_input, n_inputs);
-          A([7; 11], h_inds) = 1;
-          A(4:6, r0_inds) = eye(3);
-          A(8:10, v0_inds) = eye(3);
-          A(1:3, r1_inds) = eye(3);
-          A(12:14, F0_inds) = eye(3);
-          
-          r_fcn = r_fcn(drakeFunction.Linear(A));
-          
-          v1_des = v_mid + (0.5/obj.m)*h.*F1; % [v0; h; F0; h; F1]
-          v_fcn = v1 - v1_des;                % [v1; v0; h; F0; h; F1]
-          % Distribute inputs
-          A = zeros(v_fcn.dim_input, n_inputs);
-          A([7; 11], h_inds) = 1;
-          A(4:6, v0_inds) = eye(3);
-          A(1:3, v1_inds) = eye(3);
-          A(8:10, F0_inds) = eye(3);
-          A(12:14, F1_inds) = eye(3);
-          
-          v_fcn = v_fcn(drakeFunction.Linear(A));
-          
           w_mid = 0.5*(w0 + w1);                      % [w0; w1]
           exp_hw_mid = exp_fcn(h.*w_mid);             % [h; w0; w1]
           z1_des = quatProduct_fcn([z0; exp_hw_mid]); % [z0; h; w0; w1]
@@ -134,26 +111,28 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
           xinds = [obj.h_inds(n); reshape(obj.x_inds(:, n:n+1), [], 1); ...
             reshape(obj.u_inds(:, n:n+1), [], 1)];
           lb_all = []; ub_all = [];
-          lb = zeros(r_fcn.dim_output, 1); ub = lb;
-          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
-          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, r_fcn), xinds);
           lb = zeros(z_fcn.dim_output, 1); ub = lb;
           lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
           %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, z_fcn), xinds);
-          lb = zeros(v_fcn.dim_output, 1); ub = lb;
-          lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
-          %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, v_fcn), xinds);
           lb = zeros(w_fcn.dim_output, 1); ub = lb;
           lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
           %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, w_fcn), xinds);
           dyn_fcn = Concatenated({r_fcn; z_fcn; v_fcn; w_fcn}, true);
           obj = obj.addConstraint(DrakeFunctionConstraint(lb_all, ub_all, dyn_fcn), xinds);
         end
+        xinds = [obj.r_inds(:); obj.v_inds(:); obj.F_inds(:), obj.h_inds(:)];
+        translational_dynamics = StormerVerletResiduals(3, obj.N);
+        lb = zeros(translational_dynamics.dim_output, 1);
+        ub = lb;
+        translational_dynamics_constraint = DrakeFunctionConstraint(lb, ub, translational_dynamics);
+        obj = obj.addConstraint(translational_dynamics_constraint, xinds);
       end
     end
     
     function obj = parseContacts(obj, contact_wrench_struct)
       obj.contact_inds(obj.N).forces = [];
+      obj.f_inds_by_contact = cell(numel(contact_wrench_struct), 1);
+      obj.p_inds_by_contact = cell(numel(contact_wrench_struct), 1);
       for i = 1:numel(contact_wrench_struct)
         assert(max(contact_wrench_struct(i).knots) <= obj.N);
         num_forces = contact_wrench_struct(i).num_forces;
@@ -166,12 +145,14 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
         obj = obj.addDecisionVariable(num_force_vars, var_names);
         f_inds = obj.num_vars - num_force_vars + (1:num_force_vars);
         f_inds = reshape(f_inds, [3, num_forces*num_knots]);
+        obj.f_inds_by_contact{i} = f_inds;
         
         var_names = cellStrCat(sprintf('p%d', i), {'x', 'y', 'z'}, ...
                                '_', num2cellStr(contact_wrench_struct(i).knots));
         obj = obj.addDecisionVariable(num_force_vars, var_names);
         p_inds = obj.num_vars - num_force_vars + (1:num_force_vars);
         p_inds = reshape(p_inds, [3, num_forces*num_knots]);
+        obj.p_inds_by_contact{i} = p_inds;
         
         offset = 0;
         for n = contact_wrench_struct(i).knots
