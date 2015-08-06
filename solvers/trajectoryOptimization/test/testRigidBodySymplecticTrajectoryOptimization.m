@@ -64,14 +64,14 @@ end
 
 M = floor(N/7);
 
-foot_pts{1} = {[ dim_x/2;  dim_y/2;  -dim_z/2], ...;
-               [ dim_x/2;  dim_y/2;  -dim_z/2-leg_length]};
-foot_pts{2} = {[ dim_x/2;  -dim_y/2;  -dim_z/2], ...;
-               [ dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]};
-foot_pts{3} = {[ -dim_x/2;  dim_y/2;  -dim_z/2], ...;
-               [ -dim_x/2;  dim_y/2;  -dim_z/2-leg_length]};
-foot_pts{4} = {[ -dim_x/2;  -dim_y/2;  -dim_z/2], ...;
-               [ -dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]};
+foot_pts{1} = [[ dim_x/2;  dim_y/2;  -dim_z/2], ...;
+               [ dim_x/2;  dim_y/2;  -dim_z/2-leg_length]];
+foot_pts{2} = [[ dim_x/2;  -dim_y/2;  -dim_z/2], ...;
+               [ dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]];
+foot_pts{3} = [[ -dim_x/2;  dim_y/2;  -dim_z/2], ...;
+               [ -dim_x/2;  dim_y/2;  -dim_z/2-leg_length]];
+foot_pts{4} = [[ -dim_x/2;  -dim_y/2;  -dim_z/2], ...;
+               [ -dim_x/2;  -dim_y/2;  -dim_z/2-leg_length]];
 radii = repmat({leg_length*ones(1,2)}, 1, 4);
 planner = LeggedRobotPlanner({'LF', 'RF', 'LH', 'RH'}, foot_pts, radii);
 planner = planner.addFootstep('LF', [dim_x/2; dim_y/2; 0], [0; 0; 1], 1, 1:M);
@@ -87,45 +87,10 @@ planner = planner.addFootstep('RF', [dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 5*M:7*
 planner = planner.addFootstep('LH', [-dim_x/2; dim_y/2; 0], [0; 0; 1], 1,  6*M:7*M);
 planner = planner.addFootstep('RH', [-dim_x/2; -dim_y/2; 0], [0; 0; 1], 1, 6*M:7*M);
 
-for i = 1:numel(contact_wrench_struct)
-  lb = contact_wrench_struct(i).pt_in_world;
-  ub = lb;
-  contact_wrench_struct(i).constraint{1} = BoundingBoxConstraint(lb, ub);
-  contact_wrench_struct(i).vars{1} = {'p'};
-
-  lb = 0;%(leg_length/2)^2;
-  ub = leg_length^2;
-  contact_wrench_struct(i).constraint{2} = DrakeFunctionConstraint(lb, ub, ...
-    compose(euclidean.NormSquared(3),feet.(contact_wrench_struct(i).foot).relative_position_fcn{1}));
-  contact_wrench_struct(i).vars{2} = {'p','r','z'};
-  lb = 0;%(leg_length/2)^2;
-  ub = leg_length^2;
-  contact_wrench_struct(i).constraint{3} = DrakeFunctionConstraint(lb, ub, ...
-    compose(euclidean.NormSquared(3),feet.(contact_wrench_struct(i).foot).relative_position_fcn{2}));
-  contact_wrench_struct(i).vars{3} = {'p','r','z'};
-
-  % dot(f, normal) > 0
-  lb = 0;
-  ub = Inf;
-  normal = contact_wrench_struct(i).normal;
-  mu = contact_wrench_struct(i).mu;
-  constraint = LinearConstraint(lb, ub, normal');
-  contact_wrench_struct(i).constraint{4} = constraint;
-  contact_wrench_struct(i).vars{4} = {'f'};
-
-  % dot(f, normal)^2 - mu^2 ||f||^2 > 0
-  % f'*normal*normal'*f - f'*mu^2*eye(3)*f > 0
-  % f'*(normal*normal' - mu^2*eye(3))*f > 0
-  Q = normal*normal' - 1/(mu^2+1)*eye(3);
-  constraint = QuadraticConstraint(lb, ub, Q, zeros(3,1));
-  contact_wrench_struct(i).constraint{5} = constraint;
-  contact_wrench_struct(i).vars{5} = {'f'};
-end
-
 options = struct();
 options.time_option = 1;
-prog = RigidBodySymplecticTrajectoryOptimization(m, I, contact_wrench_struct, ...
-                                                 N, [tf/4; 4*tf], options);
+[planner, prog] = planner.constructNLP(m, I, N, [tf/4; 4*tf], options);
+
 % prog = prog.setCheckGrad(true);
 %prog = prog.addConstraint(ConstantConstraint(x0), prog.x_inds(:, 1));
 tol = eps;

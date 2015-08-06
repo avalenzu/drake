@@ -117,10 +117,10 @@ classdef RigidBodySymplecticTrajectoryOptimization < DirectTrajectoryOptimizatio
           lb = zeros(w_fcn.dim_output, 1); ub = lb;
           lb_all = [lb_all; lb]; ub_all = [ub_all; ub];
           %obj = obj.addConstraint(DrakeFunctionConstraint(lb, ub, w_fcn), xinds);
-          dyn_fcn = Concatenated({r_fcn; z_fcn; v_fcn; w_fcn}, true);
+          dyn_fcn = Concatenated({z_fcn; w_fcn}, true);
           obj = obj.addConstraint(DrakeFunctionConstraint(lb_all, ub_all, dyn_fcn), xinds);
         end
-        xinds = [obj.r_inds(:); obj.v_inds(:); obj.F_inds(:), obj.h_inds(:)];
+        xinds = [obj.r_inds(:); obj.v_inds(:); obj.F_inds(:); obj.h_inds(:)];
         translational_dynamics = StormerVerletResiduals(3, obj.N);
         lb = zeros(translational_dynamics.dim_output, 1);
         ub = lb;
