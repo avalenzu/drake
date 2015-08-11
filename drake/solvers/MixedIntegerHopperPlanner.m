@@ -34,7 +34,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         [obj.dim, obj.N], -obj.velocity_max, obj.velocity_max);
       obj = obj.addVariable('w', 'C', ...
         [1, obj.N], -obj.angular_velocity_max, obj.angular_velocity_max);
-      obj = obj.addVariable('p', 'C', [obj.dim, obj.N], repmat([-1; -1], [1, obj.N]), repmat([1; 0], [1, obj.N]));
+      obj = obj.addVariable('p', 'C', [obj.dim, obj.N], repmat([-1; -1], [1, obj.N]), repmat([1; -0.5], [1, obj.N]));
       obj = obj.addVariable('pd', 'C', [obj.dim, obj.N], -obj.velocity_max, obj.velocity_max);
       obj = obj.addVariable('F', 'C', ...
         [obj.dim, obj.N], -obj.force_max, obj.force_max);
@@ -45,21 +45,24 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.addVariable('c', 'C', ...
         [obj.dim, obj.N, obj.n_basis_vectors], -obj.moment_max, obj.moment_max);
       obj = obj.addVariable('B', 'B', ...
-        [obj.M, obj.N, obj.n_basis_vectors], 0, 1);
+        [2*obj.M, obj.N, obj.n_basis_vectors], 0, 1);
+      obj = obj.addVariable('Bz', 'B', ...
+        [2*obj.M, obj.N, obj.n_basis_vectors], 0, 1);
       obj = obj.addVariable('R', 'B', [obj.n_regions, obj.N], 0, 1);
       
       alpha = atan(obj.force_max);
-      obj.b_constant = tan(alpha*linspace(0, 1, obj.M+1));
+      obj.b_constant = repmat(tan(alpha*linspace(0, 1, obj.M+1)), 2, 1);
       
       obj = obj.addDynamicsConstraints();
       obj = obj.addForceConstraints();
       obj = obj.addContactPointConstraints(); 
+      %obj = obj.addBinaryVariableConstraints(); 
       
       Q = zeros(obj.nv);
       c = zeros(obj.nv, 1);
       alpha = 0;
-      Q(obj.vars.F.i(:), obj.vars.F.i(:)) = eye(numel(obj.vars.F.i));
-      Q(obj.vars.T.i(:), obj.vars.T.i(:)) = eye(numel(obj.vars.T.i));
+      Q(obj.vars.b.i(:), obj.vars.b.i(:)) = 10*eye(numel(obj.vars.F.i));
+      Q(obj.vars.T.i(:), obj.vars.T.i(:)) = 10*eye(numel(obj.vars.T.i));
       Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
       obj = obj.addCost(Q, c, alpha);
     end
@@ -129,8 +132,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     end
     
     function obj = addForceConstraints(obj)
-      ncons = (2*obj.dim + 2)*obj.n_regions*obj.N + (2*obj.dim + 2)*obj.n_basis_vectors*obj.M*obj.N;
-      ncons_eq = (1 + obj.n_basis_vectors)*obj.N;
+      ncons = (2*obj.dim + 2)*obj.n_regions*obj.N + (2 + 2)*obj.n_basis_vectors*(4*obj.M)*obj.N;
+      ncons_eq = (1 + 2*obj.n_basis_vectors)*obj.N;
       A = zeros(ncons, obj.nv);
       b = zeros(ncons, 1);
       Aeq = zeros(ncons_eq, obj.nv);
@@ -138,7 +141,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       offset = 0;
       offset_eq = 0;
       for n = 1:obj.N
-        n_plus_1_or_N = min(n+1, obj.N);
+        n_plus_1_or_N = n;%min(n+1, obj.N);
         for j = 1:obj.n_regions
           % Rj --> F - sum_i(bi*Fij) == 0
           % formulated as
@@ -154,16 +157,16 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
           offset = offset + ncons;
           
           % ASSUME obj.dim = 2
-          % Rj --> T - sum_i(Fij(2)*ci(1) - Fij(2)*ci(2)) = 0
+          % Rj --> T - sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) = 0
           % formulated as
-          %    T - sum_i(Fij(2)*ci(1) - Fij(2)*ci(2)) <= (1 - Rj)*big_M
-          %   -T + sum_i(Fij(2)*ci(1) - Fij(2)*ci(2)) <= (1 - Rj)*big_M
+          %    T - sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
+          %   -T + sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
           ncons = 2;
           indices = offset + (1:ncons);
           big_M = obj.moment_max*(1 + obj.n_basis_vectors);
           A(indices, obj.vars.T.i(:, n)) = [1; -1];
-          A(indices, obj.vars.c.i(1, n, :)) = -[obj.regions(j).basis_vectors(1,:); -obj.regions(j).basis_vectors(1,:)];
-          A(indices, obj.vars.c.i(2, n, :)) =  [obj.regions(j).basis_vectors(2,:); -obj.regions(j).basis_vectors(2,:)];
+          A(indices, obj.vars.c.i(1, n, :)) = -[obj.regions(j).basis_vectors(2,:); -obj.regions(j).basis_vectors(2,:)];
+          A(indices, obj.vars.c.i(2, n, :)) =  [obj.regions(j).basis_vectors(1,:); -obj.regions(j).basis_vectors(1,:)];
           A(indices, obj.vars.R.i(j,n_plus_1_or_N)) = big_M*ones(ncons,1);
           b(indices) = big_M*ones(ncons,1);
           offset = offset + ncons;
@@ -171,7 +174,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         end
         
         for i = 1:obj.n_basis_vectors
-          for m = 1:obj.M
+          for m = 1:2*obj.M
             %ci(k) = bi*p(k)
             % approximated by
             %  (1) Bim --> b^(m-1) <= bi <= b^m for i = 1, ..., obj.n_basis_vectors
@@ -190,18 +193,51 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
             big_M = 2*obj.force_max;
             A(indices, obj.vars.b.i(i, n)) = [-1; 1];
             A(indices, obj.vars.B.i(m, n, i)) = big_M*ones(ncons, 1);
-            b(indices) = [-obj.b_constant(m); obj.b_constant(m+1)] + big_M;
+            b(indices) = [-obj.b_constant(m); obj.b_constant(m+2)] + big_M;
+            offset = offset + ncons;
+
+            ncons = 2;
+            indices = offset + (1:ncons);
+            big_M = 2*obj.force_max;
+            A(indices, obj.vars.b.i(i, n)) = [-1; 1];
+            A(indices, obj.vars.Bz.i(m, n, i)) = big_M*ones(ncons, 1);
+            b(indices) = [-obj.b_constant(m); obj.b_constant(m+2)] + big_M;
             offset = offset + ncons;
             
             % (2)
-            ncons = 2*obj.dim;
+            ncons = 2;
             indices = offset + (1:ncons);
             big_M = 2*obj.moment_max;
-            b_mid = mean(obj.b_constant(m:m+1));
-            A(indices, obj.vars.p.i(:,n)) = [b_mid*eye(obj.dim); ...
-                                            -b_mid*eye(obj.dim)];
-            A(indices, obj.vars.c.i(:, n, i)) = [-eye(obj.dim); eye(obj.dim)];
+            if mod(m, 2) == 1
+              A(indices, obj.vars.p.i(1,n)) = [obj.b_constant(m)*eye(1); ...
+                                               -obj.b_constant(m+2)*eye(1)];
+            else
+              A(indices, obj.vars.p.i(1,n)) = [obj.b_constant(m+2)*eye(1); ...
+                                               -obj.b_constant(m)*eye(1)];
+            end
+            %b_mid = mean(obj.b_constant(m:m+1));
+            %A(indices, obj.vars.p.i(:,n)) = [b_mid*eye(1); ...
+                                            %-b_mid*eye(1)];
+            A(indices, obj.vars.c.i(1, n, i)) = [-eye(1); eye(1)];
             A(indices, obj.vars.B.i(m, n, i)) = big_M*ones(ncons, 1);
+            b(indices) = big_M;
+            offset = offset + ncons;
+
+            ncons = 2;
+            indices = offset + (1:ncons);
+            big_M = 2*obj.moment_max;
+            if mod(m, 2) == 1
+              A(indices, obj.vars.p.i(2,n)) = [obj.b_constant(m)*eye(1); ...
+                                               -obj.b_constant(m+2)*eye(1)];
+            else
+              A(indices, obj.vars.p.i(2,n)) = [obj.b_constant(m+2)*eye(1); ...
+                                               -obj.b_constant(m)*eye(1)];
+            end
+            %b_mid = mean(obj.b_constant(m:m+1));
+            %A(indices, obj.vars.p.i(:,n)) = [b_mid*eye(1); ...
+                                            %-b_mid*eye(1)];
+            A(indices, obj.vars.c.i(2, n, i)) = [-eye(1); eye(1)];
+            A(indices, obj.vars.Bz.i(m, n, i)) = big_M*ones(ncons, 1);
             b(indices) = big_M;
             offset = offset + ncons;
           end
@@ -209,7 +245,13 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
           % sum_m(Bin) = 1
           ncons = 1;
           indices = offset_eq + (1:ncons);
-          Aeq(indices, obj.vars.B.i(:,n,i)) = ones(1, obj.M);
+          Aeq(indices, obj.vars.B.i(:,n,i)) = ones(1, 2*obj.M);
+          beq(indices) = 1;
+          offset_eq = offset_eq + ncons;
+
+          ncons = 1;
+          indices = offset_eq + (1:ncons);
+          Aeq(indices, obj.vars.Bz.i(:,n,i)) = ones(1, 2*obj.M);
           beq(indices) = 1;
           offset_eq = offset_eq + ncons;
         end
@@ -220,6 +262,27 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         offset_eq = offset_eq + 1;
       end
       obj = obj.addLinearConstraints(A, b, Aeq, beq);
+    end
+
+    function obj = addBinaryVariableConstraints(obj)
+      ncons = obj.n_basis_vectors*factorial(obj.M-3)*(obj.N-1);
+      A = zeros(ncons, obj.nv);
+      b = zeros(ncons, 1);
+      offset = 0;
+      for n = 1:obj.N-1
+        for i = 1:obj.n_basis_vectors
+          for m = 1:obj.M - 3
+            % B(m, n, i) + B(j, n+1, i) <= 1 for j = m + 2, ..., obj.M
+            ncons = obj.M - m - 2;
+            indices = offset + (1:ncons);
+            A(indices, obj.vars.B.i(m, n, i)) = ones(ncons, 1);
+            A(indices, obj.vars.B.i(m+3:obj.M, n+1, i)) = eye(ncons);
+            b(indices) = 1;
+            offset = offset + ncons;
+          end
+        end
+      end
+      obj = obj.addLinearConstraints(A, b, [], []);
     end
     
     function obj = addContactPointConstraints(obj)
