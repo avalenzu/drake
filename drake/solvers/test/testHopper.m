@@ -1,10 +1,10 @@
 N = 20;
-tf = 2*6;
+tf = 12;
 dt = tf/N;
 leg_length = 0.3;
 step_height = 0.20;
 r0 = [0; leg_length];
-th0 = 0;
+th0 = 0.0;
 rf = [2; leg_length];
 v0 = [0; 0];
 w0 = 0;
@@ -37,16 +37,14 @@ colors = colormap';
 colormap('default')
 options.collision = false;
 leg = RigidBodyCapsule(0.01, leg_length, [0; 0; leg_length/2], [0; 0; 0]);
-for j = 1:2
-  rbm_vis = rbm_vis.addRobotFromURDF(particle_urdf, [], [], options);
-  body = rbm_vis.body(end);
-  body.visual_geometry{1} = body.visual_geometry{1}.setColor(colors(:,j));
-  body.visual_geometry{1}.radius = 0.02;
-  rbm_vis = rbm_vis.setBody(rbm_vis.getNumBodies(), body);
-  rbm_vis = rbm_vis.addVisualGeometryToBody(rbm_vis.getNumBodies(), leg);
-end
+rbm_vis = rbm_vis.addRobotFromURDF(particle_urdf, [], [], options);
+body = rbm_vis.body(end);
+body.visual_geometry{1} = body.visual_geometry{1}.setColor(colors(:,1));
+body.visual_geometry{1}.radius = 0.02;
+rbm_vis = rbm_vis.setBody(rbm_vis.getNumBodies(), body);
+rbm_vis = rbm_vis.addVisualGeometryToBody(rbm_vis.getNumBodies(), leg);
 rbm_vis = rbm_vis.compile();
-v = rbm_vis.constructVisualizer();
+v = HopperVisualizer(rbm_vis.constructVisualizer());
 
 %%
 m = rbm.getMass();
@@ -54,26 +52,27 @@ I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 mipgap = linspace(1-1e-4, 1e-4, 5);
   
-for M = 2%1:5
+for M = 1%1:5
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
+  prog.hip_in_body = [-0.25; -0.25];
   prog.M = M;
-  prog.rotation_max = pi/6;
+  prog.rotation_max = pi/8;
   %prog.position_max = 10;
   prog.velocity_max = 5;
   prog.force_max = 1.5;
   prog.moment_max = prog.force_max;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[0.0; platform2_start - 0.2], [], [], [], []);
-  prog = prog.addRegion([0, -1], -1/leg_length*(step_height), [], [], [], []);
-  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[0.0; -(platform2_end- 0.2)], [], [], [], []);
+  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.05; platform2_start - 0.2], [], [], [], []);
+  prog = prog.addRegion([0, -1], -1/leg_length*(step_height + 0.05), [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.05; -(platform2_end- 0.2)], [], [], [], []);
 
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 0.01);
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform3_start; platform3_end], [0, 1], 0, [0; 1], 1);
   prog = prog.setupProblem();
   prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
-  prog = prog.addPositionConstraint(N, 1/leg_length*rf, 1/leg_length*rf);
+  prog = prog.addPositionConstraint(N, 1/leg_length*(rf - [0; step_height]), 1/leg_length*(rf + [0; step_height]));
   prog = prog.addOrientationConstraint(1, th0, th0);
   prog = prog.addOrientationConstraint(N, th0, th0);
   prog = prog.addVelocityConstraint(1, v0, v0);
@@ -103,21 +102,24 @@ for M = 2%1:5
 end
 %%
 r_data = leg_length*prog.vars.r.value;
+r_hip_data = leg_length*prog.vars.r_hip.value;
 p_data = leg_length*prog.vars.p.value;
 th_data = prog.vars.th.value;
 
 leg_pitch_data = -atan2(p_data(1,:), -p_data(2,:));
 force_angle_data = atan2(prog.vars.F.value(1,:), prog.vars.F.value(2,:));
+force_angle_data(sqrt(sum(prog.vars.F.value.^2)) < 1e-6) = 0;
 
 q_data = zeros(rbm_vis.getNumPositions(), prog.N);
 q_data([1,3], :) = r_data;
 q_data(5, :) = th_data;
-q_data([7,9], :) = r_data + p_data + leg_length*diag(prog.hip_in_body)*[cos(th_data); sin(th_data)];
+q_data([7,9], :) = r_data + r_hip_data + p_data;
+%q_data([7,9], :) = r_data + p_data;
 q_data(11, :) = leg_pitch_data;
-q_data([13,15], :) = r_data + p_data + leg_length*diag(prog.hip_in_body)*[cos(th_data); sin(th_data)];
-q_data(17,:) = force_angle_data;
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
 qtraj = PPTrajectory(foh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
+Ftraj = PPTrajectory(foh(t, prog.vars.F.value));
+rHipTraj = PPTrajectory(zoh(t, leg_length*prog.vars.r_hip.value));
