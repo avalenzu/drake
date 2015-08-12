@@ -37,7 +37,7 @@ colors = colormap';
 colormap('default')
 options.collision = false;
 leg = RigidBodyCapsule(0.01, leg_length, [0; 0; leg_length/2], [0; 0; 0]);
-for j = 1:1
+for j = 1:2
   rbm_vis = rbm_vis.addRobotFromURDF(particle_urdf, [], [], options);
   body = rbm_vis.body(end);
   body.visual_geometry{1} = body.visual_geometry{1}.setColor(colors(:,j));
@@ -47,12 +47,14 @@ for j = 1:1
 end
 rbm_vis = rbm_vis.compile();
 v = rbm_vis.constructVisualizer();
+
+%%
 m = rbm.getMass();
 I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 mipgap = linspace(1-1e-4, 1e-4, 5);
   
-for M = 1%1:5
+for M = 2%1:5
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.M = M;
   prog.rotation_max = pi/6;
@@ -105,12 +107,15 @@ p_data = leg_length*prog.vars.p.value;
 th_data = prog.vars.th.value;
 
 leg_pitch_data = -atan2(p_data(1,:), -p_data(2,:));
+force_angle_data = atan2(prog.vars.F.value(1,:), prog.vars.F.value(2,:));
 
 q_data = zeros(rbm_vis.getNumPositions(), prog.N);
 q_data([1,3], :) = r_data;
 q_data(5, :) = th_data;
-q_data([7,9], :) = r_data + p_data;
+q_data([7,9], :) = r_data + p_data + leg_length*diag(prog.hip_in_body)*[cos(th_data); sin(th_data)];
 q_data(11, :) = leg_pitch_data;
+q_data([13,15], :) = r_data + p_data + leg_length*diag(prog.hip_in_body)*[cos(th_data); sin(th_data)];
+q_data(17,:) = force_angle_data;
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
