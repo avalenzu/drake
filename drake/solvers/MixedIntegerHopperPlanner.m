@@ -49,6 +49,10 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.addVariable('Bz', 'B', ...
         [2*obj.M, obj.N, obj.n_basis_vectors], 0, 1);
       obj = obj.addVariable('R', 'B', [obj.n_regions, obj.N], 0, 1);
+      obj = obj.addVariable('cth', 'C', ...
+        [obj.dim, obj.N, obj.n_basis_vectors], 0, 1);
+      obj = obj.addVariable('sth', 'C', ...
+        [obj.dim, obj.N, obj.n_basis_vectors], 0, 1);
       
       alpha = atan(obj.force_max);
       obj.b_constant = repmat(tan(alpha*linspace(0, 1, obj.M+1)), 2, 1);
@@ -61,9 +65,10 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       Q = zeros(obj.nv);
       c = zeros(obj.nv, 1);
       alpha = 0;
-      Q(obj.vars.b.i(:), obj.vars.b.i(:)) = 10*eye(numel(obj.vars.F.i));
-      Q(obj.vars.T.i(:), obj.vars.T.i(:)) = 10*eye(numel(obj.vars.T.i));
-      Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
+      Q(obj.vars.b.i(:), obj.vars.b.i(:)) = 10*eye(numel(obj.vars.b.i));
+      %Q(obj.vars.c.i(:), obj.vars.c.i(:)) = 1*eye(numel(obj.vars.c.i));
+      %Q(obj.vars.T.i(:), obj.vars.T.i(:)) = 10*eye(numel(obj.vars.T.i));
+      %Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
       obj = obj.addCost(Q, c, alpha);
     end
     
