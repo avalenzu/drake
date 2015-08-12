@@ -1,8 +1,8 @@
-N = 15;
+N = 20;
 tf = 2*6;
 dt = tf/N;
 leg_length = 0.3;
-step_height = 0.10;
+step_height = 0.20;
 r0 = [0; leg_length];
 th0 = 0;
 rf = [2; leg_length];
@@ -50,41 +50,55 @@ v = rbm_vis.constructVisualizer();
 m = rbm.getMass();
 I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
+mipgap = linspace(1-1e-4, 1e-4, 5);
   
-prog = MixedIntegerHopperPlanner(Istar, N, dt);
-prog.M = 1;
-prog.rotation_max = pi/6;
-prog.velocity_max = 5;
-%prog.force_max = 5;
-prog.moment_max = prog.force_max;
-%prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
-%prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
-prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[0.0; platform2_start - 0.2], [], [], [], []);
-prog = prog.addRegion([0, -1], -1/leg_length*(step_height), [], [], [], []);
-prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[0.0; -(platform2_end- 0.2)], [], [], [], []);
+for M = 1%1:5
+  prog = MixedIntegerHopperPlanner(Istar, N, dt);
+  prog.M = M;
+  prog.rotation_max = pi/6;
+  %prog.position_max = 10;
+  prog.velocity_max = 5;
+  prog.force_max = 1.5;
+  prog.moment_max = prog.force_max;
+  %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
+  %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
+  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[0.0; platform2_start - 0.2], [], [], [], []);
+  prog = prog.addRegion([0, -1], -1/leg_length*(step_height), [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[0.0; -(platform2_end- 0.2)], [], [], [], []);
 
-prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
-prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
-prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform3_start; platform3_end], [0, 1], 0, [0; 1], 1);
-prog = prog.setupProblem();
-prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
-prog = prog.addPositionConstraint(N, 1/leg_length*rf, 1/leg_length*rf);
-prog = prog.addOrientationConstraint(1, th0, th0);
-prog = prog.addOrientationConstraint(N, th0, th0);
-prog = prog.addVelocityConstraint(1, v0, v0);
-prog = prog.addVelocityConstraint(N, v0, v0);
-prog.vars.r.lb(2,2:end-1) = leg_length/2;
-prog.vars.w.lb(:,1) = 0;
-prog.vars.w.ub(:,1) = 0;
-prog.vars.w.lb(:,N) = 0;
-prog.vars.w.ub(:,N) = 0;
-prog.vars.p.lb(:,1) = [0; -0.5];
-prog.vars.p.ub(:,1) = [0; -0.5];
-prog.vars.p.lb(:,N) = [0; -0.5];
-prog.vars.p.ub(:,N) = [0; -0.5];
-% prog = prog.addAngularVelocityConstraint(1, w0, w0);
-params.outputflag = 1;
-[prog, solvertime, objval] = solveGurobi(prog, params);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform3_start; platform3_end], [0, 1], 0, [0; 1], 1);
+  prog = prog.setupProblem();
+  prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
+  prog = prog.addPositionConstraint(N, 1/leg_length*rf, 1/leg_length*rf);
+  prog = prog.addOrientationConstraint(1, th0, th0);
+  prog = prog.addOrientationConstraint(N, th0, th0);
+  prog = prog.addVelocityConstraint(1, v0, v0);
+  prog = prog.addVelocityConstraint(N, v0, v0);
+  prog.vars.r.lb(2,2:end-1) = leg_length/2;
+  prog.vars.w.lb(:,1) = 0;
+  prog.vars.w.ub(:,1) = 0;
+  prog.vars.w.lb(:,N) = 0;
+  prog.vars.w.ub(:,N) = 0;
+  prog.vars.p.lb(:,1) = [0; -0.5];
+  prog.vars.p.ub(:,1) = [0; -0.5];
+  prog.vars.p.lb(:,N) = [0; -0.5];
+  prog.vars.p.ub(:,N) = [0; -0.5];
+  % prog = prog.addAngularVelocityConstraint(1, w0, w0);
+  if 0%M > 1
+    for field = fieldnames(prog_prev.vars)
+      name = field{1};
+      if ~(strcmp(name, 'B') || strcmp(name, 'Bz'))
+        prog.vars.(name).start = prog_prev.vars.(name).value;
+      end
+    end
+  end
+  params.outputflag = 1;
+  %params.mipgap = mipgap(M);
+  [prog, solvertime, objval] = solveGurobi(prog, params);
+  prog_prev = prog;
+end
 %%
 r_data = leg_length*prog.vars.r.value;
 p_data = leg_length*prog.vars.p.value;
