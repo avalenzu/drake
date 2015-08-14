@@ -1,6 +1,6 @@
 clear prog_prev
-N = 20;
-tf = 16;
+N = 25;
+tf = 12;
 dt = tf/N;
 leg_length = 0.3;
 step_height = 0.2;
@@ -60,7 +60,7 @@ I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 mipgap = linspace(1-1e-4, 1e-4, 5);
   
-for M = 4%:5
+for M = 4
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.hip_in_body = [-0.25; -0.25];
   prog.M = M;
@@ -101,7 +101,7 @@ for M = 4%:5
         end
       end
     end
-    prog.c_approx_splits = c_approx_splits;
+    %prog.c_approx_splits = c_approx_splits;
   end
 
   prog = prog.setupProblem();
@@ -141,7 +141,7 @@ for M = 4%:5
   params = struct();
   params.outputflag = 1;
   %params.mipgap = mipgap(M);
-  params.timelimit = 30;
+  %params.timelimit = 30;
   [prog, solvertime, objval] = solveGurobi(prog, params);
   prog_prev = prog;
 end
@@ -165,7 +165,7 @@ q_data([13,15], :) = r_data + r_hip_data;
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
-qtraj = PPTrajectory(foh(t, q_data));
+qtraj = PPTrajectory(zoh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
-Ftraj = PPTrajectory(foh(t, prog.vars.F.value));
+Ftraj = PPTrajectory(zoh(t, prog.vars.F.value));
 rHipTraj = PPTrajectory(zoh(t, leg_length*prog.vars.r_hip.value));
