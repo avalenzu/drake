@@ -1,9 +1,9 @@
 clear prog_prev
-N = 15;
-tf = 12;
+N = 20;
+tf = 16;
 dt = tf/N;
 leg_length = 0.3;
-step_height = 0.20;
+step_height = 0.2;
 r0 = [0; leg_length];
 th0 = 0.0;
 rf = [2; leg_length];
@@ -20,8 +20,8 @@ rbm_vis = rbm;
 %step_height = 0.0;
 platform1_start = -0.5;
 platform1_end = 0.3;
-platform2_start = 0.5;
-platform2_end = 1.5;
+platform2_start = 0.7;
+platform2_end = 0.9;
 platform3_start = 1.7;
 platform3_end = 9.5;
 platform1 = RigidBodyBox([platform1_end-platform1_start; 1; 0.1], [(platform1_end+platform1_start)/2; 0; -0.05], [0; 0; 0]);
@@ -60,7 +60,7 @@ I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 mipgap = linspace(1-1e-4, 1e-4, 5);
   
-for M = 4%1:3
+for M = 4%:5
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.hip_in_body = [-0.25; -0.25];
   prog.M = M;
@@ -72,9 +72,9 @@ for M = 4%1:3
   prog.moment_max = prog.force_max;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.0; platform1_end], [], [], [], []);
-  prog = prog.addRegion([0, -1], -1/leg_length*(step_height + 0.0), [], [], [], []);
-  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.0; -platform3_start], [], [], [], []);
+  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.0; platform2_start], [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0; 1, 0], 1/leg_length*[-(step_height + 0.0); -platform1_end; max(platform2_end, platform3_start)], [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.0; -min(platform2_end,  platform3_start)], [], [], [], []);
 
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
@@ -88,7 +88,16 @@ for M = 4%1:3
     for k = 1:prog.dim
       for n = 1:prog.N
         for i = 1:prog.n_basis_vectors
-          c_approx_splits{k,n,i} = [c_approx_splits{k,n,i}, find(prog_prev.vars.B.value(k,n,i,:))]; 
+          c_approx_splits{k,n,i} = [c_approx_splits{k,n,i}, find(prog_prev.vars.B.value(k,n,:))]; 
+        end
+      end
+    end
+    prog.c_approx_splits = c_approx_splits;
+  else
+    for k = 1:prog.dim
+      for n = 1:prog.N
+        for i = 1:prog.n_basis_vectors
+          c_approx_splits{k,n,i} = [1,2,1];
         end
       end
     end
@@ -122,7 +131,7 @@ for M = 4%1:3
         for k = 1:prog.dim
           for n = 1:prog.N
             for i = 1:prog.n_basis_vectors
-              prog.vars.(name).start(k,n,i,prog.c_approx_splits{k,n,i}(end)+(0:1)) = 0.5;
+              prog.vars.(name).start(k,n,prog.c_approx_splits{k,n,i}(end)+(1)) = 1;
             end
           end
         end
@@ -132,7 +141,7 @@ for M = 4%1:3
   params = struct();
   params.outputflag = 1;
   %params.mipgap = mipgap(M);
-  %params.timelimit = 30;
+  params.timelimit = 30;
   [prog, solvertime, objval] = solveGurobi(prog, params);
   prog_prev = prog;
 end
