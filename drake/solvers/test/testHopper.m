@@ -1,5 +1,5 @@
 clear prog_prev
-N = 20;
+N = 15;
 tf = 12;
 dt = tf/N;
 leg_length = 0.3;
@@ -60,7 +60,7 @@ I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 mipgap = linspace(1-1e-4, 1e-4, 5);
   
-for M = 2%1:3
+for M = 4%1:3
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.hip_in_body = [-0.25; -0.25];
   prog.M = M;
@@ -72,9 +72,9 @@ for M = 2%1:3
   prog.moment_max = prog.force_max;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.05; platform2_start - 0.2], [], [], [], []);
-  prog = prog.addRegion([0, -1], -1/leg_length*(step_height + 0.05), [], [], [], []);
-  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.05; -(platform2_end- 0.2)], [], [], [], []);
+  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.0; platform1_end], [], [], [], []);
+  prog = prog.addRegion([0, -1], -1/leg_length*(step_height + 0.0), [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.0; -platform3_start], [], [], [], []);
 
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
   prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
@@ -122,16 +122,17 @@ for M = 2%1:3
         for k = 1:prog.dim
           for n = 1:prog.N
             for i = 1:prog.n_basis_vectors
-              prog.vars.(name).start(k,n,i,prog.c_approx_splits{k,n,i}(end)) = 1;
+              prog.vars.(name).start(k,n,i,prog.c_approx_splits{k,n,i}(end)+(0:1)) = 0.5;
             end
           end
         end
       end
     end
   end
+  params = struct();
   params.outputflag = 1;
   %params.mipgap = mipgap(M);
-  params.timelimit = 30;
+  %params.timelimit = 30;
   [prog, solvertime, objval] = solveGurobi(prog, params);
   prog_prev = prog;
 end
