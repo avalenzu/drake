@@ -1,6 +1,6 @@
 clear prog_prev
 N = 25;
-tf = 12;
+tf = 16;
 dt = tf/N;
 leg_length = 0.3;
 step_height = 0.2;
@@ -20,15 +20,19 @@ rbm_vis = rbm;
 %step_height = 0.0;
 platform1_start = -0.5;
 platform1_end = 0.3;
+platform1_height = 0*step_height;
 platform2_start = 0.7;
-platform2_end = 0.9;
+platform2_end = 1.3;
+platform2_pitch = 0*pi/180;
+platform2_height = step_height;
 platform3_start = 1.7;
 platform3_end = 9.5;
-platform1 = RigidBodyBox([platform1_end-platform1_start; 1; 0.1], [(platform1_end+platform1_start)/2; 0; -0.05], [0; 0; 0]);
+platform3_height = 2*step_height;
+platform1 = RigidBodyBox([platform1_end-platform1_start; 1; 0.1], [(platform1_end+platform1_start)/2; 0; platform1_height-0.05], [0; 0; 0]);
 platform1.c = [0.2; 0.2; 0.2];
-platform2 = RigidBodyBox([platform2_end-platform2_start; 1; 0.1], [(platform2_end+platform2_start)/2; 0; step_height-0.05], [0; 0; 0]);
+platform2 = RigidBodyBox([platform2_end-platform2_start; 1; 0.1], [(platform2_end+platform2_start)/2; 0; platform2_height-0.05], [0; platform2_pitch; 0]);
 platform2.c = [0.2; 0.2; 0.2];
-platform3 = RigidBodyBox([platform3_end-platform3_start; 1; 0.1], [(platform3_end+platform3_start)/2; 0; -0.05], [0; 0; 0]);
+platform3 = RigidBodyBox([platform3_end-platform3_start; 1; 0.1], [(platform3_end+platform3_start)/2; 0; platform3_height-0.05], [0; 0; 0]);
 platform3.c = [0.2; 0.2; 0.2];
 rbm_vis = rbm_vis.addVisualGeometryToBody(1, platform1);
 rbm_vis = rbm_vis.addVisualGeometryToBody(1, platform2);
@@ -72,13 +76,14 @@ for M = 4
   prog.moment_max = prog.force_max;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-0.0; platform2_start], [], [], [], []);
-  prog = prog.addRegion([0, -1; -1, 0; 1, 0], 1/leg_length*[-(step_height + 0.0); -platform1_end; max(platform2_end, platform3_start)], [], [], [], []);
-  prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-0.0; -min(platform2_end,  platform3_start)], [], [], [], []);
+  prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-platform1_height; platform2_start], [], [], [], []);
+  prog = prog.addRegion([0, -1; -1, 0; 1, 0], 1/leg_length*[-(platform2_height + 0.0); -platform1_end; max(platform2_end, platform3_start)], [], [], [], []);
+  %prog = prog.addRegion([0, -1; -1, 0], 1/leg_length*[-2*step_height; -min(platform2_end,  platform3_start)], [], [], [], []);
+  prog = prog.addRegion([0, -1], -1/leg_length*platform3_height, [], [], [], []);
 
-  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 0, [0; 1], 1);
-  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*step_height, [0; 1], 1);
-  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform3_start; platform3_end], [0, 1], 0, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform1_start; platform1_end], [0, 1], 1/leg_length*platform1_height, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform2_start; platform2_end], [0, 1], 1/leg_length*platform2_height, [0; 1], 1);
+  prog = prog.addRegion([-1, 0;  1, 0], 1/leg_length*[-platform3_start; platform3_end], [0, 1], 1/leg_length*platform3_height, [0; 1], 1);
 
   if exist('prog_prev','var')
     c_approx_splits = prog_prev.c_approx_splits;
@@ -106,12 +111,14 @@ for M = 4
 
   prog = prog.setupProblem();
   prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
-  prog = prog.addPositionConstraint(N, 1/leg_length*(rf - [0; step_height]), 1/leg_length*(rf + [10; step_height]));
+  %prog = prog.addPositionConstraint(N, 1/leg_length*(rf - [0; step_height]), 1/leg_length*(rf + [0; 10*step_height]));
+  prog.vars.r.lb(2,N) = 1/leg_length*(platform1_height);
   prog = prog.addOrientationConstraint(1, th0, th0);
   prog = prog.addOrientationConstraint(N, th0, th0);
   prog = prog.addVelocityConstraint(1, v0, v0);
   prog = prog.addVelocityConstraint(N, v0, v0);
   prog.vars.r.lb(2,2:end-1) = leg_length/2;
+  prog.vars.v.ub(2,:) = 1;
   prog.vars.w.lb(:,1) = 0;
   prog.vars.w.ub(:,1) = 0;
   prog.vars.w.lb(:,N) = 0;
@@ -141,7 +148,7 @@ for M = 4
   params = struct();
   params.outputflag = 1;
   %params.mipgap = mipgap(M);
-  %params.timelimit = 30;
+  params.timelimit = 45;
   [prog, solvertime, objval] = solveGurobi(prog, params);
   prog_prev = prog;
 end
@@ -165,7 +172,7 @@ q_data([13,15], :) = r_data + r_hip_data;
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
-qtraj = PPTrajectory(zoh(t, q_data));
+qtraj = PPTrajectory(foh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
 Ftraj = PPTrajectory(zoh(t, prog.vars.F.value));
 rHipTraj = PPTrajectory(zoh(t, leg_length*prog.vars.r_hip.value));
