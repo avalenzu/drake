@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot xmlns="http://drake.mit.edu"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://drake.mit.edu ../../../doc/drakeURDF.xsd" name="littleBrick">
+  <link name="brick">
+    <inertial>
+      <mass value="2"/>
+      <inertia ixx="0.007500" ixy="0.000000" ixz="0.000000" iyy="0.018750" iyz="0.000000" izz="0.018750"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.3 0.15 0.15" />
+      </geometry>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.3 0.15 0.15" />
+      </geometry>
+    </collision>
+  </link>
+</robot>
+
+
