@@ -478,7 +478,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       
       n_free_regions = sum(cellfun(@isempty, {obj.regions.normal}));
       n_contact_regions = numel(obj.regions) - n_free_regions;
-      ncons = sum([obj.regions.ncons]) + obj.dim*n_contact_regions*obj.N;
+      ncons = 2*sum([obj.regions.ncons])*(obj.N-1) + sum([obj.regions.ncons]) + obj.dim*n_contact_regions*obj.N;
       A = zeros(ncons, obj.nv);
       b = zeros(ncons, 1);
       offset = 0;
@@ -496,6 +496,27 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
             A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
             b(indices) = obj.regions(j).b + big_M;
             offset = offset + ncons;
+
+            if n < obj.N && isempty(obj.regions(j).normal)
+              ncons = size(obj.regions(j).A, 1);
+              indices = offset + (1:ncons);
+              A(indices, obj.vars.r.i(:,n+1)) = obj.regions(j).A;
+              A(indices, obj.vars.r_hip.i(:,n+1)) = obj.regions(j).A;
+              A(indices, obj.vars.p.i(:,n+1)) = obj.regions(j).A;
+              A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
+              b(indices) = obj.regions(j).b + big_M;
+              offset = offset + ncons;
+            end
+            if n > 1 && isempty(obj.regions(j).normal)
+              ncons = size(obj.regions(j).A, 1);
+              indices = offset + (1:ncons);
+              A(indices, obj.vars.r.i(:,n-1)) = obj.regions(j).A;
+              A(indices, obj.vars.r_hip.i(:,n-1)) = obj.regions(j).A;
+              A(indices, obj.vars.p.i(:,n-1)) = obj.regions(j).A;
+              A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
+              b(indices) = obj.regions(j).b + big_M;
+              offset = offset + ncons;
+            end
           end
           if ~isempty(obj.regions(j).Aeq)
             % R(j,n) -> Aeq*(r + r_hip + p) == beq
@@ -510,6 +531,17 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
             A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
             b(indices) = [obj.regions(j).beq; -obj.regions(j).beq] + big_M;
             offset = offset + ncons;
+
+            %if n < obj.N
+              %ncons = 2*size(obj.regions(j).Aeq, 1);
+              %indices = offset + (1:ncons);
+              %A(indices, obj.vars.r.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
+              %A(indices, obj.vars.r_hip.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
+              %A(indices, obj.vars.p.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
+              %A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
+              %b(indices) = [obj.regions(j).beq; -obj.regions(j).beq] + big_M;
+              %offset = offset + ncons;
+            %end
           end
           if ~isempty(obj.regions(j).normal)
             % R(j,n) --> v + pd == 0
