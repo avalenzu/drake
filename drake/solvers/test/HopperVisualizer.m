@@ -3,7 +3,7 @@ classdef HopperVisualizer < Visualizer
     v
     Ftraj
     lcmgl
-    r_foot_inds = 7:9;
+    r_foot_inds = [7:9; 19:21]';
   end
   methods
     function obj = HopperVisualizer(v)
@@ -19,11 +19,13 @@ classdef HopperVisualizer < Visualizer
 
     function draw(obj, t, q)
       obj.lcmgl.glColor3f(0, 1, 0);
-      F = eval(obj.Ftraj, t);
-      F = [F(1); 0; F(2)];
-      r_foot = q(obj.r_foot_inds);
-      pt = r_foot + F;
-      obj.lcmgl.line3(r_foot(1), r_foot(2) ,r_foot(3), pt(1), pt(2), pt(3));
+      F_all = reshape(eval(obj.Ftraj, t), 2, []);
+      for j = 1:size(obj.r_foot_inds,2)
+        F = [F_all(1,j); 0; F_all(2,j)];
+        r_foot = q(obj.r_foot_inds(:,j));
+        pt = r_foot + F;
+        obj.lcmgl.line3(r_foot(1), r_foot(2) ,r_foot(3), pt(1), pt(2), pt(3));
+      end
       obj.lcmgl.switchBuffers();
       obj.v.draw(t, q);
     end
