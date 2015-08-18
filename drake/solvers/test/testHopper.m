@@ -1,7 +1,7 @@
 if ~vis_only
 clear prog_prev
 N = 15;
-tf = 16;
+tf = 12;
 dt = tf/N;
 leg_length = 0.3;
 step_height = 0.2;
@@ -10,7 +10,7 @@ th0 = 0.0;
 rf = [2; leg_length];
 v0 = [0; 0];
 w0 = 0;
-hip_in_body = [[-0.25; -0.25], [0.25; -0.25]];
+hip_in_body = [[-0.5; -0.25], [0.5; -0.25]];
 
 options = struct();
 options.floating = true;
@@ -179,10 +179,10 @@ q_data = zeros(rbm_vis.getNumPositions(), prog.N);
 q_data([1,3], :) = r_data;
 q_data(5, :) = th_data;
 for j = 1:prog.num_legs
-  q_data(6 + 6*(j-1) + [1,3], :) = r_data + r_hip_data(:,:,j) + p_data(:,:,j);
+  q_data(6 + 12*(j-1) + [1,3], :) = r_data + r_hip_data(:,:,j) + p_data(:,:,j);
   %q_data([7,9], :) = r_data + p_data;
-  q_data(6 + 6*(j-1) + 5, :) = leg_pitch_data(:,:,j);
-  q_data(6 + 6*(j-1) + [7,9], :) = r_data + r_hip_data(:,:,j);
+  q_data(6 + 12*(j-1) + 5, :) = leg_pitch_data(:,:,j);
+  q_data(6 + 12*(j-1) + [7,9], :) = r_data + r_hip_data(:,:,j);
 end
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
