@@ -25,7 +25,13 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     c_approx_splits = {} % obj.dim x obj.N x obj.basis_vectors cell array of obj.M-1
                     % element vectors indicating how to divide the approximating
                     % tetrahedra
+    c_approx_A = {}
+    c_approx_b = {}
     num_legs = 1
+
+    minimize_force = true
+    minimize_integral_of_squared_power = false
+    use_slack = false;
   end
   
   methods
@@ -58,24 +64,33 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         [obj.dim, obj.N, obj.num_legs], -obj.force_max, obj.force_max);
       obj = obj.addVariable('T', 'C', ...
         [1, obj.N, obj.num_legs], -obj.moment_max, obj.moment_max);
+      if obj.use_slack
+        obj = obj.addVariable('slack', 'C', ...
+          [1, obj.N, obj.num_legs], 0, 10*obj.moment_max);
+      end
       obj = obj.addVariable('b', 'C', ...
         [obj.n_basis_vectors, obj.N, obj.num_legs], 0, obj.force_max);
       obj = obj.addVariable('c', 'C', ...
         [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs], -obj.moment_max, obj.moment_max);
       obj = obj.addVariable('B', 'B', [obj.dim, obj.N, obj.num_legs, obj.M], 0, 1);
       obj = obj.addVariable('R', 'B', [obj.n_regions, obj.N, obj.num_legs], 0, 1);
-      obj = obj.addVariable('W', 'C', [1, obj.N-1], -obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max), obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max));
-      obj = obj.addVariable('PF', 'C', [obj.dim, obj.N-1], -obj.force_max*obj.velocity_max, obj.force_max*obj.velocity_max);
-      obj = obj.addVariable('PT', 'C', [1, obj.N-1], -obj.moment_max*obj.angular_velocity_max, obj.moment_max*obj.angular_velocity_max);
-      obj = obj.addVariable('BPF', 'B', [obj.dim, obj.N, obj.M], 0, 1);
-      obj = obj.addVariable('BPT', 'B', [1, obj.N, obj.M], 0, 1);
+      if obj.minimize_integral_of_squared_power
+        obj = obj.addVariable('W', 'C', [1, obj.N-1], -obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max), obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max));
+        obj = obj.addVariable('PF', 'C', [obj.dim, obj.N-1], -obj.force_max*obj.velocity_max, obj.force_max*obj.velocity_max);
+        obj = obj.addVariable('PT', 'C', [1, obj.N-1], -obj.moment_max*obj.angular_velocity_max, obj.moment_max*obj.angular_velocity_max);
+        obj = obj.addVariable('BPF', 'B', [obj.dim, obj.N, obj.M], 0, 1);
+        obj = obj.addVariable('BPT', 'B', [1, obj.N, obj.M], 0, 1);
+      end
       
       makePoint = @(p, b) [p; b; p.*b];
       default_ind_to_split = [];
+      default_dim_to_split = [];
       for i = 0:ceil(log2(obj.M))
         default_ind_to_split = [default_ind_to_split, 2^i:-1:1]; %#ok
+        default_dim_to_split = [default_dim_to_split, repmat(2, 1, 2^i)]; %#ok
       end
       default_ind_to_split(obj.M:end) = [];
+      default_dim_to_split(obj.M:end) = [];
       ncons_total = obj.dim*obj.N*obj.n_basis_vectors*obj.M*4;
       A = zeros(ncons_total, obj.nv);
       b = zeros(ncons_total, 1);
@@ -108,18 +123,23 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
               if isempty(ind_to_split)
                 vertices_cell = {vertices};
               else
-                vertices_cell = obj.splitTetrahedron(vertices, ind_to_split);
+                vertices_cell = obj.splitTetrahedron(vertices, default_dim_to_split, ind_to_split);
               end
               for m = 1:numel(vertices_cell)
                 % B(k,n,m) --> [p(k,n); b(i,n); c(k,n,i)] lies in chull(vertices_cell{m})
                 [A_local, b_local] = vert2lcon(vertices_cell{m}');
                 A_local = [A_local(:,1), A_local]; %#ok
                 point_indices = [obj.vars.r_hip.i(k,n,j), obj.vars.p.i(k,n,j), obj.vars.b.i(i,n,j), obj.vars.c.i(k,n,i,j)];
+                obj.c_approx_A{k,n,i,j,m} = A_local;
+                obj.c_approx_b{k,n,i,j,m} = b_local;
                 big_M = obj.vars.p.ub(k,n,j) + obj.vars.b.ub(i,n,j) + obj.vars.c.ub(k,n,i,j);
                 ncons = 4;
                 indices = offset + (1:ncons);
                 A(indices, point_indices) = A_local;
                 A(indices, obj.vars.B.i(k,n,j,m)) = big_M*ones(ncons,1);
+                if obj.use_slack
+                  A(indices, obj.vars.slack.i(1,n,1)) = -1;
+                end
                 b(indices) = b_local + big_M*ones(ncons,1);
                 offset = offset + ncons;
               end
@@ -140,13 +160,20 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       Q = zeros(obj.nv);
       c = zeros(obj.nv, 1);
       alpha = 0;
-      Q(obj.vars.b.i(:), obj.vars.b.i(:)) = eye(numel(obj.vars.b.i));
+      if obj.minimize_force
+        Q(obj.vars.b.i(:), obj.vars.b.i(:)) = eye(numel(obj.vars.b.i));
+      end
       %Q(obj.vars.c.i(:), obj.vars.c.i(:)) = eye(numel(obj.vars.c.i));
       %Q(obj.vars.T.i(:), obj.vars.T.i(:)) = 10*eye(numel(obj.vars.T.i));
       %Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
       %Q(obj.vars.W.i(:), obj.vars.W.i(:)) = eye(numel(obj.vars.W.i));
-      %Q(obj.vars.PF.i(:), obj.vars.PF.i(:)) = eye(numel(obj.vars.PF.i));
-      %Q(obj.vars.PT.i(:), obj.vars.PT.i(:)) = eye(numel(obj.vars.PT.i));
+      if obj.minimize_integral_of_squared_power
+        Q(obj.vars.PF.i(:), obj.vars.PF.i(:)) = eye(numel(obj.vars.PF.i));
+        Q(obj.vars.PT.i(:), obj.vars.PT.i(:)) = eye(numel(obj.vars.PT.i));
+      end
+      if obj.use_slack
+        Q(obj.vars.slack.i(:), obj.vars.slack.i(:)) = 1e0*eye(numel(obj.vars.slack.i));
+      end
       %A = spdiags([ones(obj.N-1, 1), ones(obj.N-1, 1)], [0,1], sparse(obj.N-1, obj.N));
       %ATA = A'*A;
       %for i = 1:obj.n_regions
@@ -194,7 +221,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         Aeq(indices, obj.vars.v.i(:,n)') = -h*eye(ncons);
         beq(indices) = (h^2/2)*g;
         offset_eq = offset_eq + ncons;
-        
+
         % Velocity
         % v_next - v = h/2*(F+F_next) + h*g
         ncons = obj.dim;
@@ -204,7 +231,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         Aeq(indices, obj.vars.F.i(:,n:n+1,:)) = -h/2*repmat([eye(obj.dim), eye(obj.dim)], 1, obj.num_legs);
         beq(indices) = h*g;
         offset_eq = offset_eq + ncons;
-        
+
         % Angular position
         % th_next - th - h*w - h^2/(2*I)*T = 0
         % ASSUMPTION obj.dim = 2
@@ -217,7 +244,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         beq(indices) = 0;
         offset_eq = offset_eq + ncons;
         % END_ASSUMPTION
-        
+
         % Angular Velocity
         % w_next - w = h/(2*I)*(T+T_next)
         ncons = 1;
@@ -244,81 +271,85 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
           offset_eq = offset_eq + ncons;
         end
 
-        % Incremental echanical work
-        % W - h*P_mid = 0
-        % W - h*(F*v_mid + T*w_mid) = 0
-        % W - h*(F*0.5*(v+v_next) + T*0.5*(w + w_next) = 0
-        % W - 0.5*h*(PF_mid + PT_mid) = 0
-        % where
-        %   PF_mid = F*(v+v_next) (approximately)
-        %   PT_mid = T*(w+w_next) (approximately)
-        ncons = 1;
-        indices = offset_eq + (1:ncons);
-        Aeq(indices, obj.vars.W.i(n)) = 1;
-        Aeq(indices, obj.vars.PF.i(:,n)) = -0.5*obj.dt;
-        Aeq(indices, obj.vars.PT.i(n)) = -0.5*obj.dt;
-        beq(indices) = 0;
-        offset_eq = offset_eq + ncons;
-
-        % Approximate power terms
-        makePoint = @(f, e) [f; e; f.*e];
-        ind_to_split = [];
-        for i = 0:ceil(log2(obj.M))
-          ind_to_split = [ind_to_split, 2^i:-1:1]; %#ok
-        end
-        ind_to_split(obj.M:end) = [];
-        for k = 1:obj.dim
-          % sum_m(BPF(k,n,:) = 1
+        if obj.minimize_integral_of_squared_power
+          % Incremental mechanical work
+          % W - h*P_mid = 0
+          % W - h*(F*v_mid + T*w_mid) = 0
+          % W - h*(F*0.5*(v+v_next) + T*0.5*(w + w_next) = 0
+          % W - 0.5*h*(PF_mid + PT_mid) = 0
+          % where
+          %   PF_mid = F*(v+v_next) (approximately)
+          %   PT_mid = T*(w+w_next) (approximately)
           ncons = 1;
           indices = offset_eq + (1:ncons);
-          Aeq(indices, obj.vars.BPF.i(k,n,:)) = ones(1, obj.M);
-          beq(indices) = 1;
+          Aeq(indices, obj.vars.W.i(n)) = 1;
+          Aeq(indices, obj.vars.PF.i(:,n)) = -0.5*obj.dt;
+          Aeq(indices, obj.vars.PT.i(n)) = -0.5*obj.dt;
+          beq(indices) = 0;
           offset_eq = offset_eq + ncons;
 
-          vertices = [makePoint(obj.vars.v.lb(k,n) + obj.vars.v.lb(k,n+1), obj.vars.F.lb(k,n)), ...
-                      makePoint(obj.vars.v.ub(k,n) + obj.vars.v.ub(k,n+1), obj.vars.F.lb(k,n)), ...
-                      makePoint(obj.vars.v.ub(k,n) + obj.vars.v.ub(k,n+1), obj.vars.F.ub(k,n)), ...
-                      makePoint(obj.vars.v.lb(k,n) + obj.vars.v.lb(k,n+1), obj.vars.F.ub(k,n))];
+          % Approximate power terms
+          makePoint = @(f, e) [f; e; f.*e];
+          ind_to_split = [];
+          dim_to_split = [];
+          for i = 0:ceil(log2(obj.M))
+            ind_to_split = [ind_to_split, 2^i:-1:1]; %#ok
+            dim_to_split = [dim_to_split, repmat(2, 1, 2^i)]; %#ok
+          end
+          ind_to_split(obj.M:end) = [];
+          dim_to_split(obj.M:end) = [];
+          for k = 1:obj.dim
+            % sum_m(BPF(k,n,:) = 1
+            ncons = 1;
+            indices = offset_eq + (1:ncons);
+            Aeq(indices, obj.vars.BPF.i(k,n,:)) = ones(1, obj.M);
+            beq(indices) = 1;
+            offset_eq = offset_eq + ncons;
+
+            vertices = [makePoint(obj.vars.v.lb(k,n) + obj.vars.v.lb(k,n+1), obj.vars.F.lb(k,n)), ...
+              makePoint(obj.vars.v.ub(k,n) + obj.vars.v.ub(k,n+1), obj.vars.F.lb(k,n)), ...
+              makePoint(obj.vars.v.ub(k,n) + obj.vars.v.ub(k,n+1), obj.vars.F.ub(k,n)), ...
+              makePoint(obj.vars.v.lb(k,n) + obj.vars.v.lb(k,n+1), obj.vars.F.ub(k,n))];
+            vertices_cell = obj.splitTetrahedron(vertices, dim_to_split, ind_to_split);
+            for m = 1:numel(vertices_cell)
+              % BPF(k,n,m) --> [p(k,n); b(i,n); c(k,n,i)] lies in chull(vertices_cell{m})
+              [A_local, b_local] = vert2lcon(vertices_cell{m}');
+              A_local = [A_local(:,1), A_local]; %#ok
+              point_indices = [obj.vars.v.i(k,n), obj.vars.v.i(k,n+1), obj.vars.F.i(k,n), obj.vars.PF.i(k,n)];
+              big_M = 2*obj.vars.v.ub(k,n) + obj.vars.F.ub(k,n) + obj.vars.PF.ub(k,n);
+              ncons = 4;
+              indices = offset + (1:ncons);
+              A(indices, point_indices) = A_local;
+              A(indices, obj.vars.BPF.i(k,n,m)) = big_M*ones(ncons,1);
+              b(indices) = b_local + big_M*ones(ncons,1);
+              offset = offset + ncons;
+            end
+          end
+          vertices = [makePoint(obj.vars.w.lb(n) + obj.vars.w.lb(n+1), obj.vars.T.lb(n)), ...
+            makePoint(obj.vars.w.ub(n) + obj.vars.w.ub(n+1), obj.vars.T.lb(n)), ...
+            makePoint(obj.vars.w.ub(n) + obj.vars.w.ub(n+1), obj.vars.T.ub(n)), ...
+            makePoint(obj.vars.w.lb(n) + obj.vars.w.lb(n+1), obj.vars.T.ub(n))];
           vertices_cell = obj.splitTetrahedron(vertices, ind_to_split);
+          % sum_m(BPT(1,n,:) = 1
+          ncons = 1;
+          indices = offset_eq + (1:ncons);
+          Aeq(indices, obj.vars.BPT.i(1,n,:)) = ones(1, obj.M);
+          beq(indices) = 1;
+          offset_eq = offset_eq + ncons;
           for m = 1:numel(vertices_cell)
-            % BPF(k,n,m) --> [p(k,n); b(i,n); c(k,n,i)] lies in chull(vertices_cell{m})
+            % BPT(k,n,m) --> [w(n); T(n); PT(n)] lies in chull(vertices_cell{m})
             [A_local, b_local] = vert2lcon(vertices_cell{m}');
             A_local = [A_local(:,1), A_local]; %#ok
-            point_indices = [obj.vars.v.i(k,n), obj.vars.v.i(k,n+1), obj.vars.F.i(k,n), obj.vars.PF.i(k,n)];
-            big_M = 2*obj.vars.v.ub(k,n) + obj.vars.F.ub(k,n) + obj.vars.PF.ub(k,n);
+            point_indices = [obj.vars.w.i(n), obj.vars.w.i(n+1), obj.vars.T.i(n), obj.vars.PT.i(n)];
+            big_M = 2*obj.vars.w.ub(n) + obj.vars.T.ub(n) + obj.vars.PT.ub(n);
             ncons = 4;
             indices = offset + (1:ncons);
             A(indices, point_indices) = A_local;
-            A(indices, obj.vars.BPF.i(k,n,m)) = big_M*ones(ncons,1);
+            A(indices, obj.vars.BPT.i(1,n,m)) = big_M*ones(ncons,1);
             b(indices) = b_local + big_M*ones(ncons,1);
             offset = offset + ncons;
           end
         end
-        vertices = [makePoint(obj.vars.w.lb(n) + obj.vars.w.lb(n+1), obj.vars.T.lb(n)), ...
-                    makePoint(obj.vars.w.ub(n) + obj.vars.w.ub(n+1), obj.vars.T.lb(n)), ...
-                    makePoint(obj.vars.w.ub(n) + obj.vars.w.ub(n+1), obj.vars.T.ub(n)), ...
-                    makePoint(obj.vars.w.lb(n) + obj.vars.w.lb(n+1), obj.vars.T.ub(n))];
-        vertices_cell = obj.splitTetrahedron(vertices, ind_to_split);
-        % sum_m(BPT(1,n,:) = 1
-        ncons = 1;
-        indices = offset_eq + (1:ncons);
-        Aeq(indices, obj.vars.BPT.i(1,n,:)) = ones(1, obj.M);
-        beq(indices) = 1;
-        offset_eq = offset_eq + ncons;
-        for m = 1:numel(vertices_cell)
-          % BPT(k,n,m) --> [w(n); T(n); PT(n)] lies in chull(vertices_cell{m})
-          [A_local, b_local] = vert2lcon(vertices_cell{m}');
-          A_local = [A_local(:,1), A_local]; %#ok
-          point_indices = [obj.vars.w.i(n), obj.vars.w.i(n+1), obj.vars.T.i(n), obj.vars.PT.i(n)];
-          big_M = 2*obj.vars.w.ub(n) + obj.vars.T.ub(n) + obj.vars.PT.ub(n);
-          ncons = 4;
-          indices = offset + (1:ncons);
-          A(indices, point_indices) = A_local;
-          A(indices, obj.vars.BPT.i(1,n,m)) = big_M*ones(ncons,1);
-          b(indices) = b_local + big_M*ones(ncons,1);
-          offset = offset + ncons;
-        end
-
       end
       obj = obj.addLinearConstraints(A, b, Aeq, beq);
     end
@@ -700,18 +731,28 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
   end
 
   methods (Static)
-    function vertices_cell = splitTetrahedron(vertices, ind_to_split)
-      if nargin < 2
-        mid_12 = mean(vertices(:,[1,2]),2);
-        mid_34 = mean(vertices(:,[3,4]),2);
-        vertices_cell{1} = [vertices(:,1), mid_12, mid_34, vertices(:,4)];
-        vertices_cell{2} = [mid_12, vertices(:,2), vertices(:,3), mid_34];
+    function vertices_cell = splitTetrahedron(vertices, dim_to_split, ind_to_split)
+      if nargin < 2, dim_to_split = 1; end
+      if nargin < 3, ind_to_split = 1; end
+      if nargin < 3
+        if dim_to_split == 1
+          near_vertices = [1, 2];
+          far_vertices = [4,3];
+        else
+          near_vertices = [4, 1];
+          far_vertices = [3, 2];
+        end
+        mid_near = mean(vertices(:, near_vertices),2);
+        mid_far = mean(vertices(:,far_vertices),2);
+        vertices_cell{1} = [vertices(:,near_vertices(1)), mid_near, mid_far, vertices(:,far_vertices(1))];
+        vertices_cell{2} = [mid_near, vertices(:,near_vertices(2)), vertices(:,far_vertices(2)), mid_far];
       else
         if isnumeric(vertices), vertices = {vertices}; end
+        sizecheck(dim_to_split, size(ind_to_split));
         if isscalar(ind_to_split)
-          vertices_cell = [vertices(1:ind_to_split-1), MixedIntegerHopperPlanner.splitTetrahedron(vertices{ind_to_split}), vertices(ind_to_split+1:end)];
+          vertices_cell = [vertices(1:ind_to_split-1), MixedIntegerHopperPlanner.splitTetrahedron(vertices{ind_to_split}, dim_to_split), vertices(ind_to_split+1:end)];
         else
-          vertices_cell = MixedIntegerHopperPlanner.splitTetrahedron(MixedIntegerHopperPlanner.splitTetrahedron(vertices, ind_to_split(1)), ind_to_split(2:end));
+          vertices_cell = MixedIntegerHopperPlanner.splitTetrahedron(MixedIntegerHopperPlanner.splitTetrahedron(vertices, dim_to_split(1), ind_to_split(1)), dim_to_split(2:end), ind_to_split(2:end));
         end
       end
     end

@@ -1,16 +1,18 @@
 if ~vis_only
 clear prog_prev
-N = 15;
-tf = 12;
-dt = tf/N;
+N = 30;
+%tf = 16;
+%dt = tf/N;
 leg_length = 0.3;
+dt = 0.08/sqrt(leg_length/9.81);
 step_height = 0.2;
 r0 = [0; leg_length];
 th0 = 0.0;
 rf = [2; leg_length];
 v0 = [0; 0];
 w0 = 0;
-hip_in_body = [[-0.5; -0.25], [0.5; -0.25]];
+%hip_in_body = [[-0.5; -0.25], [0.5; -0.25]];
+hip_in_body = [-0.25; -0.25];
 
 options = struct();
 options.floating = true;
@@ -62,26 +64,28 @@ for j = 1:size(hip_in_body,2)
   rbm_vis = rbm_vis.setBody(rbm_vis.getNumBodies(), body);
 end
 rbm_vis = rbm_vis.compile();
-%v = HopperVisualizer(rbm_vis.constructVisualizer());
-v = rbm_vis.constructVisualizer();
+v = HopperVisualizer(rbm_vis.constructVisualizer());
+%v = rbm_vis.constructVisualizer();
 
 %%
 m = rbm.getMass();
 I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
-mipgap = linspace(1-1e-4, 1e-4, 5);
+%mipgap = 0.5*[ones(1,4),1e-4];
   
-for M = 4
+for M = 4%:5 
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.hip_in_body = hip_in_body;
   prog.num_legs = size(hip_in_body,2);
   prog.M = M;
   prog.n_orientation_sectors = 8;
   prog.rotation_max = pi/8;
+  %prog.use_slack = true;
+  %prog.minimize_integral_of_squared_power = true;
   %prog.position_max = 10;
-  prog.velocity_max = 5;
-  prog.force_max = 2;
-  prog.moment_max = prog.force_max;
+  prog.velocity_max = 10;
+  prog.force_max = 5;
+  prog.moment_max = 1;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
   prog = prog.addRegion([0, -1; 1, 0], 1/leg_length*[-platform1_height; platform2_start], [], [], [], []);
@@ -139,46 +143,71 @@ for M = 4
   if exist('prog_prev','var')
     for field = fieldnames(prog_prev.vars)'
       name = field{1};
-      if ~strcmp(name, 'B')
-        prog.vars.(name).start = prog_prev.vars.(name).value;
-      else
-        prog.vars.(name).start(:) = 0;
-        for k = 1:prog.dim
-          for n = 1:prog.N
-            for i = 1:prog.n_basis_vectors
-              prog.vars.(name).start(k,n,prog.c_approx_splits{k,n,i}(end)+(1)) = 1;
+      switch name
+        case 'slack'
+          prog.vars.slack.start = prog.vars.slack.ub;
+        case 'c'
+          for k = 1:prog.dim
+            for n = 1:prog.N
+              for i = 1:prog.n_basis_vectors
+                for j = 1:prog.num_legs
+                  prog.vars.c.start(k,n,i,j) = prog_prev.vars.b.value(i,n,j).*(prog_prev.vars.p.value(k,n,j) + prog_prev.vars.r_hip.value(k,n,j));
+                end
+              end
             end
           end
-        end
+        case 'B'
+          prog.vars.(name).start(:) = 0;
+          for k = 1:prog.dim
+            for n = 1:prog.N
+              for i = 1:prog.n_basis_vectors
+                for j = 1:prog.num_legs
+                  for m = 1:prog.M
+                    A = prog.c_approx_A{k,n,i,j,m};
+                    b = prog.c_approx_b{k,n,i,j,m};
+                    c = prog_prev.vars.b.value(i,n,j).*(prog_prev.vars.p.value(k,n,j) + prog_prev.vars.r_hip.value(k,n,j));
+                    x = [prog_prev.vars.r_hip.value(k,n,j), ...
+                      prog_prev.vars.p.value(k,n,j), ...
+                      prog_prev.vars.b.value(i,n,j), ...
+                      c]';
+                    prog.vars.B.start(k,n,j,m) = all(A*x <= b + sqrt(eps));
+                  end
+                end
+              end
+            end
+          end
+        otherwise
+          prog.vars.(name).start = prog_prev.vars.(name).value;
       end
     end
   end
   params = struct();
   params.outputflag = 1;
   %params.mipgap = mipgap(M);
-  params.timelimit = 45;
+  %params.mipgap = 0.1;
+  %params.timelimit = 25;
   [prog, solvertime, objval] = solveGurobi(prog, params);
   prog_prev = prog;
 end
 end
 %%
-r_data = leg_length*prog.vars.r.value;
-r_hip_data = reshape(leg_length*prog.vars.r_hip.value, [prog.dim, prog.N, prog.num_legs]);
-p_data = reshape(leg_length*prog.vars.p.value, [prog.dim, prog.N, prog.num_legs]);
-th_data = prog.vars.th.value;
+r_data = leg_length*prog_prev.vars.r.value;
+r_hip_data = reshape(leg_length*prog_prev.vars.r_hip.value, [prog_prev.dim, prog_prev.N, prog_prev.num_legs]);
+p_data = reshape(leg_length*prog_prev.vars.p.value, [prog_prev.dim, prog_prev.N, prog_prev.num_legs]);
+th_data = prog_prev.vars.th.value;
 
-leg_pitch_data = zeros(1, prog.N, prog.num_legs);
-force_angle_data = zeros(1, prog.N, prog.num_legs);
-for j = 1:prog.num_legs
+leg_pitch_data = zeros(1, prog_prev.N, prog_prev.num_legs);
+force_angle_data = zeros(1, prog_prev.N, prog_prev.num_legs);
+for j = 1:prog_prev.num_legs
   leg_pitch_data(:,:,j) = -atan2(p_data(1,:,j), -p_data(2,:,j));
-  force_angle_data(:,:,j) = atan2(prog.vars.F.value(1,:,j), prog.vars.F.value(2,:,j));
-  %force_angle_data(sqrt(sum(prog.vars.F.value(:,:,j).^2)) < 1e-6) = 0;
+  force_angle_data(:,:,j) = atan2(prog_prev.vars.F.value(1,:,j), prog_prev.vars.F.value(2,:,j));
+  %force_angle_data(sqrt(sum(prog_prev.vars.F.value(:,:,j).^2)) < 1e-6) = 0;
 end
 
-q_data = zeros(rbm_vis.getNumPositions(), prog.N);
+q_data = zeros(rbm_vis.getNumPositions(), prog_prev.N);
 q_data([1,3], :) = r_data;
 q_data(5, :) = th_data;
-for j = 1:prog.num_legs
+for j = 1:prog_prev.num_legs
   q_data(6 + 12*(j-1) + [1,3], :) = r_data + r_hip_data(:,:,j) + p_data(:,:,j);
   %q_data([7,9], :) = r_data + p_data;
   q_data(6 + 12*(j-1) + 5, :) = leg_pitch_data(:,:,j);
@@ -189,5 +218,5 @@ t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
 qtraj = PPTrajectory(foh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
-%Ftraj = PPTrajectory(zoh(t, prog.vars.F.value));
-%rHipTraj = PPTrajectory(zoh(t, leg_length*prog.vars.r_hip.value));
+Ftraj = PPTrajectory(zoh(t, prog_prev.vars.F.value));
+%rHipTraj = PPTrajectory(zoh(t, leg_length*prog_prev.vars.r_hip.value));
