@@ -1,6 +1,6 @@
 if ~vis_only
 clear prog_prev
-N = 30;
+N = 20;
 %tf = 16;
 %dt = tf/N;
 leg_length = 0.3;
@@ -83,7 +83,7 @@ for M = 4%:5
   %prog.use_slack = true;
   %prog.minimize_integral_of_squared_power = true;
   %prog.position_max = 10;
-  prog.velocity_max = 10;
+  prog.velocity_max = 3;
   prog.force_max = 5;
   prog.moment_max = 1;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
@@ -218,5 +218,5 @@ t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
 qtraj = PPTrajectory(foh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
-Ftraj = PPTrajectory(zoh(t, prog_prev.vars.F.value));
+Ftraj = PPTrajectory(zoh(t, reshape(prog_prev.vars.F.value,[],prog_prev.N)));
 %rHipTraj = PPTrajectory(zoh(t, leg_length*prog_prev.vars.r_hip.value));
