@@ -12,7 +12,8 @@ rf = [2; leg_length];
 v0 = [0; 0];
 w0 = 0;
 %hip_in_body = [[-0.5; -0.25], [0.5; -0.25]];
-hip_in_body = [-0.25; -0.25];
+%hip_in_body = [-0.25; -0.25];
+hip_in_body = 0*[-0.25; -0.25];
 
 options = struct();
 options.floating = true;
