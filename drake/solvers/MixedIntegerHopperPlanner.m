@@ -27,7 +27,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
                     % tetrahedra
     c_approx_A = {}
     c_approx_b = {}
-    num_legs = 1
+    num_legs = 2
 
     minimize_force = true
     minimize_integral_of_squared_power = false
@@ -43,6 +43,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     end
     
     function obj = setupProblem(obj)
+      obj.num_legs = size(obj.hip_in_body, 2);
       obj = obj.addVariable('r', 'C', ...
         [obj.dim, obj.N], -obj.position_max, obj.position_max);
       obj = obj.addVariable('th', 'C', ...
@@ -57,9 +58,6 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         [1, obj.N], -1, 1);
       obj = obj.addVariable('r_hip', 'C', ...
         [obj.dim, obj.N, obj.num_legs], -1, 1);
-      obj = obj.addVariable('v_hip', 'C', ...
-        [obj.dim, obj.N, obj.num_legs], -1, 1);
-      obj = obj.addVariable('V_hip', 'B', [obj.dim, obj.N, obj.num_legs, obj.M], 0, 1);
       obj = obj.addVariable('S', 'B', [obj.n_orientation_sectors, obj.N], 0, 1);
       obj = obj.addVariable('p', 'C', [obj.dim, obj.N, obj.num_legs], repmat(sqrt(2)/2*[-1; -1], [1, obj.N, obj.num_legs]), repmat(sqrt(2)/2*[1; -0.5], [1, obj.N, obj.num_legs]));
       obj = obj.addVariable('pd', 'C', [obj.dim, obj.N, obj.num_legs], -obj.velocity_max, obj.velocity_max);
@@ -90,8 +88,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         for n = 1:obj.N
           for j = 1:obj.num_legs
             for k = 1:obj.dim
-              %obj = obj.addHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
-              obj = obj.addHyparApproximation({'p'}, {{k,n,j}}, ...
+              %obj = obj.addHyparApproximation({'p'}, {{k,n,j}}, ...
+              obj = obj.addHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
                                                {'b'}, {{i,n,j}}, ...
                                                'c', {k,n,i,j}, ...
                                                obj.M);
