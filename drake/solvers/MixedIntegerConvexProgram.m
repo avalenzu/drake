@@ -32,6 +32,22 @@ classdef MixedIntegerConvexProgram
     % indices of polygonal approximations of second-order cones. The structure of these constraints are designed to mimic the second-order constraints in obj.cones, but they use a polygonal linear outer approximation of the conic constraint. The number of pieces in each approximation is set by N.
     polycones = struct('index', {}, 'N', {});
 
+    % disjunctive constraints
+    % Each element of the struct array represents some portion of the decision
+    % variables, x, being constrained to lie in the union of a set of convex
+    % polyhedra defined by 
+    %
+    %     A_i*x <= b_i for i = 1, ..., k
+    %
+    % Implemented as
+    %     
+    %        A_i*x_i <= b_i*y_i for i = 1, ..., k
+    %     sum_i(x_i) == x
+    %     sum_i(y_i) == 1
+    %            y_i is binary for i = 1, ..., k
+    %
+    disjunctive_constraints = struct('x', struct('i', {}, 'lb', {}, 'ub', {}), 'A_cell', {}, 'b_cell', {}, 'xi', struct('i', {}), 'y', struct('i', {}), 'ncons', {}, 'k', {}, 'n', {});
+
     % a list of symbolic constraints constructed with yalmip
     symbolic_constraints;
 
@@ -215,6 +231,145 @@ classdef MixedIntegerConvexProgram
       obj.quadcon = [obj.quadcon, quadcon];
     end
 
+    function obj = addDisjunctiveConstraint(obj, x_name, subs, A_cell, b_cell)
+      % Each element of the struct array represents some portion of the decision
+      % variables, x, being constrained to lie in the union of a set of convex
+      % polyhedra defined by 
+      %
+      %     A_i*x <= b_i for i = 1, ..., k
+      %
+      % Implemented as
+      %     
+      %        A_i*x_i <= b_i*y_i for i = 1, ..., k
+      %     sum_i(x_i) == x
+      %     sum_i(y_i) == 1
+      %            y_i is binary for i = 1, ..., k
+      %
+      if ~iscell(x_name) 
+        x_name = {x_name};
+        subs = {subs};
+      end
+      if ~iscell(subs)
+        subs = {subs};
+      end
+      constraint.x.i = [];
+      constraint.x.lb = [];
+      constraint.x.ub = [];
+      for i = 1:numel(x_name)
+        constraint.x.i  = [constraint.x.i; reshape(obj.vars.(x_name{i}).i(subs{i}{:}), [], 1)];
+        constraint.x.lb = [constraint.x.lb; reshape(obj.vars.(x_name{i}).lb(subs{i}{:}), [], 1)];
+        constraint.x.ub = [constraint.x.ub; reshape(obj.vars.(x_name{i}).ub(subs{i}{:}), [], 1)];
+      end
+
+      % Check sizes of polyhedral constraints
+      sizecheck(b_cell, size(A_cell));
+      k = numel(A_cell);
+      n = numel(constraint.x.i);
+      for i = 1:k
+        m = numel(b_cell{i});
+        sizecheck(A_cell{i}, [m, n]);
+        b_cell{i} =  b_cell{i} - A_cell{i}*constraint.x.lb;
+      end
+      constraint.A_cell = A_cell;
+      constraint.b_cell = b_cell;
+
+      % Create auxiliary variables
+      j = numel(obj.disjunctive_constraints) + 1;
+
+      xi_name = sprintf('disjunctive_constraint_%d_xi',j);
+      xi_ub = repmat(constraint.x.ub - constraint.x.lb, [1, k]);
+      obj = obj.addVariable(xi_name, 'C', [n, k], 0, xi_ub);
+      constraint.xi.i = obj.vars.(xi_name).i;
+
+      y_name = sprintf('disjunctive_constraint_%d_y',j);
+      obj = obj.addVariable(y_name, 'B', [1, k], 0, 1);
+      constraint.y.i = obj.vars.(y_name).i;
+
+      constraint.ncons = cellfun(@numel,b_cell);
+      constraint.k = k;
+      constraint.n = n;
+
+      obj.disjunctive_constraints(j) = constraint;
+    end
+
+    function [obj, vertices_cell] = addHyparApproximation(obj, x_name, x_inds, y_name, y_inds, z_name, z_inds, n_sectors)
+      ind_to_split = [];
+      dim_to_split = [];
+
+      for i = 0:ceil(log2(n_sectors))
+        ind_to_split = [ind_to_split, 2^i:-1:1]; %#ok
+        dim_to_split = [dim_to_split, repmat(2, 1, 2^i)]; %#ok
+      end
+      ind_to_split(n_sectors:end) = [];
+      dim_to_split(n_sectors:end) = [];
+      vertices = zeros(3,4);
+      if ~iscell(x_name) 
+        x_name = {x_name};
+        x_inds = {x_inds};
+      end
+      sizecheck(x_inds, size(x_name));
+      for i = 1:numel(x_name)
+        vertices(1,:) = vertices(1,:) + ...
+          [obj.vars.(x_name{i}).lb(x_inds{i}{:}), ...
+          obj.vars.(x_name{i}).ub(x_inds{i}{:}), ...
+          obj.vars.(x_name{i}).ub(x_inds{i}{:}), ...
+          obj.vars.(x_name{i}).lb(x_inds{i}{:})];
+      end
+      if ~iscell(y_name) 
+        y_name = {y_name};
+        y_inds = {y_inds};
+      end
+      sizecheck(y_inds, size(y_name));
+      for i = 1:numel(y_name)
+        vertices(2,:) = vertices(1,:) + ...
+          [obj.vars.(y_name{i}).lb(y_inds{i}{:}), ...
+          obj.vars.(y_name{i}).lb(y_inds{i}{:}), ...
+          obj.vars.(y_name{i}).ub(y_inds{i}{:}), ...
+          obj.vars.(y_name{i}).ub(y_inds{i}{:})];
+      end
+      vertices(3,:) = prod(vertices(1:2,:), 1);
+
+      vertices_cell = splitTetrahedron(vertices, dim_to_split, ind_to_split);
+
+      A_cell = cell(1, n_sectors);
+      b_cell = cell(1, n_sectors);
+      for m = 1:n_sectors
+        [A_local, b_local] = vert2lcon(vertices_cell{m}');
+        A_local = [repmat(A_local(:,1), [1, numel(x_name)]), ...
+                   repmat(A_local(:,2), [1, numel(y_name)]), ...
+                   A_local(:,3)];
+        A_cell{m} = A_local;
+        b_cell{m} = b_local;
+      end
+      obj = obj.addDisjunctiveConstraint([x_name, y_name, z_name], {x_inds{:}, y_inds{:}, z_inds}, A_cell, b_cell);
+      function vertices_cell = splitTetrahedron(vertices, dim_to_split, ind_to_split)
+        if nargin < 2, dim_to_split = 1; end
+        if nargin < 3, ind_to_split = 1; end
+        if nargin < 3
+          if dim_to_split == 1
+            near_vertices = [1, 2];
+            far_vertices = [4,3];
+          else
+            near_vertices = [4, 1];
+            far_vertices = [3, 2];
+          end
+          mid_near = mean(vertices(:, near_vertices),2);
+          mid_far = mean(vertices(:,far_vertices),2);
+          vertices_cell{1} = [vertices(:,near_vertices(1)), mid_near, mid_far, vertices(:,far_vertices(1))];
+          vertices_cell{2} = [mid_near, vertices(:,near_vertices(2)), vertices(:,far_vertices(2)), mid_far];
+        else
+          if isnumeric(vertices), vertices = {vertices}; end
+          sizecheck(dim_to_split, size(ind_to_split));
+          if isscalar(ind_to_split)
+            vertices_cell = [vertices(1:ind_to_split-1), splitTetrahedron(vertices{ind_to_split}, dim_to_split), vertices(ind_to_split+1:end)];
+          else
+            vertices_cell = splitTetrahedron(splitTetrahedron(vertices, dim_to_split(1), ind_to_split(1)), dim_to_split(2:end), ind_to_split(2:end));
+          end
+        end
+      end
+    end
+    
+
     function obj = setLinearCost(obj, c)
       obj.c = c;
     end
@@ -274,6 +429,53 @@ classdef MixedIntegerConvexProgram
       obj.polycones = struct('index', {}, 'N', {});
     end
 
+    function obj = convertDisjointConstraints(obj)
+      % Build linear constraints for our disjunctive constraints
+      ncons = sum([obj.disjunctive_constraints.ncons]);
+      ncons_eq = sum([obj.disjunctive_constraints.n]) + numel(obj.disjunctive_constraints);
+      A = zeros(ncons, obj.nv);
+      b = zeros(ncons, 1);
+      Aeq = zeros(ncons_eq, obj.nv);
+      beq = zeros(ncons_eq, 1);
+      offset = 0;
+      offset_eq = 0;
+      for j = 1:numel(obj.disjunctive_constraints)
+        k = obj.disjunctive_constraints(j).k;
+        n = obj.disjunctive_constraints(j).n;
+        for i = 1:k
+          Ai = obj.disjunctive_constraints(j).A_cell{i};
+          bi = obj.disjunctive_constraints(j).b_cell{i};
+          ncons = size(Ai, 1);
+          indices = offset + (1:ncons);
+          A(indices, obj.disjunctive_constraints(j).xi.i(:,i)) = Ai;
+          A(indices, obj.disjunctive_constraints(j).y.i(i)) = -bi;
+          b(indices) = 0;
+          offset = offset + ncons;
+
+          ncons = n;
+          indices = offset + (1:ncons);
+          A(indices, obj.disjunctive_constraints(j).xi.i(:,i)) = eye(ncons);
+          A(indices, obj.disjunctive_constraints(j).y.i(i)) = -(obj.disjunctive_constraints(j).x.ub -obj.disjunctive_constraints(j).x.lb) ;
+          b(indices) = 0;
+          offset = offset + ncons;
+        end
+
+        ncons_eq = obj.disjunctive_constraints(j).n;
+        indices = offset_eq + (1:ncons_eq);
+        Aeq(indices, obj.disjunctive_constraints(j).x.i(:)) = -eye(ncons_eq);
+        Aeq(indices, obj.disjunctive_constraints(j).xi.i(:)) = repmat(eye(ncons_eq), 1, k);
+        beq(indices) = -obj.disjunctive_constraints(j).x.lb(:);
+        offset_eq = offset_eq + ncons_eq;
+
+        ncons_eq = 1;
+        indices = offset_eq + (1:ncons_eq);
+        Aeq(indices, obj.disjunctive_constraints(j).y.i(:)) = ones(1, k);
+        beq(indices) = 1;
+        offset_eq = offset_eq + ncons_eq;
+      end
+      obj = obj.addLinearConstraints(A, b, Aeq, beq);
+    end
+
     function [obj, solvertime, objval] = solve(obj)
       if obj.has_symbolic
         [obj, solvertime, objval] = obj.solveYalmip();
@@ -301,6 +503,7 @@ classdef MixedIntegerConvexProgram
 
     function model = getGurobiModel(obj)
       obj = obj.convertPolyCones();
+      obj = obj.convertDisjointConstraints();
 
       var_names = fieldnames(obj.vars);
 

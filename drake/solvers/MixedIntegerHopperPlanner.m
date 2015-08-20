@@ -57,6 +57,9 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         [1, obj.N], -1, 1);
       obj = obj.addVariable('r_hip', 'C', ...
         [obj.dim, obj.N, obj.num_legs], -1, 1);
+      obj = obj.addVariable('v_hip', 'C', ...
+        [obj.dim, obj.N, obj.num_legs], -1, 1);
+      obj = obj.addVariable('V_hip', 'B', [obj.dim, obj.N, obj.num_legs, obj.M], 0, 1);
       obj = obj.addVariable('S', 'B', [obj.n_orientation_sectors, obj.N], 0, 1);
       obj = obj.addVariable('p', 'C', [obj.dim, obj.N, obj.num_legs], repmat(sqrt(2)/2*[-1; -1], [1, obj.N, obj.num_legs]), repmat(sqrt(2)/2*[1; -0.5], [1, obj.N, obj.num_legs]));
       obj = obj.addVariable('pd', 'C', [obj.dim, obj.N, obj.num_legs], -obj.velocity_max, obj.velocity_max);
@@ -73,7 +76,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.addVariable('c', 'C', ...
         [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs], -obj.moment_max, obj.moment_max);
 
-      obj = obj.addVariable('B', 'B', [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs, obj.M], 0, 1);
+      %obj = obj.addVariable('B', 'B', [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs, obj.M], 0, 1);
       obj = obj.addVariable('R', 'B', [obj.n_regions, obj.N, obj.num_legs], 0, 1);
       if obj.minimize_integral_of_squared_power
         obj = obj.addVariable('W', 'C', [1, obj.N-1], -obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max), obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max));
@@ -83,41 +86,68 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         obj = obj.addVariable('BPT', 'B', [1, obj.N, obj.M], 0, 1);
       end
       
-      makePoint = @(p, b) [p; b; p.*b];
-      default_ind_to_split = [];
-      default_dim_to_split = [];
-      for i = 0:ceil(log2(obj.M))
-        default_ind_to_split = [default_ind_to_split, 2^i:-1:1]; %#ok
-        default_dim_to_split = [default_dim_to_split, repmat(2, 1, 2^i)]; %#ok
-      end
-      default_ind_to_split(obj.M:end) = [];
-      default_dim_to_split(obj.M:end) = [];
-      ncons_total = obj.dim*obj.N*obj.n_basis_vectors*obj.M*4;
-      A = zeros(ncons_total, obj.nv);
-      b = zeros(ncons_total, 1);
-      ncons_total_eq = obj.dim*obj.N*obj.n_basis_vectors;
-      Aeq = zeros(ncons_total_eq, obj.nv);
-      beq = zeros(ncons_total_eq, 1);
-      offset = 0;
-      offset_eq = 0;
       for i = 1:obj.n_basis_vectors
         for n = 1:obj.N
           for j = 1:obj.num_legs
             for k = 1:obj.dim
-              ncons_eq = 1;
-              indices_eq = offset_eq + (1:ncons_eq);
-              ncons = 4*obj.M;
-              indices = offset + (1:ncons);
-              [A(indices, :), b(indices), Aeq(indices_eq, :), beq(indices_eq)] = ...
-                obj.constructHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
-                                                {'b'}, {{i,n,j}}, ...
-                                                'c', {k,n,i,j}, ...
-                                                'B', {k,n,i,j,':'});
+              %obj = obj.addHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
+              obj = obj.addHyparApproximation({'p'}, {{k,n,j}}, ...
+                                               {'b'}, {{i,n,j}}, ...
+                                               'c', {k,n,i,j}, ...
+                                               obj.M);
             end
           end
         end
       end
-      obj = obj.addLinearConstraints(A, b, Aeq, beq);
+
+      %makePoint = @(w, r) [w; r; w.*r];
+      %ind_to_split = [];
+      %dim_to_split = [];
+      %for i = 0:ceil(log2(obj.M))
+        %ind_to_split = [ind_to_split, 2^i:-1:1]; %#ok
+        %dim_to_split = [dim_to_split, repmat(2, 1, 2^i)]; %#ok
+      %end
+      %for n = 1:obj.N
+        %for j = 1:obj.num_legs
+          %for k = 1:obj.dim
+            % sum_m(V_hip(k,n,j,:) = 1
+            %if k == 1, not_k = 2; else not_k = 1; end
+            %ncons = 1;
+            %indices = offset_eq + (1:ncons);
+            %Aeq(indices, obj.vars.V_hip.i(k,n,j,:)) = ones(1, obj.M);
+            %beq(indices) = 1;
+            %offset_eq = offset_eq + ncons;
+
+            %vertices = [makePoint(obj.vars.r_hip.lb(k,n,j), obj.vars.w.lb(n)), ...
+                        %makePoint(obj.vars.r_hip.ub(k,n,j), obj.vars.w.lb(n)), ...
+                        %makePoint(obj.vars.r_hip.ub(k,n,j), obj.vars.w.ub(n)), ...
+                        %makePoint(obj.vars.r_hip.lb(k,n,j), obj.vars.w.ub(n))];
+            %if isempty(ind_to_split)
+              %vertices_cell = {vertices};
+            %else
+              %vertices_cell = obj.splitTetrahedron(vertices, default_dim_to_split, ind_to_split);
+            %end
+            %for m = 1:numel(vertices_cell)
+              % B(k,n,i,j,m) --> [p(k,n); b(i,n); c(k,n,i)] lies in chull(vertices_cell{m})
+              %[A_local, b_local] = vert2lcon(vertices_cell{m}');
+              %A_local = [A_local(:,1), A_local]; %#ok
+              %point_indices = [obj.vars.r_hip.i(k,n,j), obj.vars.p.i(k,n,j), obj.vars.b.i(i,n,j), obj.vars.c.i(k,n,i,j)];
+              %obj.c_approx_A{k,n,i,j,m} = A_local;
+              %obj.c_approx_b{k,n,i,j,m} = b_local;
+              %big_M = obj.vars.p.ub(k,n,j) + obj.vars.b.ub(i,n,j) + obj.vars.c.ub(k,n,i,j);
+              %ncons = 4;
+              %indices = offset + (1:ncons);
+              %A(indices, point_indices) = A_local;
+              %A(indices, obj.vars.B.i(k,n,i,j,m)) = big_M*ones(ncons,1);
+              %if obj.use_slack
+                %A(indices, obj.vars.slack.i(1,n,1)) = -1;
+              %end
+              %b(indices) = b_local + big_M*ones(ncons,1);
+              %offset = offset + ncons;
+            %end
+          %end
+        %end
+      %end
 
       obj = obj.setupOrientationSectors();
       
@@ -152,80 +182,6 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.addCost(Q, c, alpha);
     end
 
-    function [A, b, Aeq, beq] = constructHyparApproximation(obj, x_name, x_inds, y_name, y_inds, z_name, z_inds, S_name, S_inds)
-      ind_to_split = [];
-      dim_to_split = [];
-      S_i = obj.vars.(S_name).i(S_inds{:});
-      n_sectors = numel(S_i);
-
-      % sum(S) = 1
-      Aeq = zeros(1, obj.nv);
-      beq = 1;
-      Aeq(1, S_i(:)) = ones(1, n_sectors);
-
-      for i = 0:ceil(log2(n_sectors))
-        ind_to_split = [ind_to_split, 2^i:-1:1]; %#ok
-        dim_to_split = [dim_to_split, repmat(2, 1, 2^i)]; %#ok
-      end
-      ind_to_split(n_sectors:end) = [];
-      dim_to_split(n_sectors:end) = [];
-      vertices = zeros(3,4);
-      point_indices = [];
-      big_M = 0;
-      if ~iscell(x_name) 
-        x_name = {x_name};
-        x_inds = {x_inds};
-      end
-      sizecheck(x_inds, size(x_name));
-      for i = 1:numel(x_name)
-        vertices(1,:) = vertices(1,:) + ...
-          [obj.vars.(x_name{i}).lb(x_inds{i}{:}), ...
-          obj.vars.(x_name{i}).ub(x_inds{i}{:}), ...
-          obj.vars.(x_name{i}).ub(x_inds{i}{:}), ...
-          obj.vars.(x_name{i}).lb(x_inds{i}{:})];
-        point_indices = [point_indices, obj.vars.(x_name{i}).i(x_inds{i}{:})]; %#ok
-        big_M = big_M + max(max(abs(obj.vars.(x_name{i}).ub(x_inds{i}{:}))), ...
-                            max(abs(obj.vars.(x_name{i}).lb(x_inds{i}{:}))));
-      end
-      if ~iscell(y_name) 
-        y_name = {y_name};
-        y_inds = {y_inds};
-      end
-      sizecheck(y_inds, size(y_name));
-      for i = 1:numel(y_name)
-        vertices(2,:) = vertices(1,:) + ...
-          [obj.vars.(y_name{i}).lb(y_inds{i}{:}), ...
-          obj.vars.(y_name{i}).lb(y_inds{i}{:}), ...
-          obj.vars.(y_name{i}).ub(y_inds{i}{:}), ...
-          obj.vars.(y_name{i}).ub(y_inds{i}{:})];
-        point_indices = [point_indices, obj.vars.(y_name{i}).i(y_inds{i}{:})]; %#ok
-        big_M = big_M + max(max(abs(obj.vars.(y_name{i}).ub(y_inds{i}{:}))), ...
-                            max(abs(obj.vars.(y_name{i}).lb(y_inds{i}{:}))));
-      end
-      vertices(3,:) = prod(vertices(1:2,:), 1);
-      point_indices = [point_indices, obj.vars.(z_name).i(z_inds{:})];
-      big_M = big_M + max(max(abs(obj.vars.(z_name).ub(z_inds{:}))), ...
-                          max(abs(obj.vars.(z_name).lb(z_inds{:}))));
-
-      vertices_cell = obj.splitTetrahedron(vertices, dim_to_split, ind_to_split);
-
-      A = zeros(4*numel(vertices_cell), obj.nv);
-      b = zeros(4*numel(vertices_cell), 1);
-      offset = 0;
-      for m = 1:n_sectors
-        [A_local, b_local] = vert2lcon(vertices_cell{m}');
-        A_local = [repmat(A_local(:,1), [1, numel(x_name)]), ...
-                   repmat(A_local(:,2), [1, numel(y_name)]), ...
-                   A_local(:,3)];
-        ncons = 4;
-        indices = offset + (1:ncons);
-        A(indices, point_indices) = A_local;
-        A(indices, S_i(m)) = big_M*ones(ncons,1);
-        b(indices) = b_local + big_M*ones(ncons,1);
-        offset = offset + ncons;
-      end
-    end
-    
     function obj = setupOrientationSectors(obj)
       obj.th_constant = obj.rotation_max*linspace(-1, 1, obj.n_orientation_sectors+1);
       sth = sin(obj.th_constant);
@@ -698,7 +654,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
               %end
             end
             if ~isempty(obj.regions(j).normal)
-              % R(j,n) --> v + pd == 0
+              % R(j,n) --> v + pd + cross(w,r_hip) == 0
+              %            v + pd + [r_hip(2)*w; -r_hip(1)*w];
               % formulated as
               %   v + pd <= big_M*(1 - R(j,n))
               %  -v - pd <= big_M*(1 - R(j,n))
@@ -771,34 +728,6 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj.regions(j).ncons = size(obj.regions(j).A, 1) ...
                             + 2*size(obj.regions(j).Aeq,1);
       obj.n_regions = j;
-    end
-  end
-
-  methods (Static)
-    function vertices_cell = splitTetrahedron(vertices, dim_to_split, ind_to_split)
-      if nargin < 2, dim_to_split = 1; end
-      if nargin < 3, ind_to_split = 1; end
-      if nargin < 3
-        if dim_to_split == 1
-          near_vertices = [1, 2];
-          far_vertices = [4,3];
-        else
-          near_vertices = [4, 1];
-          far_vertices = [3, 2];
-        end
-        mid_near = mean(vertices(:, near_vertices),2);
-        mid_far = mean(vertices(:,far_vertices),2);
-        vertices_cell{1} = [vertices(:,near_vertices(1)), mid_near, mid_far, vertices(:,far_vertices(1))];
-        vertices_cell{2} = [mid_near, vertices(:,near_vertices(2)), vertices(:,far_vertices(2)), mid_far];
-      else
-        if isnumeric(vertices), vertices = {vertices}; end
-        sizecheck(dim_to_split, size(ind_to_split));
-        if isscalar(ind_to_split)
-          vertices_cell = [vertices(1:ind_to_split-1), MixedIntegerHopperPlanner.splitTetrahedron(vertices{ind_to_split}, dim_to_split), vertices(ind_to_split+1:end)];
-        else
-          vertices_cell = MixedIntegerHopperPlanner.splitTetrahedron(MixedIntegerHopperPlanner.splitTetrahedron(vertices, dim_to_split(1), ind_to_split(1)), dim_to_split(2:end), ind_to_split(2:end));
-        end
-      end
     end
   end
 end
