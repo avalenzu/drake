@@ -231,7 +231,7 @@ classdef MixedIntegerConvexProgram
       obj.quadcon = [obj.quadcon, quadcon];
     end
 
-    function obj = addDisjunctiveConstraint(obj, x_name, subs, A_cell, b_cell)
+    function obj = addDisjunctiveConstraint(obj, x_name, subs, A_cell, b_cell, name, y_indices)
       % Each element of the struct array represents some portion of the decision
       % variables, x, being constrained to lie in the union of a set of convex
       % polyhedra defined by 
@@ -251,6 +251,13 @@ classdef MixedIntegerConvexProgram
       end
       if ~iscell(subs)
         subs = {subs};
+      end
+      j = numel(obj.disjunctive_constraints) + 1;
+      if nargin < 6 || isempty(name)
+        name = sprintf('disjunctive_constraint_%d',j);
+      end
+      if nargin < 7
+        y_indices = [];
       end
       constraint.x.i = [];
       constraint.x.lb = [];
@@ -274,25 +281,30 @@ classdef MixedIntegerConvexProgram
       constraint.b_cell = b_cell;
 
       % Create auxiliary variables
-      j = numel(obj.disjunctive_constraints) + 1;
 
-      xi_name = sprintf('disjunctive_constraint_%d_xi',j);
+      xi_name = sprintf('%s_xi',name);
       xi_ub = repmat(constraint.x.ub - constraint.x.lb, [1, k]);
       obj = obj.addVariable(xi_name, 'C', [n, k], 0, xi_ub);
       constraint.xi.i = obj.vars.(xi_name).i;
 
-      y_name = sprintf('disjunctive_constraint_%d_y',j);
-      obj = obj.addVariable(y_name, 'B', [1, k], 0, 1);
-      constraint.y.i = obj.vars.(y_name).i;
+      if isempty(y_indices)
+        y_name = sprintf('%s_y',name);
+        obj = obj.addVariable(y_name, 'B', [k,1], 0, 1);
+        constraint.y.i = obj.vars.(y_name).i;
+      else
+        sizecheck(y_indices, [k, 1]);
+        constraint.y.i = y_indices;
+      end
 
       constraint.ncons = cellfun(@numel,b_cell);
+
       constraint.k = k;
       constraint.n = n;
 
       obj.disjunctive_constraints(j) = constraint;
     end
 
-    function [obj, vertices_cell] = addHyparApproximation(obj, x_name, x_inds, y_name, y_inds, z_name, z_inds, n_sectors)
+    function [obj, vertices_cell] = addHyparApproximation(obj, x_name, x_inds, y_name, y_inds, z_name, z_inds, n_sectors, varargin)
       ind_to_split = [];
       dim_to_split = [];
 
@@ -341,7 +353,7 @@ classdef MixedIntegerConvexProgram
         A_cell{m} = A_local;
         b_cell{m} = b_local;
       end
-      obj = obj.addDisjunctiveConstraint([x_name, y_name, z_name], {x_inds{:}, y_inds{:}, z_inds}, A_cell, b_cell);
+      obj = obj.addDisjunctiveConstraint([x_name, y_name, z_name], {x_inds{:}, y_inds{:}, z_inds}, A_cell, b_cell, varargin{:});
       function vertices_cell = splitTetrahedron(vertices, dim_to_split, ind_to_split)
         if nargin < 2, dim_to_split = 1; end
         if nargin < 3, ind_to_split = 1; end
@@ -360,7 +372,9 @@ classdef MixedIntegerConvexProgram
         else
           if isnumeric(vertices), vertices = {vertices}; end
           sizecheck(dim_to_split, size(ind_to_split));
-          if isscalar(ind_to_split)
+          if isempty(ind_to_split)
+            vertices_cell = vertices;
+          elseif isscalar(ind_to_split)
             vertices_cell = [vertices(1:ind_to_split-1), splitTetrahedron(vertices{ind_to_split}, dim_to_split), vertices(ind_to_split+1:end)];
           else
             vertices_cell = splitTetrahedron(splitTetrahedron(vertices, dim_to_split(1), ind_to_split(1)), dim_to_split(2:end), ind_to_split(2:end));
