@@ -32,6 +32,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     minimize_force = true
     minimize_integral_of_squared_power = false
     use_slack = false;
+    use_foot_acceleration = false;
   end
   
   methods
@@ -58,9 +59,14 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         [1, obj.N], -1, 1);
       obj = obj.addVariable('r_hip', 'C', ...
         [obj.dim, obj.N, obj.num_legs], -1, 1);
+      obj = obj.addVariable('r_foot', 'C', ...
+        [obj.dim, obj.N, obj.num_legs], -obj.position_max, obj.position_max);
       obj = obj.addVariable('S', 'B', [obj.n_orientation_sectors, obj.N], 0, 1);
       obj = obj.addVariable('p', 'C', [obj.dim, obj.N, obj.num_legs], repmat(sqrt(2)/2*[-1; -1], [1, obj.N, obj.num_legs]), repmat(sqrt(2)/2*[1; -0.5], [1, obj.N, obj.num_legs]));
       obj = obj.addVariable('pd', 'C', [obj.dim, obj.N, obj.num_legs], -obj.velocity_max, obj.velocity_max);
+      if obj.use_foot_acceleration
+        obj = obj.addVariable('pdd', 'C', [obj.dim, obj.N, obj.num_legs], -obj.velocity_max, obj.velocity_max);
+      end
       obj = obj.addVariable('F', 'C', ...
         [obj.dim, obj.N, obj.num_legs], -obj.force_max, obj.force_max);
       obj = obj.addVariable('T', 'C', ...
@@ -74,7 +80,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.addVariable('c', 'C', ...
         [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs], -obj.moment_max, obj.moment_max);
 
-      %obj = obj.addVariable('B', 'B', [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs, obj.M], 0, 1);
+      obj = obj.addVariable('B', 'B', [obj.dim, obj.N, obj.n_basis_vectors, obj.num_legs, obj.M], 0, 1);
       obj = obj.addVariable('R', 'B', [obj.n_regions, obj.N, obj.num_legs], 0, 1);
       if obj.minimize_integral_of_squared_power
         obj = obj.addVariable('W', 'C', [1, obj.N-1], -obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max), obj.dt*(obj.force_max*obj.velocity_max + obj.moment_max*obj.angular_velocity_max));
@@ -92,7 +98,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
               obj = obj.addHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
                                                {'b'}, {{i,n,j}}, ...
                                                'c', {k,n,i,j}, ...
-                                               obj.M);
+                                               obj.M, [], squeeze(obj.vars.B.i(k,n,i,j,:)));
+                                               %obj.M, [], squeeze(obj.vars.B.i(k,ceil(n/2),i,j,:)));
             end
           end
         end
@@ -150,7 +157,6 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       obj = obj.setupOrientationSectors();
       
       obj = obj.addDynamicsConstraints();
-      obj = obj.addForceConstraints();
       obj = obj.addContactPointConstraints(); 
       obj = obj.addOrientationConstraints();
       %obj = obj.addBinaryVariableConstraints(); 
@@ -161,9 +167,13 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       if obj.minimize_force
         Q(obj.vars.b.i(:), obj.vars.b.i(:)) = eye(numel(obj.vars.b.i));
       end
-      %Q(obj.vars.c.i(:), obj.vars.c.i(:)) = eye(numel(obj.vars.c.i));
+      Q(obj.vars.c.i(:), obj.vars.c.i(:)) = eye(numel(obj.vars.c.i));
       %Q(obj.vars.T.i(:), obj.vars.T.i(:)) = 10*eye(numel(obj.vars.T.i));
-      %Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
+      if obj.use_foot_acceleration
+        Q(obj.vars.pdd.i(:), obj.vars.pdd.i(:)) = eye(numel(obj.vars.pdd.i));
+      else
+        Q(obj.vars.pd.i(:), obj.vars.pd.i(:)) = eye(numel(obj.vars.pd.i));
+      end
       %Q(obj.vars.W.i(:), obj.vars.W.i(:)) = eye(numel(obj.vars.W.i));
       if obj.minimize_integral_of_squared_power
         Q(obj.vars.PF.i(:), obj.vars.PF.i(:)) = eye(numel(obj.vars.PF.i));
@@ -255,7 +265,7 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
 
         for j = 1:obj.num_legs
           % Foot position
-          % r_next + r_hip_next + p_next - r - p - r_hip - h/2*(pd + pd_next) = 0
+          % r_next + r_hip_next + p_next - r - p - r_hip - h*pd = 0
           ncons = obj.dim;
           indices = offset_eq + (1:ncons);
           Aeq(indices, obj.vars.r.i(:,n+1)') = eye(ncons);
@@ -264,9 +274,20 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
           Aeq(indices, obj.vars.r_hip.i(:,n,j)') = -eye(ncons);            
           Aeq(indices, obj.vars.p.i(:,n+1,j)') = eye(ncons);
           Aeq(indices, obj.vars.p.i(:,n,j)') = -eye(ncons);            
-          Aeq(indices, obj.vars.pd.i(:,n:n+1,j)) = -h/2*[eye(ncons), eye(ncons)];
+          Aeq(indices, obj.vars.pd.i(:,n,j)) = -h*eye(ncons);
           beq(indices) = 0;
           offset_eq = offset_eq + ncons;
+
+          if obj.use_foot_acceleration
+            % Foot velocity
+            ncons = obj.dim;
+            indices = offset_eq + (1:ncons);
+            Aeq(indices, obj.vars.pd.i(:,n+1,j)) = eye(ncons);
+            Aeq(indices, obj.vars.pd.i(:,n,j)) = -eye(ncons);            
+            Aeq(indices, obj.vars.pdd.i(:,n:n+1,j)) = -h/2*[eye(ncons), eye(ncons)];
+            beq(indices) = 0;
+            offset_eq = offset_eq + ncons;
+          end
         end
 
         if obj.minimize_integral_of_squared_power
@@ -351,163 +372,6 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
       end
       obj = obj.addLinearConstraints(A, b, Aeq, beq);
     end
-    
-    function obj = addForceConstraints(obj)
-      ncons = (2*obj.dim + 2)*obj.n_regions*obj.N;%; + (2 + 2)*obj.n_basis_vectors*(4*obj.M)*obj.N + (4 + 2*obj.dim)*obj.n_basis_vectors*obj.N;
-      ncons_eq = obj.N;
-      A = zeros(ncons, obj.nv);
-      b = zeros(ncons, 1);
-      Aeq = zeros(ncons_eq, obj.nv);
-      beq = zeros(ncons_eq, 1);
-      offset = 0;
-      offset_eq = 0;
-      for n = 1:obj.N
-        n_plus_1_or_N = n;%min(n+1, obj.N);
-        for k = 1:obj.num_legs
-          % sum_j(Rj) = 1
-          Aeq(offset_eq + 1, obj.vars.R.i(:,n,k)) = ones(1, obj.n_regions);
-          beq(offset_eq + 1) = 1;
-          offset_eq = offset_eq + 1;
-
-          for j = 1:obj.n_regions
-            % Rj --> F - sum_i(bi*Fij) == 0
-            % formulated as
-            %   F - sum_i(bi*Fij) <= (1 - Rj)*M
-            %  -F + sum_i(bi*Fij) <= (1 - Rj)*M
-            big_M = (1 + obj.n_basis_vectors)*obj.force_max;
-            ncons = 2*obj.dim;
-            indices = offset + (1:ncons);
-            A(indices, obj.vars.F.i(:,n,k)) = [eye(obj.dim); -eye(obj.dim)];
-            A(indices, obj.vars.b.i(:,n,k)) = [-obj.regions(j).basis_vectors; obj.regions(j).basis_vectors];
-            A(indices, obj.vars.R.i(j,n_plus_1_or_N,k)) = big_M*ones(ncons,1);
-            b(indices) = big_M*ones(ncons,1);
-            offset = offset + ncons;
-
-            % ASSUME obj.dim = 2
-            % Rj --> T - sum_i(-Fij(2)*ci(1) + Fij(1)*ci(2)) = 0
-            % formulated as
-            %    T + sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
-            %   -T - sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
-            ncons = 2;
-            indices = offset + (1:ncons);
-            big_M = obj.moment_max*(1 + obj.n_basis_vectors);
-            A(indices, obj.vars.T.i(:, n, k)) = [1; -1];
-            A(indices, obj.vars.c.i(1, n, :, k)) =  [obj.regions(j).basis_vectors(2,:); -obj.regions(j).basis_vectors(2,:)];
-            A(indices, obj.vars.c.i(2, n, :, k)) =  [-obj.regions(j).basis_vectors(1,:); obj.regions(j).basis_vectors(1,:)];
-            A(indices, obj.vars.R.i(j,n_plus_1_or_N,k)) = big_M*ones(ncons,1);
-            b(indices) = big_M*ones(ncons,1);
-            offset = offset + ncons;
-            % END_ASSUME
-          end
-        end
-        
-        for i = 1:obj.n_basis_vectors
-          % c <= slope*b
-          % c >= -slope*b <--> -c <= slope*b
-          %ncons = 4;
-          %indices = offset + (1:ncons);
-          %slope = obj.position_max;
-          %A(indices, obj.vars.c.i(:, n, i)) = [eye(obj.dim); -eye(obj.dim)];
-          %A(indices, obj.vars.b.i(i, n)) = -slope*ones(ncons, 1);
-          %offset = offset + ncons;
-
-          % g'*[p; b; c] <= f
-          %for field = {'lb', 'ub'}
-            %p_bound = field{1};
-            %for k = 1:obj.dim
-              %v1 = [0; obj.vars.b.ub(i,n); 0];
-              %v2 = [obj.vars.p.(p_bound)(k,n); obj.vars.b.ub(i,n); obj.vars.p.(p_bound)(k,n)*obj.vars.b.ub(i,n)];
-              %v3 = [obj.vars.p.(p_bound)(k,n); 0; 0];
-              %g = cross(v2 - v1, v3 - v1);
-              %f = g'*v1;
-
-              %ncons = 1;
-              %indices = offset + (1:ncons);
-              %A(indices, [obj.vars.p.i(k,n), obj.vars.b.i(i,n), obj.vars.c.i(k,n,i)]) = g;
-              %b(indices) = f;
-              %offset = offset + ncons;
-            %end
-          %end
-
-%         for m = 1:2*obj.M
-%           %ci = bi*(r_hip + p)
-%           % approximated by
-%           %  (1) Bim --> b^(m-1) <= bi <= b^m for i = 1, ..., obj.n_basis_vectors
-%           %   formulated as
-%           %     -bi <= -b^(m-1) + (1 - Bim)*big_M
-%           %     bi <= b^m + (1 - Bim)*big_M
-%           % and
-%           %   (2) Bim --> b^(m-1)*p + b^(m-1)*r_hip <= ci <= b^m*p + b^(m)*r_hip for i = 1, ..., obj.n_basis_vectors
-%           %   formulated as
-%           %      b^(m-1)*p + b^(m-1)*r_hip - ci <= (1 - Bim)*big_M
-%           %     -b^m*p - b^(m)r_hip + ci <= (1 - Bim)*big_M
-%           
-%           % (1)
-%           ncons = 2;
-%           indices = offset + (1:ncons);
-%           big_M = 2*obj.force_max;
-%           A(indices, obj.vars.b.i(i, n)) = [-1; 1];
-%           A(indices, obj.vars.B.i(m, n, i)) = big_M*ones(ncons, 1);
-%           b(indices) = [-obj.b_constant(m); obj.b_constant(m+2)] + big_M;
-%           offset = offset + ncons;
-
-%           ncons = 2;
-%           indices = offset + (1:ncons);
-%           big_M = 2*obj.force_max;
-%           A(indices, obj.vars.b.i(i, n)) = [-1; 1];
-%           A(indices, obj.vars.Bz.i(m, n, i)) = big_M*ones(ncons, 1);
-%           b(indices) = [-obj.b_constant(m); obj.b_constant(m+2)] + big_M;
-%           offset = offset + ncons;
-%           
-%           % (2)
-%           ncons = 2;
-%           indices = offset + (1:ncons);
-%           big_M = 2*obj.moment_max;
-%           if mod(m, 2) == 1
-%             A(indices, obj.vars.p.i(1,n)) = [obj.b_constant(m)*eye(1); ...
-%                                              -obj.b_constant(m+2)*eye(1)];
-%             A(indices, obj.vars.r_hip.i(1,n)) = [obj.b_constant(m)*eye(1); ...
-%                                              -obj.b_constant(m+2)*eye(1)];
-%           else
-%             A(indices, obj.vars.p.i(1,n)) = [obj.b_constant(m+2)*eye(1); ...
-%                                              -obj.b_constant(m)*eye(1)];
-%             A(indices, obj.vars.r_hip.i(1,n)) = [obj.b_constant(m+2)*eye(1); ...
-%                                              -obj.b_constant(m)*eye(1)];
-%           end
-%           %b_mid = mean(obj.b_constant(m:m+1));
-%           %A(indices, obj.vars.p.i(:,n)) = [b_mid*eye(1); ...
-%                                           %-b_mid*eye(1)];
-%           A(indices, obj.vars.c.i(1, n, i)) = [-eye(1); eye(1)];
-%           A(indices, obj.vars.B.i(m, n, i)) = big_M*ones(ncons, 1);
-%           b(indices) = big_M;
-%           offset = offset + ncons;
-
-%           ncons = 2;
-%           indices = offset + (1:ncons);
-%           big_M = 2*obj.moment_max;
-%           if mod(m, 2) == 1
-%             A(indices, obj.vars.p.i(2,n)) = [obj.b_constant(m)*eye(1); ...
-%                                              -obj.b_constant(m+2)*eye(1)];
-%             A(indices, obj.vars.r_hip.i(2,n)) = [obj.b_constant(m)*eye(1); ...
-%                                              -obj.b_constant(m+2)*eye(1)];
-%           else
-%             A(indices, obj.vars.p.i(2,n)) = [obj.b_constant(m+2)*eye(1); ...
-%                                              -obj.b_constant(m)*eye(1)];
-%             A(indices, obj.vars.r_hip.i(2,n)) = [obj.b_constant(m+2)*eye(1); ...
-%                                              -obj.b_constant(m)*eye(1)];
-%           end
-%           %b_mid = mean(obj.b_constant(m:m+1));
-%           %A(indices, obj.vars.p.i(:,n)) = [b_mid*eye(1); ...
-%                                           %-b_mid*eye(1)];
-%           A(indices, obj.vars.c.i(2, n, i)) = [-eye(1); eye(1)];
-%           A(indices, obj.vars.Bz.i(m, n, i)) = big_M*ones(ncons, 1);
-%           b(indices) = big_M;
-%           offset = offset + ncons;
-%         end
-        end
-      end
-      obj = obj.addLinearConstraints(A, b, Aeq, beq);
-    end
 
     function obj = addOrientationConstraints(obj)
       ncons_eq = (1 + obj.dim)*obj.N;
@@ -581,37 +445,86 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     end
     
     function obj = addContactPointConstraints(obj)
-      big_M = obj.position_max;
-      
-      n_free_regions = sum(cellfun(@isempty, {obj.regions.normal}));
-      n_contact_regions = numel(obj.regions) - n_free_regions;
-      ncons = 2*sum([obj.regions.ncons])*(obj.N-1) + sum([obj.regions.ncons]) + obj.dim*n_contact_regions*obj.N;
-      A = zeros(ncons, obj.nv);
-      b = zeros(ncons, 1);
-      offset = 0;
       for n = 1:obj.N
-        for j = 1:numel(obj.regions)
-          for k = 1:obj.num_legs
+        for k = 1:obj.num_legs
+          A_cell = cell(1, obj.n_regions);
+          b_cell = cell(1, obj.n_regions);
+          for j = 1:numel(obj.regions)
             if ~isempty(obj.regions(j).A)
-              % R(j,n) -> A*(r + r_hip + p) <= b
-              % formulated as
-              % A*r + A*r_hip + A*p <= b + big_M*(1 - R(j,n))
-              ncons = size(obj.regions(j).A, 1);
-              indices = offset + (1:ncons);
-              A(indices, obj.vars.r.i(:,n)) = obj.regions(j).A;
-              A(indices, obj.vars.r_hip.i(:,n,k)) = obj.regions(j).A;
-              A(indices, obj.vars.p.i(:,n,k)) = obj.regions(j).A;
-              A(indices, obj.vars.R.i(j,n,k)) = big_M*ones(ncons,1);
-              b(indices) = obj.regions(j).b + big_M;
-              offset = offset + ncons;
+              A_cell{j} = obj.regions(j).A;
+              b_cell{j} = obj.regions(j).b;
+            end
+            if ~isempty(obj.regions(j).Aeq)
+              A_cell{j} = [A_cell{j}; obj.regions(j).Aeq];
+              b_cell{j} = [b_cell{j}; obj.regions(j).beq];
+              A_cell{j} = [A_cell{j}; -obj.regions(j).Aeq];
+              b_cell{j} = [b_cell{j}; -obj.regions(j).beq];
+            end
+          end
+          name = sprintf('foot_%d_region_at_knot_%d', k, n);
+          obj = obj.addDisjunctiveConstraint({'r_foot'}, ...
+                                             {{':',n,k}}, ...
+                                             A_cell, b_cell, name, ...
+                                             obj.vars.R.i(:, n, k));
+        end
+      end
+      A = zeros(2, obj.nv);
+      b = zeros(2, 1);
+      offset = 0;
+      Aeq = zeros(2, obj.nv);
+      beq = zeros(2, 1);
+      offset_eq = 0;
+      for n = 1:obj.N
+        n_plus_1_or_N = n;%min(n+1, obj.N);
+        for k = 1:obj.num_legs
+          % Define r_foot
+          ncons = obj.dim;
+          indices = offset_eq + (1:ncons);
+          Aeq(indices, obj.vars.r_foot.i(:, n, k)) = -eye(obj.dim);
+          Aeq(indices, obj.vars.r.i(:, n)) = eye(obj.dim);
+          Aeq(indices, obj.vars.r_hip.i(:, n, k)) = eye(obj.dim);
+          Aeq(indices, obj.vars.p.i(:, n, k)) = eye(obj.dim);
+          beq(indices) = 0;
+          offset_eq = offset_eq + ncons;
 
+          for j = 1:numel(obj.regions)
+            % Rj --> F - sum_i(bi*Fij) == 0
+            % formulated as
+            %   F - sum_i(bi*Fij) <= (1 - Rj)*M
+            %  -F + sum_i(bi*Fij) <= (1 - Rj)*M
+            big_M = (1 + obj.n_basis_vectors)*obj.force_max;
+            ncons = 2*obj.dim;
+            indices = offset + (1:ncons);
+            A(indices, obj.vars.F.i(:,n,k)) = [eye(obj.dim); -eye(obj.dim)];
+            A(indices, obj.vars.b.i(:,n,k)) = [-obj.regions(j).basis_vectors; obj.regions(j).basis_vectors];
+            A(indices, obj.vars.R.i(j, n_plus_1_or_N, k)) = big_M*ones(ncons,1);
+            b(indices) = big_M*ones(ncons,1);
+            offset = offset + ncons;
+
+            % ASSUME obj.dim = 2
+            % Rj --> T - sum_i(-Fij(2)*ci(1) + Fij(1)*ci(2)) = 0
+            % formulated as
+            %    T + sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
+            %   -T - sum_i(Fij(2)*ci(1) - Fij(1)*ci(2)) <= (1 - Rj)*big_M
+            ncons = 2;
+            indices = offset + (1:ncons);
+            big_M = obj.moment_max*(1 + obj.n_basis_vectors);
+            A(indices, obj.vars.T.i(:, n, k)) = [1; -1];
+            A(indices, obj.vars.c.i(1, n, :, k)) =  [obj.regions(j).basis_vectors(2,:); -obj.regions(j).basis_vectors(2,:)];
+            A(indices, obj.vars.c.i(2, n, :, k)) =  [-obj.regions(j).basis_vectors(1,:); obj.regions(j).basis_vectors(1,:)];
+            A(indices, obj.vars.R.i(j, n_plus_1_or_N, k)) = big_M*ones(ncons,1);
+            b(indices) = big_M*ones(ncons,1);
+            offset = offset + ncons;
+            % END_ASSUME
+            
+            if ~isempty(obj.regions(j).A)
               if n < obj.N && isempty(obj.regions(j).normal)
                 ncons = size(obj.regions(j).A, 1);
                 indices = offset + (1:ncons);
                 A(indices, obj.vars.r.i(:,n+1)) = obj.regions(j).A;
                 A(indices, obj.vars.r_hip.i(:,n+1,k)) = obj.regions(j).A;
                 A(indices, obj.vars.p.i(:,n+1,k)) = obj.regions(j).A;
-                A(indices, obj.vars.R.i(j,n,k)) = big_M*ones(ncons,1);
+                A(indices, obj.vars.R.i(j, n, k)) = big_M*ones(ncons,1);
                 b(indices) = obj.regions(j).b + big_M;
                 offset = offset + ncons;
               end
@@ -621,55 +534,30 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
                 A(indices, obj.vars.r.i(:,n-1)) = obj.regions(j).A;
                 A(indices, obj.vars.r_hip.i(:,n-1,k)) = obj.regions(j).A;
                 A(indices, obj.vars.p.i(:,n-1,k)) = obj.regions(j).A;
-                A(indices, obj.vars.R.i(j,n,k)) = big_M*ones(ncons,1);
+                A(indices, obj.vars.R.i(j, n, k)) = big_M*ones(ncons,1);
                 b(indices) = obj.regions(j).b + big_M;
                 offset = offset + ncons;
               end
             end
             if ~isempty(obj.regions(j).Aeq)
-              % R(j,n) -> Aeq*(r + r_hip + p) == beq
-              % formulated as
-              % A*p + A*r + A*r_hip <= b + big_M*(1 - R(j,n))
-              % -A*p - A*r - A*r_hip <= -b + big_M*(1 - R(j,n))
-              ncons = 2*size(obj.regions(j).Aeq, 1);
-              indices = offset + (1:ncons);
-              A(indices, obj.vars.r.i(:,n)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              A(indices, obj.vars.r_hip.i(:,n,k)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              A(indices, obj.vars.p.i(:,n,k)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              A(indices, obj.vars.R.i(j,n,k)) = big_M*ones(ncons,1);
-              b(indices) = [obj.regions(j).beq; -obj.regions(j).beq] + big_M;
-              offset = offset + ncons;
-
-              %if n < obj.N
-              %ncons = 2*size(obj.regions(j).Aeq, 1);
-              %indices = offset + (1:ncons);
-              %A(indices, obj.vars.r.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              %A(indices, obj.vars.r_hip.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              %A(indices, obj.vars.p.i(:,n+1)) = [obj.regions(j).Aeq; -obj.regions(j).Aeq];
-              %A(indices, obj.vars.R.i(j,n)) = big_M*ones(ncons,1);
-              %b(indices) = [obj.regions(j).beq; -obj.regions(j).beq] + big_M;
-              %offset = offset + ncons;
-              %end
             end
             if ~isempty(obj.regions(j).normal)
-              % R(j,n) --> v + pd + cross(w,r_hip) == 0
-              %            v + pd + [r_hip(2)*w; -r_hip(1)*w];
+              % R(j,n) --> pd == 0
               % formulated as
-              %   v + pd <= big_M*(1 - R(j,n))
-              %  -v - pd <= big_M*(1 - R(j,n))
+              %  pd <= big_M*(1 - R(j,n))
+              %  pd <= big_M*(1 - R(j,n))
               big_M = 2*obj.velocity_max;
               ncons = 2*obj.dim;
               indices = offset + (1:ncons);
-              %             A(indices, obj.vars.v.i(:,n)) = [eye(obj.dim); -eye(obj.dim)];
               A(indices, obj.vars.pd.i(:,n,k)) = [eye(obj.dim); -eye(obj.dim)];
-              A(indices, obj.vars.R.i(j,n,k)) = big_M*ones(ncons,1);
+              A(indices, obj.vars.R.i(j, n, k)) = big_M*ones(ncons,1);
               b(indices) = big_M*ones(ncons,1);
               offset = offset + ncons;
             end
           end
         end
       end
-      obj = obj.addLinearConstraints(A, b, [], []);
+      obj = obj.addLinearConstraints(A, b, Aeq, beq);
     end
     
     function obj = addPositionConstraint(obj, time_index, lb, ub)

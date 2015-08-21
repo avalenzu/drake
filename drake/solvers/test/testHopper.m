@@ -2,17 +2,17 @@ if ~exist('vis_only', 'var'), vis_only = false; end
 if ~vis_only
 clear prog_prev
 N = 20;
-%tf = 16;
-%dt = tf/N;
+tf = 1.6;
 leg_length = 0.3;
-dt = 0.15/sqrt(leg_length/9.81);
+dt = tf/N/sqrt(leg_length/9.81);
+%dt = 0.08/sqrt(leg_length/9.81);
 step_height = 0.2;
-r0 = [0; leg_length];
+r0 = [0; leg_length/2];
 th0 = 0.0;
 rf = [2; leg_length];
 v0 =  [0; 0];
 w0 = 0;
-hip_offset_x = 0.35;
+hip_offset_x = 0.5;
 hip_in_body = [[-hip_offset_x; -0.25], [hip_offset_x; -0.25]];
 %hip_in_body = [-hip_offset_x ; -0.25];
 
@@ -75,18 +75,19 @@ I = rbm.body(2).inertia(2,2);
 Istar = I/(m*leg_length^2);
 %mipgap = 0.5*[ones(1,4),1e-4];
   
-for M = 2%:5 
+for M = 1%:5 
   prog = MixedIntegerHopperPlanner(Istar, N, dt);
   prog.hip_in_body = hip_in_body;
   prog.num_legs = size(hip_in_body,2);
   prog.M = M;
-  prog.n_orientation_sectors = 8;
+  prog.n_orientation_sectors = 1;
   prog.rotation_max = pi/8;
+  prog.use_foot_acceleration = true;
   %prog.use_slack = true;
   %prog.minimize_integral_of_squared_power = true;
   %prog.position_max = 10;
   prog.velocity_max = 3;
-  prog.force_max = 5;
+  prog.force_max = 3;
   prog.moment_max = prog.force_max;
   %prog = prog.addRegion([0, -1], 0.0, [], [], [], []);
   %prog = prog.addRegion([], [], [0, 1], 0, [0; 1], 1);
@@ -124,12 +125,17 @@ for M = 2%:5
   end
 
   prog = prog.setupProblem();
-  prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
-  prog = prog.addPositionConstraint(N, 1/leg_length*(rf - [0; 10*step_height]), 1/leg_length*(rf + [10; 10*step_height]));
+  %prog = prog.addPositionConstraint(1, 1/leg_length*r0, 1/leg_length*r0);
+  %prog = prog.addPositionConstraint(N, 1/leg_length*(rf - [0; 10*step_height]), 1/leg_length*(rf + [10; 10*step_height]));
   %prog.vars.r.lb(2,N) = 1/leg_length*(platform1_height);
+  prog.vars.r.lb(1,1) = r0(1);
+  prog.vars.r.ub(1,1) = r0(1);
+  prog.vars.r.lb(1,N) = 1/leg_length*rf(1);
   prog = prog.addOrientationConstraint(1, th0, th0);
   prog = prog.addOrientationConstraint(N, th0, th0);
   prog = prog.addVelocityConstraint(1, v0, v0);
+  prog = prog.addVelocityConstraint(2, v0, v0);
+  prog = prog.addVelocityConstraint(N-1, v0, v0);
   prog = prog.addVelocityConstraint(N, v0, v0);
   prog.vars.r.lb(2,2:end-1) = leg_length/2;
   prog.vars.v.ub(2,:) = min(prog.vars.v.ub(2,:), 1);
@@ -141,10 +147,10 @@ for M = 2%:5
   prog.vars.p.ub(1,:,1) = 0.5*hip_offset_x;
   prog.vars.p.lb(1,:,2) = -0.5*hip_offset_x;
   for j = 1:prog.num_legs
-    %prog.vars.p.lb(:,1,j) = [0; -0.6];
-    %prog.vars.p.ub(:,1,j) = [0.2; -0.6];
-    %prog.vars.p.lb(:,N,j) = [0; -0.6];
-    %prog.vars.p.ub(:,N,j) = [0; -0.6];
+    prog.vars.p.lb(:,1,j) = [0; -0.6];
+    prog.vars.p.ub(:,1,j) = [0; -0.6];
+    prog.vars.p.lb(:,N,j) = [0; -0.6];
+    prog.vars.p.ub(:,N,j) = [0; -0.6];
     %prog.vars.p.ub(2,1,j) = -0.6;
   end
   %prog.vars.p.lb(:,N) = [0; -0.5];
@@ -193,6 +199,7 @@ for M = 2%:5
   end
   params = struct();
   params.outputflag = 1;
+  params.threads = 12;
   %params.mipgap = mipgap(M);
   %params.mipgap = 0.1;
   %params.timelimit = 25;
@@ -226,7 +233,7 @@ end
 
 t = sqrt(leg_length/9.81)*(0:dt:(N-1)*dt);
 
-qtraj = PPTrajectory(zoh(t, q_data));
+qtraj = PPTrajectory(foh(t, q_data));
 qtraj = qtraj.setOutputFrame(rbm_vis.getPositionFrame());
 Ftraj = PPTrajectory(zoh(t, reshape(permute(prog_prev.vars.F.value, [1, 3, 2]),[],prog_prev.N)));
 %rHipTraj = PPTrajectory(zoh(t, leg_length*prog_prev.vars.r_hip.value));
