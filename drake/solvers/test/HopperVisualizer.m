@@ -3,6 +3,7 @@ classdef HopperVisualizer < Visualizer
     v
     Ftraj
     lcmgl
+    %r_foot_inds = [7:9]';
     r_foot_inds = [7:9; 19:21]';
   end
   methods

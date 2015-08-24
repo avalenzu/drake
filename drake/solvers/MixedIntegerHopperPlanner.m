@@ -33,6 +33,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
     minimize_integral_of_squared_power = false
     use_slack = false;
     use_foot_acceleration = false;
+
+    disjunctive_constraint_method = 'convex-hull'
   end
   
   methods
@@ -94,12 +96,14 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
         for n = 1:obj.N
           for j = 1:obj.num_legs
             for k = 1:obj.dim
-              %obj = obj.addHyparApproximation({'p'}, {{k,n,j}}, ...
               obj = obj.addHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
                                                {'b'}, {{i,n,j}}, ...
                                                'c', {k,n,i,j}, ...
-                                               obj.M, [], squeeze(obj.vars.B.i(k,n,i,j,:)));
-                                               %obj.M, [], squeeze(obj.vars.B.i(k,ceil(n/2),i,j,:)));
+                                               obj.M, [], squeeze(obj.vars.B.i(k,n,i,j,:)), obj.disjunctive_constraint_method);
+                                               
+%             obj = obj.addPlanarHyparApproximation({'r_hip', 'p'}, {{k,n,j}, {k,n,j}}, ...
+%                                              {'b'}, {{i,n,j}}, ...
+%                                              'c', {k,n,i,j});
             end
           end
         end
@@ -465,7 +469,8 @@ classdef MixedIntegerHopperPlanner < MixedIntegerConvexProgram
           obj = obj.addDisjunctiveConstraint({'r_foot'}, ...
                                              {{':',n,k}}, ...
                                              A_cell, b_cell, name, ...
-                                             obj.vars.R.i(:, n, k));
+                                             obj.vars.R.i(:, n, k), ...
+                                             obj.disjunctive_constraint_method);
         end
       end
       A = zeros(2, obj.nv);
