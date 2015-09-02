@@ -25,10 +25,11 @@ v = r.constructVisualizer;
 v.display_dt = 0.005;
 
 % load in running trajectory
-load('data/running_v5.mat');
+%load('data/running_v5.mat');
+load('results_testRunning.mat');
 
-ts = unique(sol.xtraj.getBreaks);
-xtraj = sol.xtraj;
+ts = unique(sol.xtraj_three.getBreaks);
+xtraj = sol.xtraj_three;
 r.setInitialState(xtraj.eval(0));
 x_knots = xtraj.eval(ts);
 
@@ -96,14 +97,30 @@ l_toe_support = RigidBodySupportState(r,l_foot,struct('contact_groups',{{'toe'}}
 r_foot_support = RigidBodySupportState(r,r_foot);
 r_toe_support = RigidBodySupportState(r,r_foot,struct('contact_groups',{{'toe'}}));
 
-left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
-  l_foot_support;l_foot_support;l_foot_support;l_toe_support; ...
-  l_toe_support;l_toe_support;flight;flight;flight];
-right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_support; ...
-  r_foot_support;r_foot_support;r_foot_support;r_toe_support; ...
-  r_toe_support;r_toe_support;flight;flight;flight];
+for i = 1:numel(sol.t)
+  if ismember(i, sol.in_stance.toe) && ismember(i, sol.in_stance.heel)
+    left_phase(i) = l_foot_support;
+    right_phase(i) = r_foot_support;
+  elseif ismember(i, sol.in_stance.toe)
+    left_phase(i) = l_toe_support;
+    right_phase(i) = r_toe_support;
+  else
+    left_phase(i) = flight;
+    right_phase(i) = flight;
+  end
+end
+left_phase = reshape(left_phase, [], 1);
+right_phase = reshape(right_phase, [], 1);
+
+%left_phase = [flight;flight;flight;flight;l_foot_support;l_foot_support;l_foot_support; ...
+  %l_foot_support;l_foot_support;l_foot_support;l_toe_support; ...
+  %l_toe_support;l_toe_support;flight;flight;flight];
+%right_phase = [flight;flight;flight;flight;r_foot_support;r_foot_support;r_foot_support; ...
+  %r_foot_support;r_foot_support;r_foot_support;r_toe_support; ...
+  %r_toe_support;r_toe_support;flight;flight;flight];
 
 supports = [left_phase; right_phase; left_phase; right_phase; left_phase; right_phase];
+%supports = left_phase;
 
 r = r.setInitialState(x_knots(:,1));
 
@@ -170,8 +187,8 @@ rfoot_motion = BodyMotionControlBlock(r,'r_foot',ctrl_data,boptions);
 pelvis_motion = BodyMotionControlBlock(r,'pelvis',ctrl_data,boptions);
 lhand_motion = BodyMotionControlBlock(r,'l_hand',ctrl_data,boptions);
 rhand_motion = BodyMotionControlBlock(r,'r_hand',ctrl_data,boptions);
-boptions.Kp(4:6) = NaN; % don't constrain orientation
-boptions.Kd(4:6) = NaN;
+%boptions.Kp(4:6) = NaN; % don't constrain orientation
+%boptions.Kd(4:6) = NaN;
 torso_motion = BodyMotionControlBlock(r,'utorso',ctrl_data,boptions);
 
 

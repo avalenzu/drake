@@ -452,15 +452,18 @@ function [sol,robot_vis,v,cdfkp] = testRunningPlanner(seed,stride_length,major_i
   end
   sol.xtraj= PPTrajectory(foh(sol.t,[sol.q;sol.v]));
   sol.xtraj= sol.xtraj.setOutputFrame(robot_vis.getStateFrame);
+  sol.xtraj_one = halfStrideToFullStride(robot_vis, @mirrorAtlasPositions, sol.xtraj);
+  sol.xtraj_three = oneStrideToMultipleStrides(robot_vis, sol.xtraj_one, 3);
   sol.options = options;
   sol.FC_basis_vectors = FC_edge;
+  sol.in_stance = in_stance;
 
   % Save results
   save(sprintf('results_%s',suffix),'sol');
 end
 
 function half_periodic_constraint = halfPeriodicConstraint(robot)
-  num_symmetry = 12;
+  num_symmetry = 14;
   num_equal = 8;
   nq = robot.getNumPositions();
 
@@ -487,9 +490,9 @@ function half_periodic_constraint = halfPeriodicConstraint(robot)
     eq_mat(row,[initial_indices(idx) final_indices(idx)]) = [1 1];
   end
 
-  l_arm_usy_idx = robot.getBody(robot.findJointId('l_arm_shz')).position_num;
-  r_arm_usy_idx = robot.getBody(robot.findJointId('r_arm_shz')).position_num;
-  symmetric_matrix = addSymmetricPair(symmetric_matrix,1:2,l_arm_usy_idx,r_arm_usy_idx);
+  l_arm_shz_idx = robot.getBody(robot.findJointId('l_arm_shz')).position_num;
+  r_arm_shz_idx = robot.getBody(robot.findJointId('r_arm_shz')).position_num;
+  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,1:2,l_arm_shz_idx,r_arm_shz_idx);
 
   l_arm_shx_idx = robot.getBody(robot.findJointId('l_arm_shx')).position_num;
   r_arm_shx_idx = robot.getBody(robot.findJointId('r_arm_shx')).position_num;
@@ -511,29 +514,33 @@ function half_periodic_constraint = halfPeriodicConstraint(robot)
   r_arm_mwx_idx = robot.getBody(robot.findJointId('r_arm_mwx')).position_num;
   symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,11:12,l_arm_mwx_idx,r_arm_mwx_idx);
 
+  l_arm_lwy_idx = robot.getBody(robot.findJointId('l_arm_lwy')).position_num;
+  r_arm_lwy_idx = robot.getBody(robot.findJointId('r_arm_lwy')).position_num;
+  symmetric_matrix = addSymmetricPair(symmetric_matrix,13:14,l_arm_lwy_idx,r_arm_lwy_idx);
+
   l_leg_hpz_idx = robot.getBody(robot.findJointId('l_leg_hpz')).position_num;
   r_leg_hpz_idx = robot.getBody(robot.findJointId('r_leg_hpz')).position_num;
-  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,13:14,l_leg_hpz_idx,r_leg_hpz_idx);
+  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,15:16,l_leg_hpz_idx,r_leg_hpz_idx);
 
   l_leg_hpx_idx = robot.getBody(robot.findJointId('l_leg_hpx')).position_num;
   r_leg_hpx_idx = robot.getBody(robot.findJointId('r_leg_hpx')).position_num;
-  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,15:16,l_leg_hpx_idx,r_leg_hpx_idx);
+  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,17:18,l_leg_hpx_idx,r_leg_hpx_idx);
 
   l_leg_hpy_idx = robot.getBody(robot.findJointId('l_leg_hpy')).position_num;
   r_leg_hpy_idx = robot.getBody(robot.findJointId('r_leg_hpy')).position_num;
-  symmetric_matrix = addSymmetricPair(symmetric_matrix,17:18,l_leg_hpy_idx,r_leg_hpy_idx);
+  symmetric_matrix = addSymmetricPair(symmetric_matrix,19:20,l_leg_hpy_idx,r_leg_hpy_idx);
 
   l_leg_kny_idx = robot.getBody(robot.findJointId('l_leg_kny')).position_num;
   r_leg_kny_idx = robot.getBody(robot.findJointId('r_leg_kny')).position_num;
-  symmetric_matrix = addSymmetricPair(symmetric_matrix,19:20,l_leg_kny_idx,r_leg_kny_idx);
+  symmetric_matrix = addSymmetricPair(symmetric_matrix,21:22,l_leg_kny_idx,r_leg_kny_idx);
 
   l_leg_akx_idx = robot.getBody(robot.findJointId('l_leg_akx')).position_num;
   r_leg_akx_idx = robot.getBody(robot.findJointId('r_leg_akx')).position_num;
-  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,21:22,l_leg_akx_idx,r_leg_akx_idx);
+  symmetric_matrix = addAntiSymmetricPair(symmetric_matrix,23:24,l_leg_akx_idx,r_leg_akx_idx);
 
   l_leg_aky_idx = robot.getBody(robot.findJointId('l_leg_aky')).position_num;
   r_leg_aky_idx = robot.getBody(robot.findJointId('r_leg_aky')).position_num;
-  symmetric_matrix = addSymmetricPair(symmetric_matrix,23:24,l_leg_aky_idx,r_leg_aky_idx);
+  symmetric_matrix = addSymmetricPair(symmetric_matrix,25:26,l_leg_aky_idx,r_leg_aky_idx);
 
   %base_y = findPositionIndices(robot,'base_y'); base_y = base_y(1);
   base_y = 2;
@@ -637,4 +644,135 @@ function options = parseOptionsStruct(options_in)
       options.(fieldname) = options_in.(fieldname);
     end
   end
+end
+
+function xtraj = halfStrideToFullStride(robot,mirror_fun,xtraj_half)
+  % @param mirror_fun   -- function handle that takes an nq x N array of joint
+  % positions and returns an appropriately mirrored version. See
+  % mirrorAtlasPositions for an example.
+  nq = robot.getNumPositions();
+  t_half = xtraj_half.getBreaks();
+  x_half = xtraj_half.eval(t_half);
+  q_half = x_half(1:nq,:);
+  v_half = x_half(nq+1:end,:);
+  q_mirror = mirror_fun(robot,q_half);
+  v_mirror = mirror_fun(robot,v_half);
+  q_mirror(1,:) = q_mirror(1,:) + (q_half(1,end) - q_half(1,1));
+  q = [q_half, q_mirror(:,2:end)];
+  v = [v_half, v_mirror(:,2:end)];
+  t = [t_half, t_half(2:end) + t_half(end)];
+  xtraj = PPTrajectory(foh(t,[q;v]));
+  xtraj = xtraj.setOutputFrame(xtraj_half.getOutputFrame());
+end
+
+function q_mirror = mirrorAtlasPositions(robot,q)
+  q_mirror = q;
+
+  l_arm_shz_idx = robot.getBody(robot.findJointId('l_arm_shz')).position_num;
+  r_arm_shz_idx = robot.getBody(robot.findJointId('r_arm_shz')).position_num;
+  q_mirror(l_arm_shz_idx,:) = -q(r_arm_shz_idx,:);
+  q_mirror(r_arm_shz_idx,:) = -q(l_arm_shz_idx,:);
+
+  l_arm_shx_idx = robot.getBody(robot.findJointId('l_arm_shx')).position_num;
+  r_arm_shx_idx = robot.getBody(robot.findJointId('r_arm_shx')).position_num;
+  q_mirror(l_arm_shx_idx,:) = -q(r_arm_shx_idx,:);
+  q_mirror(r_arm_shx_idx,:) = -q(l_arm_shx_idx,:);
+
+  l_arm_ely_idx = robot.getBody(robot.findJointId('l_arm_ely')).position_num;
+  r_arm_ely_idx = robot.getBody(robot.findJointId('r_arm_ely')).position_num;
+  q_mirror(l_arm_ely_idx,:) = q(r_arm_ely_idx,:);
+  q_mirror(r_arm_ely_idx,:) = q(l_arm_ely_idx,:);
+
+  l_arm_elx_idx = robot.getBody(robot.findJointId('l_arm_elx')).position_num;
+  r_arm_elx_idx = robot.getBody(robot.findJointId('r_arm_elx')).position_num;
+  q_mirror(l_arm_elx_idx,:) = -q(r_arm_elx_idx,:);
+  q_mirror(r_arm_elx_idx,:) = -q(l_arm_elx_idx,:);
+
+  l_arm_uwy_idx = robot.getBody(robot.findJointId('l_arm_uwy')).position_num;
+  r_arm_uwy_idx = robot.getBody(robot.findJointId('r_arm_uwy')).position_num;
+  q_mirror(l_arm_uwy_idx,:) = q(r_arm_uwy_idx,:);
+  q_mirror(r_arm_uwy_idx,:) = q(l_arm_uwy_idx,:);
+
+  l_arm_mwx_idx = robot.getBody(robot.findJointId('l_arm_mwx')).position_num;
+  r_arm_mwx_idx = robot.getBody(robot.findJointId('r_arm_mwx')).position_num;
+  q_mirror(l_arm_mwx_idx,:) = -q(r_arm_mwx_idx,:);
+  q_mirror(r_arm_mwx_idx,:) = -q(l_arm_mwx_idx,:);
+
+  l_arm_lwy_idx = robot.getBody(robot.findJointId('l_arm_lwy')).position_num;
+  r_arm_lwy_idx = robot.getBody(robot.findJointId('r_arm_lwy')).position_num;
+  q_mirror(l_arm_lwy_idx,:) = q(r_arm_lwy_idx,:);
+  q_mirror(r_arm_lwy_idx,:) = q(l_arm_lwy_idx,:);
+
+  l_leg_hpz_idx = robot.getBody(robot.findJointId('l_leg_hpz')).position_num;
+  r_leg_hpz_idx = robot.getBody(robot.findJointId('r_leg_hpz')).position_num;
+  q_mirror(l_leg_hpz_idx,:) = -q(r_leg_hpz_idx,:);
+  q_mirror(r_leg_hpz_idx,:) = -q(l_leg_hpz_idx,:);
+
+  l_leg_hpx_idx = robot.getBody(robot.findJointId('l_leg_hpx')).position_num;
+  r_leg_hpx_idx = robot.getBody(robot.findJointId('r_leg_hpx')).position_num;
+  q_mirror(l_leg_hpx_idx,:) = -q(r_leg_hpx_idx,:);
+  q_mirror(r_leg_hpx_idx,:) = -q(l_leg_hpx_idx,:);
+
+  l_leg_hpy_idx = robot.getBody(robot.findJointId('l_leg_hpy')).position_num;
+  r_leg_hpy_idx = robot.getBody(robot.findJointId('r_leg_hpy')).position_num;
+  q_mirror(l_leg_hpy_idx,:) = q(r_leg_hpy_idx,:);
+  q_mirror(r_leg_hpy_idx,:) = q(l_leg_hpy_idx,:);
+
+  l_leg_kny_idx = robot.getBody(robot.findJointId('l_leg_kny')).position_num;
+  r_leg_kny_idx = robot.getBody(robot.findJointId('r_leg_kny')).position_num;
+  q_mirror(l_leg_kny_idx,:) = q(r_leg_kny_idx,:);
+  q_mirror(r_leg_kny_idx,:) = q(l_leg_kny_idx,:);
+
+  l_leg_akx_idx = robot.getBody(robot.findJointId('l_leg_akx')).position_num;
+  r_leg_akx_idx = robot.getBody(robot.findJointId('r_leg_akx')).position_num;
+  q_mirror(l_leg_akx_idx,:) = -q(r_leg_akx_idx,:);
+  q_mirror(r_leg_akx_idx,:) = -q(l_leg_akx_idx,:);
+
+  l_leg_aky_idx = robot.getBody(robot.findJointId('l_leg_aky')).position_num;
+  r_leg_aky_idx = robot.getBody(robot.findJointId('r_leg_aky')).position_num;
+  q_mirror(l_leg_aky_idx,:) = q(r_leg_aky_idx,:);
+  q_mirror(r_leg_aky_idx,:) = q(l_leg_aky_idx,:);
+
+  base_y = findPositionIndices(robot,'base_y'); base_y = base_y(1);
+  q_mirror(base_y,:) = -q(base_y,:);
+
+  base_z = findPositionIndices(robot,'base_z');
+  q_mirror(base_z,:) = q(base_z,:);
+
+  base_roll = findPositionIndices(robot,'base_roll');
+  q_mirror(base_roll,:) = -q(base_roll,:);
+
+  base_pitch = findPositionIndices(robot,'base_pitch');
+  q_mirror(base_pitch,:) = q(base_pitch,:);
+
+  base_yaw = findPositionIndices(robot,'base_yaw');
+  q_mirror(base_yaw,:) = -q(base_yaw,:);
+
+  back_bkz = findPositionIndices(robot,'back_bkz');
+  q_mirror(back_bkz,:) = -q(back_bkz,:);
+
+  back_bky = findPositionIndices(robot,'back_bky');
+  q_mirror(back_bky,:) = q(back_bky,:);
+
+  back_bkx = findPositionIndices(robot,'back_bkx');
+  q_mirror(back_bkx,:) = -q(back_bkx,:);
+end
+
+function xtraj = oneStrideToMultipleStrides(robot,xtraj_stride,n_strides)
+  nq = robot.getNumPositions();
+  t_stride = xtraj_stride.getBreaks();
+  x_stride = xtraj_stride.eval(t_stride);
+  q_stride = x_stride(1:nq,:);
+  v_stride = x_stride(nq+1:end,:);
+  q = q_stride;
+  t = t_stride;
+  for i = 1:n_strides-1
+    q_next = q_stride(:,2:end);
+    q_next(1,:) = q_next(1,:) + (q(1,end) - q(1,1));
+    q = [q, q_next];
+    t = [t, t_stride(2:end) + t(end)];
+  end
+  v = [v_stride, repmat(v_stride(:,2:end),1,n_strides-1)];
+  xtraj = PPTrajectory(foh(t,[q;v]));
+  xtraj = xtraj.setOutputFrame(xtraj_stride.getOutputFrame());
 end
