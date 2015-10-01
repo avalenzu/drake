@@ -132,11 +132,11 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
       end
     end
 
-    function obj = addConstraint(obj, constraint, varargin)
+    function [obj, cnstr_id] = addConstraint(obj, constraint, varargin)
       if isa(constraint, 'RigidBodyConstraint')
-        obj = addRigidBodyConstraint(obj,constraint, varargin{:});
+        [obj, cnstr_id] = addRigidBodyConstraint(obj,constraint, varargin{:});
       else
-        obj = addConstraint@SimpleDynamicsFullKinematicsPlanner(obj,constraint,varargin{:});
+        [obj, cnstr_id] = addConstraint@SimpleDynamicsFullKinematicsPlanner(obj,constraint,varargin{:});
       end
     end
     
