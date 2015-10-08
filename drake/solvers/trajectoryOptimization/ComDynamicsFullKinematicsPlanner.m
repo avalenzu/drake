@@ -240,9 +240,9 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
 				c(1:3) = H_r-H_l-Hdot*h*obj.torque_multiplier;
 			  dc(1:3,1) = -Hdot*obj.torque_multiplier;
 				dc(1:3,1+(1:9)) = [-eye(3) eye(3) -h*eye(3)*obj.torque_multiplier];
-				c(4:6) = com_r-com_l-comdot_l*h - 0.5*comddot_l*h^2;
-				dc(4:6,1) = -comdot_l - comddot_l*h;
-				dc(4:6,1+9+(1:15)) = [-eye(3) eye(3) -h*eye(3) zeros(3) -h^2/2*eye(3)];
+				c(4:6) = com_r-com_l - comdot_r*h;
+				dc(4:6,1) = -comdot_r;
+				dc(4:6,1+9+(1:12)) = [-eye(3) eye(3)  zeros(3) -h*eye(3)];
 				c(7:9) = comdot_r-comdot_l-(comddot_l+comddot_r)*h/2;
 				dc(7:9,1) = -(comddot_l+comddot_r)*0.5;
 				dc(7:9,1+15+(1:12)) = [-eye(3) eye(3) -0.5*h*eye(3) -0.5*h*eye(3)];
@@ -288,7 +288,7 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
         h_sparse_pattern(1:3,1) = ones(3,1);
 				h_sparse_pattern(1:3,1+(1:9)) = [eye(3) eye(3) eye(3)];
 				h_sparse_pattern(4:6,1) = ones(3,1);
-				h_sparse_pattern(4:6,1+9+(1:15)) = [eye(3) eye(3) eye(3) zeros(3) eye(3)];
+				h_sparse_pattern(4:6,1+9+(1:12)) = [eye(3) eye(3) zeros(3) eye(3)];
 				h_sparse_pattern(7:9,1) = ones(3,1);
 				h_sparse_pattern(7:9,1+15+(1:12)) = [eye(3) eye(3) eye(3) eye(3)];
         h_sparse_pattern(9+(1:obj.nq),1) = 1;
