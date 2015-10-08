@@ -234,21 +234,21 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
         end
       end
 
-			function [c,dc] = dtDynFun(h,H_l,H_r,Hdot,com_l,com_r,comdot_l,comdot_r,comddot,q_l,q_r,v)
+			function [c,dc] = dtDynFun(h,H_l,H_r,Hdot,com_l,com_r,comdot_l,comdot_r,comddot_l,comddot_r,q_l,q_r,v)
 			  c = zeros(3+3+3+obj.nq,1);
-				dc = zeros(3+3+3+obj.nq,1+3+3+3+3+3+3+3+3+2*obj.nq+obj.nv);
+				dc = zeros(3+3+3+obj.nq,1+3+3+3+3+3+3+3+3+3+2*obj.nq+obj.nv);
 				c(1:3) = H_r-H_l-Hdot*h*obj.torque_multiplier;
 			  dc(1:3,1) = -Hdot*obj.torque_multiplier;
 				dc(1:3,1+(1:9)) = [-eye(3) eye(3) -h*eye(3)*obj.torque_multiplier];
-				c(4:6) = com_r-com_l-(comdot_l+comdot_r)*h/2;
-				dc(4:6,1) = -(comdot_l+comdot_r)/2;
-				dc(4:6,1+9+(1:12)) = [-eye(3) eye(3) -h/2*eye(3) -h/2*eye(3)];
-				c(7:9) = comdot_r-comdot_l-comddot*h;
-				dc(7:9,1) = -comddot;
-				dc(7:9,1+15+(1:9)) = [-eye(3) eye(3) -h*eye(3)];
+				c(4:6) = com_r-com_l-comdot_l*h - 0.5*comddot_l*h^2;
+				dc(4:6,1) = -comdot_l - comddot_l*h;
+				dc(4:6,1+9+(1:15)) = [-eye(3) eye(3) -h*eye(3) zeros(3) -h^2/2*eye(3)];
+				c(7:9) = comdot_r-comdot_l-(comddot_l+comddot_r)*h/2;
+				dc(7:9,1) = -(comddot_l+comddot_r)*0.5;
+				dc(7:9,1+15+(1:12)) = [-eye(3) eye(3) -0.5*h*eye(3) -0.5*h*eye(3)];
         c(9+(1:obj.nq)) = q_r-q_l-v*h;
         dc(9+(1:obj.nq),1) = -v;
-        dc(9+(1:obj.nq),1+24+(1:2*obj.nq+obj.nv)) = [-eye(obj.nq) eye(obj.nq) -h*eye(obj.nv)];
+        dc(9+(1:obj.nq),1+27+(1:2*obj.nq+obj.nv)) = [-eye(obj.nq) eye(obj.nq) -h*eye(obj.nv)];
 			end
 
       if(num_knots == 1)
@@ -288,12 +288,12 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
         h_sparse_pattern(1:3,1) = ones(3,1);
 				h_sparse_pattern(1:3,1+(1:9)) = [eye(3) eye(3) eye(3)];
 				h_sparse_pattern(4:6,1) = ones(3,1);
-				h_sparse_pattern(4:6,1+9+(1:12)) = [eye(3) eye(3) eye(3) eye(3)];
+				h_sparse_pattern(4:6,1+9+(1:15)) = [eye(3) eye(3) eye(3) zeros(3) eye(3)];
 				h_sparse_pattern(7:9,1) = ones(3,1);
-				h_sparse_pattern(7:9,1+15+(1:9)) = [eye(3) eye(3) eye(3)];
+				h_sparse_pattern(7:9,1+15+(1:12)) = [eye(3) eye(3) eye(3) eye(3)];
         h_sparse_pattern(9+(1:obj.nq),1) = 1;
-        h_sparse_pattern(9+(1:obj.nq),1+24+(1:2*obj.nq+obj.nv)) = [eye(obj.nq) eye(obj.nq) eye(obj.nv)];
-        h_cnstr = FunctionHandleConstraint(zeros(9+obj.nq,1),zeros(9+obj.nq,1),1+24+2*obj.nq+obj.nv,@dtDynFun);
+        h_sparse_pattern(9+(1:obj.nq),1+27+(1:2*obj.nq+obj.nv)) = [eye(obj.nq) eye(obj.nq) eye(obj.nv)];
+        h_cnstr = FunctionHandleConstraint(zeros(9+obj.nq,1),zeros(9+obj.nq,1),1+27+2*obj.nq+obj.nv,@dtDynFun);
         cnstr_names = cell(9+obj.nq,1);
         cnstr_names(1:9) = [{sprintf('H_x[%d]-H_x[%d]=Hdot_x[%d]*dt',knot_idx(2),knot_idx(1),knot_idx(2))},...
                        {sprintf('H_y[%d]-H_y[%d]=Hdot_y[%d]*dt',knot_idx(2),knot_idx(1),knot_idx(2))},...
@@ -312,7 +312,7 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
         h_cnstr = h_cnstr.setSparseStructure(h_row,h_col);
         obj = obj.addConstraint(h_cnstr,[{obj.h_inds(knot_idx(1))};{obj.H_inds(:,knot_idx(1))};{obj.H_inds(:,knot_idx(2))};{obj.Hdot_inds(:,knot_idx(2))};...
           {obj.com_inds(:,knot_idx(1))};{obj.com_inds(:,knot_idx(2))};{obj.comdot_inds(:,knot_idx(1))};{obj.comdot_inds(:,knot_idx(2))};...
-          {obj.comddot_inds(:,knot_idx(2))};{obj.q_inds(:,knot_idx(1))};{obj.q_inds(:,knot_idx(2))};{obj.v_inds(:,knot_idx(2))}]);
+          {obj.comddot_inds(:,knot_idx(1))};{obj.comddot_inds(:,knot_idx(2))};{obj.q_inds(:,knot_idx(1))};{obj.q_inds(:,knot_idx(2))};{obj.v_inds(:,knot_idx(2))}]);
         %%%%
         % add the complementarity contact constraint
         % find out the RigidBodyWrench on the same body and same body_pts
