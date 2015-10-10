@@ -1528,7 +1528,8 @@ classdef NonlinearProgram
       options.cl = [obj.cin_lb;zeros(obj.num_ceq,1);-inf(length(obj.bin),1);obj.beq];
       options.cu = [obj.cin_ub;zeros(obj.num_ceq,1);obj.bin;obj.beq];
       options.ipopt.hessian_approximation = 'limited-memory';
-      options.ipopt.print_level = 0;
+      options.ipopt.print_level = 5;
+      options.ipopt.max_iter = 200;
       
       
       [x,info] = ipopt(x0,funcs,options);

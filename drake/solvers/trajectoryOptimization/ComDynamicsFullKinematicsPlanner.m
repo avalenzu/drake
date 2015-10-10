@@ -243,9 +243,9 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
 				c(4:6) = com_r-com_l - comdot_r*h;
 				dc(4:6,1) = -comdot_r;
 				dc(4:6,1+9+(1:12)) = [-eye(3) eye(3)  zeros(3) -h*eye(3)];
-				c(7:9) = comdot_r-comdot_l-(comddot_l+comddot_r)*h/2;
-				dc(7:9,1) = -(comddot_l+comddot_r)*0.5;
-				dc(7:9,1+15+(1:12)) = [-eye(3) eye(3) -0.5*h*eye(3) -0.5*h*eye(3)];
+				c(7:9) = comdot_r-comdot_l-comddot_r*h;
+				dc(7:9,1) = -comddot_r;
+				dc(7:9,1+15+(1:12)) = [-eye(3) eye(3) zeros(3) -h*eye(3)];
         c(9+(1:obj.nq)) = q_r-q_l-v*h;
         dc(9+(1:obj.nq),1) = -v;
         dc(9+(1:obj.nq),1+27+(1:2*obj.nq+obj.nv)) = [-eye(obj.nq) eye(obj.nq) -h*eye(obj.nv)];
@@ -290,7 +290,7 @@ classdef ComDynamicsFullKinematicsPlanner < SimpleDynamicsFullKinematicsPlanner
 				h_sparse_pattern(4:6,1) = ones(3,1);
 				h_sparse_pattern(4:6,1+9+(1:12)) = [eye(3) eye(3) zeros(3) eye(3)];
 				h_sparse_pattern(7:9,1) = ones(3,1);
-				h_sparse_pattern(7:9,1+15+(1:12)) = [eye(3) eye(3) eye(3) eye(3)];
+				h_sparse_pattern(7:9,1+15+(1:12)) = [eye(3) eye(3) zeros(3) eye(3)];
         h_sparse_pattern(9+(1:obj.nq),1) = 1;
         h_sparse_pattern(9+(1:obj.nq),1+27+(1:2*obj.nq+obj.nv)) = [eye(obj.nq) eye(obj.nq) eye(obj.nv)];
         h_cnstr = FunctionHandleConstraint(zeros(9+obj.nq,1),zeros(9+obj.nq,1),1+27+2*obj.nq+obj.nv,@dtDynFun);
