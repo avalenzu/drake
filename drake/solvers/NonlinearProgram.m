@@ -417,8 +417,8 @@ classdef NonlinearProgram
       end
       obj.x_lb(xind) = max([cnstr.lb obj.x_lb(xind)],[],2);
       obj.x_ub(xind) = min([cnstr.ub obj.x_ub(xind)],[],2);
-      eq_idx = xind(abs(obj.x_lb(xind) - obj.x_ub(xind)) < sqrt(eps));
-      obj.x_lb(eq_idx) = obj.x_ub(eq_idx);
+      %eq_idx = xind(abs(obj.x_lb(xind) - obj.x_ub(xind)) < sqrt(eps));
+      %obj.x_lb(eq_idx) = obj.x_ub(eq_idx);
       if (any(obj.x_lb(xind)>obj.x_ub(xind)))
         error('Drake:NonlinearProgram:InvalidConstraint','adding this bounding box constraint resulted in some lb>ub');
       end
@@ -1272,8 +1272,10 @@ classdef NonlinearProgram
       % Find out the decision variables with lower and upper bounds being equal, remove
       % those decision variables
       x_idx = (1:obj.num_vars)';
-      free_x_idx = x_idx(obj.x_lb~=obj.x_ub);
-      fix_x_idx = x_idx(obj.x_lb == obj.x_ub);
+      %free_x_idx = x_idx(obj.x_lb~=obj.x_ub);
+      %fix_x_idx = x_idx(obj.x_lb == obj.x_ub);
+      free_x_idx = x_idx;
+      fix_x_idx = [];
       x_fix = obj.x_lb(fix_x_idx);
       num_x_free = length(free_x_idx);
       x2freeXmap = zeros(obj.num_vars,1);
