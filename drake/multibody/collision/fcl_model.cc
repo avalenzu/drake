@@ -25,6 +25,16 @@ struct DistanceData
   std::vector<PointPair>* closest_points{nullptr};
 };
 
+/// @brief Distance data stores the distance request and the result given by distance algorithm.
+struct CollisionData
+{
+  /// @brief Collision request
+  fcl::CollisionRequestd request;
+
+  /// @brief Collision result
+  fcl::CollisionResultd result;
+};
+
 /// @brief Default distance callback for two objects o1 and o2 in broad phase. return value means whether the broad phase can stop now. also return dist, i.e. the bmin distance till now
 bool allToAllDistanceFunction(fcl::CollisionObjectd* fcl_object_A,
     fcl::CollisionObjectd* fcl_object_B, void* callback_data, double& dist)
@@ -62,6 +72,23 @@ bool allToAllDistanceFunction(fcl::CollisionObjectd* fcl_object_A,
           p_CP, p_DQ, n_QP, d_QP);
   }
   return false; // Check all N^2 pairs
+}
+
+bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
+    fcl::CollisionObjectd* fcl_object_B, void* callback_data)
+{
+  auto element_A = static_cast<Element*>(fcl_object_A->getUserData());
+  auto element_B = static_cast<Element*>(fcl_object_B->getUserData());
+  if (element_A && element_B && element_A->CanCollideWith(element_B)) {
+      // Unpack the callback data
+      auto* collision_data = static_cast<CollisionData*>(callback_data);
+      const fcl::CollisionRequestd& request = collision_data->request;
+      fcl::CollisionResultd& result = collision_data->result;
+
+      // Perform nearphase distance computation
+      collide(fcl_object_A, fcl_object_B, request, result);
+  }
+  return false; // Check all pairs provided by broadphase
 }
 
 void FCLModel::DoAddElement(const Element& element) {
@@ -147,8 +174,12 @@ bool FCLModel::closestPointsAllToAll(const std::vector<ElementId>& ids_to_check,
 
 bool FCLModel::ComputeMaximumDepthCollisionPoints(
     bool use_margins, std::vector<PointPair>& points) {
-  drake::unused(use_margins, points);
-  DRAKE_ABORT_MSG("Not implemented.");
+  CollisionData collision_data;
+  broadphase_manager_.collide(static_cast<void*>(&collision_data), collisionPointsFunction);
+  std::vector<fcl::Contactd> contacts;
+  collision_data.result.getContacts(contacts);
+  for (fcl::Contactd contact : contacts) {
+  }
   return false;
 }
 
