@@ -46,6 +46,7 @@ class FCLModel : public Model {
   bool updateElementWorldTransform(
       ElementId, const Eigen::Isometry3d& T_local_to_world) override;
   void updateModel() override;
+  Eigen::Transform<double, 3, Eigen::AffineCompact> getFclObjectTransform(ElementId);
  private:
   fcl::DynamicAABBTreeCollisionManager<double> broadphase_manager_;
   ElementToFclObjMap fcl_collision_objects_;
