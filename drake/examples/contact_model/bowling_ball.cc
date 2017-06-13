@@ -136,13 +136,13 @@ int main() {
   if (FLAGS_use_implicit) {
     simulator->reset_integrator<ImplicitEulerIntegrator<double>>(*diagram,
                                                                context);
+    simulator->get_mutable_integrator()->set_target_accuracy(FLAGS_accuracy);
+    simulator->get_mutable_integrator()->set_maximum_step_size(FLAGS_timestep);
   } else {
     simulator->reset_integrator<RungeKutta2Integrator<double>>(*diagram,
                                                                FLAGS_timestep,
                                                                context);
   }
-  simulator->get_mutable_integrator()->set_maximum_step_size(FLAGS_timestep);
-  simulator->get_mutable_integrator()->set_target_accuracy(FLAGS_accuracy);
   // Set initial state.
   auto plant_context = diagram->GetMutableSubsystemContext(context, &plant);
 

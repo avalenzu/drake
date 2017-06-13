@@ -92,14 +92,24 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
       // Process the contact points
       std::vector<fcl::Contactd> contacts;
       result.getContacts(contacts);
+      if (element_A->getShape() == DrakeShapes::BOX
+          && element_B->getShape() == DrakeShapes::BOX) {
+        std::cout << "Box-box contacts: " << contacts.size() << std::endl;
+      }
 
+      bool using_box_box{true};
       for (auto contact : contacts) {
         // Signed distance is negative when penetration depth is positive
         double d_QP = -contact.penetration_depth;
         // Define the normal as the unit vector from Q to P (opposite
         // convention from FCL)
         Vector3d n_QP = -contact.normal;
-        if (element_B->getShape() == DrakeShapes::MESH) {
+        if (element_A->getShape() == DrakeShapes::BOX
+            && element_B->getShape() == DrakeShapes::BOX) {
+          if (using_box_box) {
+            d_QP = -d_QP;
+          }
+        } else if (element_B->getShape() == DrakeShapes::MESH) {
           if (element_A->getShape() == DrakeShapes::SPHERE) {
             // Penetration depth sign convention is reversed for sphere-mesh contact???
             d_QP = -d_QP;
@@ -108,8 +118,20 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
         }
 
         // FCL returns a single contact point, but PointPair expects two
-        const Vector3d p_WP{contact.pos + 0.5*d_QP*n_QP};
-        const Vector3d p_WQ{contact.pos - 0.5*d_QP*n_QP};
+        Vector3d p_WP{contact.pos + 0.5*d_QP*n_QP};
+        Vector3d p_WQ{contact.pos - 0.5*d_QP*n_QP};
+        if (element_A->getShape() == DrakeShapes::BOX
+            && element_B->getShape() == DrakeShapes::BOX) {
+          if (using_box_box) {
+            p_WP += 0.5*d_QP*n_QP;
+            p_WQ += 0.5*d_QP*n_QP;
+          }
+          //DEBUG
+          std::cout << "depth = " << d_QP << std::endl;
+          std::cout << "p_WP[2] = " << p_WP[2] << " p_QP[2] = " << p_WQ[2] << std::endl;
+          std::cout << "normal = [" << n_QP[0] << ", " << n_QP[1] << ", " << n_QP[2] << "]" << std::endl;
+          //END_DEBUG
+        }
 
         // Transform the closest points to their respective body frames.
         // Let element A be on body C and element B
@@ -246,7 +268,7 @@ bool FCLModel::ComputeMaximumDepthCollisionPoints(
   collision_data.request.gjk_solver_type = narrowphase_solver_type_;
   collision_data.request.enable_contact = true;
   collision_data.request.num_max_contacts = 1e3;
-  collision_data.request.collision_tolerance = 1e-12;
+  //collision_data.request.collision_tolerance = 1e-12;
   broadphase_manager_.collide(static_cast<void*>(&collision_data), collisionPointsFunction);
   return true;
 }

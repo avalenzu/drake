@@ -52,7 +52,7 @@ class FCLModel : public Model {
   void set_narrowphase_solver_type(fcl::GJKSolverType new_type);
  private:
   fcl::GJKSolverType narrowphase_solver_type_ = fcl::GJKSolverType::GST_LIBCCD;
-  fcl::DynamicAABBTreeCollisionManager<double> broadphase_manager_;
+  fcl::NaiveCollisionManager<double> broadphase_manager_;
   ElementToFclObjMap fcl_collision_objects_;
 };
 
