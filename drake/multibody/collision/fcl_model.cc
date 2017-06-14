@@ -75,6 +75,11 @@ struct CollisionData
   std::vector<PointPair>* closest_points{nullptr};
 };
 
+bool compareContacts(fcl::Contactd c1, fcl::Contactd c2) {
+  fcl::Vector3d dir{1, 1, 1};
+  return c1.pos.dot(dir) < c2.pos.dot(dir);
+};
+
 bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
     fcl::CollisionObjectd* fcl_object_B, void* callback_data)
 {
@@ -92,10 +97,14 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
       // Process the contact points
       std::vector<fcl::Contactd> contacts;
       result.getContacts(contacts);
+      //DEBUG
       if (element_A->getShape() == DrakeShapes::BOX
           && element_B->getShape() == DrakeShapes::BOX) {
         std::cout << "Box-box contacts: " << contacts.size() << std::endl;
+        //std::cout << (element_A->getId() > element_B->getId()) << std::endl;
       }
+      //END_DEBUG
+      std::sort(contacts.begin(), contacts.end(), compareContacts);
 
       bool using_box_box{true};
       for (auto contact : contacts) {
@@ -127,9 +136,9 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
             p_WQ += 0.5*d_QP*n_QP;
           }
           //DEBUG
-          std::cout << "depth = " << d_QP << std::endl;
-          std::cout << "p_WP[2] = " << p_WP[2] << " p_QP[2] = " << p_WQ[2] << std::endl;
-          std::cout << "normal = [" << n_QP[0] << ", " << n_QP[1] << ", " << n_QP[2] << "]" << std::endl;
+          //std::cout << "depth = " << d_QP << std::endl;
+          //std::cout << "p_WP[2] = " << p_WP[2] << " p_QP[2] = " << p_WQ[2] << std::endl;
+          //std::cout << "normal = [" << n_QP[0] << ", " << n_QP[1] << ", " << n_QP[2] << "]" << std::endl;
           //END_DEBUG
         }
 

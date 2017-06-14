@@ -118,6 +118,7 @@ int main() {
     initial_state.segment<3>(i*7) << 0, 0, FLAGS_delta_z * (i + 0.5);
     if (FLAGS_random_orientation) {
       initial_state.segment<4>(i*7+3) = drake::math::UniformlyRandomQuat(generator);
+      initial_state.segment<4>(i*7+3) = drake::math::UniformlyRandomQuat(generator);
     } else {
       initial_state.segment<4>(i*7+3) << 1, 0, 0, 0;
     }
