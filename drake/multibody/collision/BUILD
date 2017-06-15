@@ -2,7 +2,7 @@
 # This file contains rules for Bazel; see drake/doc/bazel.rst.
 
 load("//tools:cpplint.bzl", "cpplint")
-load("//tools:drake.bzl", "drake_cc_googletest", "drake_cc_library")
+load("//tools:drake.bzl", "drake_cc_googletest", "drake_cc_library", "drake_cc_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -107,6 +107,17 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "eigen_issue_test",
+    deps = [
+        "//drake/common",
+    ],
+)
+
+drake_cc_binary(
+    name = "eigen_issue_simple",
+    srcs = ["eigen_issue_simple.cc"],
+    add_test_rule = 1,
+    test_rule_args = [
+    ],
     deps = [
         "//drake/common",
     ],
