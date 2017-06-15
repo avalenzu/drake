@@ -106,6 +106,13 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "eigen_issue_test",
+    deps = [
+        "//drake/common",
+    ],
+)
+
+drake_cc_googletest(
     name = "collision_filter_group_test",
     data = [":test_models"],
     deps = [
