@@ -857,9 +857,8 @@ GTEST_TEST(ModelTest, DistanceToNonConvex) {
   model->updateElementWorldTransform(cap->getId(), pose);
 
   std::vector<PointPair> results;
-  std::vector<ElementIdPair> pairs;
-  pairs.emplace_back(sphere->getId(), cap->getId());
-  model->closestPointsPairwise(pairs, true, results);
+  std::vector<ElementId> ids{sphere->getId(), cap->getId()};
+  model->closestPointsAllToAll(ids, true, results);
   EXPECT_EQ(results.size(), 0u);
 }
 
