@@ -246,7 +246,7 @@ bool FCLModel::ComputeMaximumDepthCollisionPoints(
   collision_data.request.gjk_solver_type = narrowphase_solver_type_;
   collision_data.request.enable_contact = true;
   collision_data.request.num_max_contacts = 1e3;
-  collision_data.request.collision_tolerance = 1e-12;
+  //collision_data.request.collision_tolerance = 1e-12;
   broadphase_manager_.collide(static_cast<void*>(&collision_data), collisionPointsFunction);
   return true;
 }
