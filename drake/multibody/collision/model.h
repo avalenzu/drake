@@ -118,7 +118,6 @@ class Model {
       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
       std::vector<PointPair>& closest_points) = 0;
 
-
   /** Computes the closest distance from each point to any surface in the
    collision model utilizing Bullet's collision detection code.
 
