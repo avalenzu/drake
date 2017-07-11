@@ -153,8 +153,7 @@ class BulletModel : public Model {
     @return Whether this method successfully ran. **/
   bool closestPointsPairwise(
       const std::vector<ElementIdPair>& id_pairs, bool use_margins,
-      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
-      std::vector<PointPair>& closest_points);
+      std::vector<PointPair>* closest_points);
 
   /**
    * \brief Finds the points where elements A and B are closest.
