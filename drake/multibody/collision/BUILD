@@ -50,22 +50,6 @@ drake_cc_library(
     ],
 )
 
-# TODO(jwnimmer-tri) Remove this once CMake is no longer using it (and thus we
-# can delete unusable_model.*).  This cc_library only exists a sanity check to
-# ensure the file still compiles.
-drake_cc_library(
-    name = "unusable_collision",
-    srcs = [
-        "drake_collision.cc",
-        "unusable_model.cc",
-        "unusable_model.h",
-    ],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":collision_api",
-    ],
-)
-
 # N.B. This is just the FCL model, not the drake_collision dispatcher.  (The
 # other foo_collision libraries *do* contain the dispatcher.)
 drake_cc_library(
