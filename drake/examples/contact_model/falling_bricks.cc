@@ -7,6 +7,7 @@
 #include "drake/common/eigen_types.h"
 #include "drake/common/find_resource.h"
 #include "drake/lcm/drake_lcm.h"
+#include "drake/math/random_rotation.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_plant/rigid_body_plant.h"
@@ -107,10 +108,10 @@ int main() {
                                                              FLAGS_timestep,
                                                              context);
   // Set initial state.
-  auto plant_context = diagram->GetMutableSubsystemContext(context, &plant);
+  auto& plant_context = diagram->GetMutableSubsystemContext(plant, context);
   // 1 floating quat joint = |xyz|, |q|, |w|, |xyzdot| = 3 + 4 + 3 + 3.
   const int kStateSize = 13 * FLAGS_brick_count;
-  DRAKE_DEMAND(plant_context->get_continuous_state_vector().size() ==
+  DRAKE_DEMAND(plant_context.get_continuous_state_vector().size() ==
                kStateSize);
   VectorX<double> initial_state(kStateSize);
 
@@ -128,7 +129,7 @@ int main() {
   }
 
 
-  plant.set_state_vector(plant_context, initial_state);
+  plant.set_state_vector(&plant_context, initial_state);
 
   simulator->StepTo(FLAGS_sim_duration);
 

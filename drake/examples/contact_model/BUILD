@@ -43,6 +43,7 @@ drake_cc_binary(
     deps = [
         "//drake/common:find_resource",
         "//drake/lcm",
+        "//drake/math:geometric_transform",
         "//drake/multibody:rigid_body_tree_construction",
         "//drake/multibody/parsers",
         "//drake/multibody/rigid_body_plant",
