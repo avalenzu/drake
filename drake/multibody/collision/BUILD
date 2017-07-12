@@ -40,7 +40,6 @@ drake_cc_library(
     srcs = [
         "bullet_model.cc",
         "bullet_model.h",
-        "drake_collision.cc",
     ],
     defines = ["BULLET_COLLISION"],
     deps = [
@@ -56,7 +55,6 @@ drake_cc_library(
 drake_cc_library(
     name = "unusable_collision",
     srcs = [
-        "drake_collision.cc",
         "unusable_model.cc",
         "unusable_model.h",
     ],
@@ -83,9 +81,17 @@ drake_cc_library(
 
 # By default, supply a bullet-only model.  As we gain more collision library
 # choices, we may want to be more subtle here.
-alias(
+drake_cc_library(
     name = "collision",
-    actual = ":bullet_collision",
+    srcs = [
+        "drake_collision.cc",
+    ],
+    deps = [
+        ":collision_api",
+        ":bullet_collision",
+        ":fcl_collision",
+        ":unusable_collision",
+    ],
 )
 
 drake_cc_googletest(
