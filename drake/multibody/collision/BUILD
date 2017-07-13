@@ -41,7 +41,6 @@ drake_cc_library(
         "bullet_model.cc",
         "bullet_model.h",
     ],
-    defines = ["BULLET_COLLISION"],
     deps = [
         ":collision_api",
         "//drake/common:unused",
@@ -86,6 +85,7 @@ drake_cc_library(
     srcs = [
         "drake_collision.cc",
     ],
+    defines = ["BULLET_COLLISION"],
     deps = [
         ":collision_api",
         ":bullet_collision",

@@ -14,14 +14,6 @@ using std::unique_ptr;
 
 namespace DrakeCollision {
 
-enum ModelType {
-  kUnusable = 0,
-  kFcl = 1,
-#ifdef BULLET_COLLISION
-  kBullet = 2
-#endif
-};
-
 unique_ptr<Model> newModel(ModelType type) {
   switch (type) {
     case (kUnusable): {
