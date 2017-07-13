@@ -72,6 +72,59 @@ TEST_P(ModelTest, NewModel) {
 
 INSTANTIATE_TEST_CASE_P(NewModelTest, ModelTest, 
                         ::testing::Values(kBullet, kFcl, kUnusable));
+
+// Fixture for tests that should be applied to FCL models only
+class FclModelTest : public ModelTestBase {
+ public:
+  FclModelTest() { model_ = DrakeCollision::newModel(kFcl); }
+  const std::string kAbortMsg_ = "Not implemented.";
+};
+
+TEST_F(FclModelTest, updateModelTest) {
+  EXPECT_DEATH(model_->updateModel(), kAbortMsg_);
+}
+
+TEST_F(FclModelTest, closestPointsAllToAllTest) {
+  std::vector<ElementId> ids;
+  std::vector<PointPair> pairs;
+  EXPECT_DEATH(model_->closestPointsAllToAll(ids, true, pairs), kAbortMsg_);
+}
+
+TEST_F(FclModelTest, ComputeMaximumDepthCollisionPoints) {
+  std::vector<PointPair> pairs;
+  EXPECT_DEATH(model_->ComputeMaximumDepthCollisionPoints(true, pairs),
+               kAbortMsg_);
+}
+
+TEST_F(FclModelTest, collisionDetectFromPointsTest) {
+  Eigen::Matrix3Xd points;
+  std::vector<PointPair> closest_points;
+  EXPECT_DEATH(model_->collisionDetectFromPoints(points, false, closest_points),
+               kAbortMsg_);
+}
+
+TEST_F(FclModelTest, ClearCachedResultsTest) {
+  EXPECT_DEATH(model_->ClearCachedResults(false), kAbortMsg_);
+}
+
+TEST_F(FclModelTest, collisionRaycastTest) {
+  Eigen::Matrix3Xd origins, ray_endpoints, normals;
+  Eigen::VectorXd distances;
+  EXPECT_DEATH(model_->collisionRaycast(origins, ray_endpoints, false,
+                                        distances, normals),
+               kAbortMsg_);
+}
+
+TEST_F(FclModelTest, collidingPointsCheckOnlyTest) {
+  std::vector<Eigen::Vector3d> input_points;
+  EXPECT_DEATH(model_->collidingPointsCheckOnly(input_points, 0), kAbortMsg_);
+}
+
+TEST_F(FclModelTest, collidingPointsTest) {
+  std::vector<Eigen::Vector3d> input_points;
+  EXPECT_DEATH(model_->collidingPoints(input_points, 0), kAbortMsg_);
+}
+
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,
 // SmallBoxSittingOnLargeBox and NonAlignedBoxes.
