@@ -59,6 +59,12 @@ typedef std::unordered_map<const drake::multibody::collision::Element*,
 
 // Base fixture for tests that own a collision model
 class ModelTestBase : public ::testing::Test {
+ public:
+  Element* AddSphere(double radius = 1.0) {
+    const DrakeShapes::Sphere geom{radius};
+    return model_->AddElement(make_unique<Element>(geom));
+  }
+
  protected:
   unique_ptr<drake::multibody::collision::Model> model_;
 };
@@ -67,13 +73,18 @@ class ModelTestBase : public ::testing::Test {
 class ModelTest : public ModelTestBase,
                   public ::testing::WithParamInterface<
                       drake::multibody::collision::ModelType> {
- protected:
+protected:
   void SetUp() override {
     model_ = drake::multibody::collision::newModel(GetParam());
   }
 };
 
 TEST_P(ModelTest, NewModel) { EXPECT_FALSE(model_ == nullptr); }
+
+TEST_P(ModelTest, AddElement) {
+  Element* elem = AddSphere();
+  EXPECT_EQ(elem->getShape(), DrakeShapes::SPHERE);
+}
 
 INSTANTIATE_TEST_CASE_P(NewModelTest, ModelTest,
                         ::testing::Values(
@@ -97,11 +108,6 @@ class FclModelDeathTests : public ModelTestBase,
 
   void CallAddBox() {
     const DrakeShapes::Box geom{Vector3d::Ones()};
-    model_->AddElement(make_unique<Element>(geom));
-  }
-
-  void CallAddSphere() {
-    const DrakeShapes::Sphere geom{1};
     model_->AddElement(make_unique<Element>(geom));
   }
 
@@ -169,8 +175,7 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
     ::testing::Values(
-        &FclModelDeathTests::CallAddBox, &FclModelDeathTests::CallAddSphere,
-        &FclModelDeathTests::CallAddCylinder,
+        &FclModelDeathTests::CallAddBox, &FclModelDeathTests::CallAddCylinder,
         &FclModelDeathTests::CallAddCapsule, &FclModelDeathTests::CallAddMesh,
         &FclModelDeathTests::CallUpdateModel,
         &FclModelDeathTests::CallClosestPointsAllToAll,
