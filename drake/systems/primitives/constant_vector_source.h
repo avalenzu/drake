@@ -44,14 +44,21 @@ class ConstantVectorSource : public SingleOutputVectorSource<T> {
 
   ~ConstantVectorSource() override;
 
+  /// Return a read-only reference to the source value of this block in the
+  /// given @p context
+  const BasicVector<T>& get_source_value(const Context<T>& context);
+
+  /// Return a mutable pointer to the source value of this block in the given
+  /// @p context
+  BasicVector<T>* get_mutable_source_value(Context<T>* context);
+
  private:
   // Outputs a signal with a fixed value as specified by the user.
   void DoCalcVectorOutput(
       const Context<T>& context,
       Eigen::VectorBlock<VectorX<T>>* output) const override;
 
-  // TODO(amcastro-tri): move source_value_ to the system's parameters.
-  const VectorX<T> source_value_;
+  int source_value_index_;
 };
 
 }  // namespace systems
