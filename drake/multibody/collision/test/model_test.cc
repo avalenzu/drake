@@ -30,10 +30,12 @@ namespace {
 // world and body frames.
 struct SurfacePoint {
   SurfacePoint() {}
-  SurfacePoint(Vector3d wf, Vector3d bf) : world_frame(wf), body_frame(bf) {}
+  SurfacePoint(Vector3d wf, Vector3d bf, Vector3d n = Vector3d::Zero())
+      : world_frame(wf), body_frame(bf), normal(n) {}
   // Eigen variables are left uninitalized by default.
   Vector3d world_frame;
   Vector3d body_frame;
+  Vector3d normal;
 };
 
 // Solutions are accessed by collision element id using an std::unordered_set.
@@ -65,36 +67,72 @@ class ModelTestBase : public ::testing::Test {
     return model_->AddElement(make_unique<Element>(geom));
   }
 
+  void CallUpdateModel() { model_->UpdateModel(); }
+
+  void CallComputeMaximumDepthCollisionPoints() {
+    std::vector<PointPair> pairs;
+    model_->ComputeMaximumDepthCollisionPoints(true, &pairs);
+  }
+
  protected:
   unique_ptr<drake::multibody::collision::Model> model_;
 };
 
 // Fixture for tests that should be applied to all collision model types
-class ModelTest : public ModelTestBase,
-                  public ::testing::WithParamInterface<
-                      drake::multibody::collision::ModelType> {
-protected:
+class AllModelTypesTests : public ModelTestBase,
+                           public ::testing::WithParamInterface<
+                               drake::multibody::collision::ModelType> {
+ protected:
   void SetUp() override {
     model_ = drake::multibody::collision::newModel(GetParam());
   }
 };
 
-TEST_P(ModelTest, NewModel) { EXPECT_FALSE(model_ == nullptr); }
+TEST_P(AllModelTypesTests, NewModel) { EXPECT_FALSE(model_ == nullptr); }
 
-TEST_P(ModelTest, AddElement) {
+TEST_P(AllModelTypesTests, AddElement) {
   Element* elem = AddSphere();
   EXPECT_EQ(elem->getShape(), DrakeShapes::SPHERE);
 }
 
-INSTANTIATE_TEST_CASE_P(NewModelTest, ModelTest,
-                        ::testing::Values(
 #ifdef BULLET_COLLISION
-                            ModelType::kBullet,
-#endif
+
 #ifndef DRAKE_DISABLE_FCL
-                            ModelType::kFcl,
+std::vector<ModelType> kAllModelTypes{ModelType::kBullet, ModelType::kFcl,
+                                      ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kBullet, ModelType::kFcl};
+#else
+std::vector<ModelType> kAllModelTypes{ModelType::kBullet, ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kBullet};
 #endif
-                            ModelType::kUnusable));
+
+#else
+
+#ifndef DRAKE_DISABLE_FCL
+std::vector<ModelType> kAllModelTypes{ModelType::kFcl, ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kFcl};
+#else
+std::vector<ModelType> kAllModelTypes{ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{};
+#endif
+
+#endif
+
+INSTANTIATE_TEST_CASE_P(AllModelTypesTests, AllModelTypesTests,
+                        ::testing::ValuesIn(kAllModelTypes));
+
+class UsableModelTypesTests : public AllModelTypesTests {};
+
+TEST_P(UsableModelTypesTests, UpdateModel) {
+  EXPECT_NO_THROW(CallUpdateModel());
+}
+
+TEST_P(UsableModelTypesTests, ComputeMaximumDepthCollisionPoints) {
+  EXPECT_NO_THROW(CallComputeMaximumDepthCollisionPoints());
+}
+
+INSTANTIATE_TEST_CASE_P(UsableModelTypesTests, UsableModelTypesTests,
+                        ::testing::ValuesIn(kUsableModelTypes));
 
 #ifndef DRAKE_DISABLE_FCL
 // Fixture for locking down FclModel's not-yet-implemented functions.
@@ -128,17 +166,10 @@ class FclModelDeathTests : public ModelTestBase,
     model_->AddElement(make_unique<Element>(geom));
   }
 
-  void CallUpdateModel() { model_->UpdateModel(); }
-
   void CallClosestPointsAllToAll() {
     std::vector<ElementId> ids;
     std::vector<PointPair> pairs;
     model_->ClosestPointsAllToAll(ids, true, &pairs);
-  }
-
-  void CallComputeMaximumDepthCollisionPoints() {
-    std::vector<PointPair> pairs;
-    model_->ComputeMaximumDepthCollisionPoints(true, &pairs);
   }
 
   void CallCollisionDetectFromPoints() {
@@ -174,18 +205,171 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
-    ::testing::Values(
-        &FclModelDeathTests::CallAddBox, &FclModelDeathTests::CallAddCylinder,
-        &FclModelDeathTests::CallAddCapsule, &FclModelDeathTests::CallAddMesh,
-        &FclModelDeathTests::CallUpdateModel,
-        &FclModelDeathTests::CallClosestPointsAllToAll,
-        &FclModelDeathTests::CallComputeMaximumDepthCollisionPoints,
-        &FclModelDeathTests::CallCollisionDetectFromPoints,
-        &FclModelDeathTests::CallClearCachedResults,
-        &FclModelDeathTests::CallCollisionRaycast,
-        &FclModelDeathTests::CallCollidingPointsCheckOnly,
-        &FclModelDeathTests::CallCollidingPoints));
+    ::testing::Values(&FclModelDeathTests::CallAddBox,
+                      &FclModelDeathTests::CallAddCylinder,
+                      &FclModelDeathTests::CallAddCapsule,
+                      &FclModelDeathTests::CallAddMesh,
+                      &FclModelDeathTests::CallClosestPointsAllToAll,
+                      &FclModelDeathTests::CallCollisionDetectFromPoints,
+                      &FclModelDeathTests::CallClearCachedResults,
+                      &FclModelDeathTests::CallCollisionRaycast,
+                      &FclModelDeathTests::CallCollidingPointsCheckOnly,
+                      &FclModelDeathTests::CallCollidingPoints));
 #endif
+
+ //Fixture for testing pairs of collision geometries
+class ShapeVsShapeTestParam {
+ public:
+  ShapeVsShapeTestParam(ModelType model_type,
+                        const DrakeShapes::Geometry& shape_A,
+                        const DrakeShapes::Geometry& shape_B, Isometry3d X_WA,
+                        Isometry3d X_WB, SurfacePoint surface_point_A,
+                        SurfacePoint surface_point_B)
+      : model_type_(model_type),
+        elements_(std::piecewise_construct, std::forward_as_tuple(shape_A),
+                  std::forward_as_tuple(shape_B)),
+        surface_points_(surface_point_A, surface_point_B) {
+    elements_.first.updateWorldTransform(X_WA);
+    elements_.second.updateWorldTransform(X_WB);
+  }
+
+  // ShapeVsShapeTestParam() : ShapeVsShapeTestParam(DrakeShapes
+
+  ShapeVsShapeTestParam(const ShapeVsShapeTestParam& other)
+      : ShapeVsShapeTestParam(
+            other.model_type_, other.elements_.first.getGeometry(),
+            other.elements_.second.getGeometry(),
+            other.elements_.first.getWorldTransform(),
+            other.elements_.second.getWorldTransform(),
+            other.surface_points_.first, other.surface_points_.second) {}
+
+  ModelType model_type_;
+  std::pair<DrakeShapes::Element, DrakeShapes::Element> elements_;
+  std::pair<SurfacePoint, SurfacePoint> surface_points_;
+};
+
+class ShapeVsShapeTest
+    : public ModelTestBase,
+      public ::testing::WithParamInterface<ShapeVsShapeTestParam> {
+ protected:
+  void SetUp() override {
+    // Populate the model.
+    model_ = newModel(GetParam().model_type_);
+    element_A_ = model_->AddElement(
+        make_unique<Element>(GetParam().elements_.first.getGeometry()));
+    element_B_ = model_->AddElement(
+        make_unique<Element>(GetParam().elements_.second.getGeometry()));
+    model_->UpdateElementWorldTransform(
+        element_A_->getId(), GetParam().elements_.first.getWorldTransform());
+    model_->UpdateElementWorldTransform(
+        element_B_->getId(), GetParam().elements_.second.getWorldTransform());
+    solution_ = {{element_A_, GetParam().surface_points_.first},
+                 {element_B_, GetParam().surface_points_.second}};
+  }
+
+ protected:
+  double tolerance_;
+  ElementToSurfacePointMap solution_;
+  Element* element_A_;
+  Element* element_B_;
+};
+
+void PrintTo(const ShapeVsShapeTestParam& param, ::std::ostream* os) {
+  *os << DrakeShapes::ShapeToString(param.elements_.first.getShape());
+  *os << "_";
+  *os << DrakeShapes::ShapeToString(param.elements_.second.getShape());
+  *os << ", ";
+  switch (param.model_type_) {
+    case ModelType::kBullet: {
+      *os << "BulletModel";
+      break;
+    }
+    case ModelType::kFcl: {
+      *os << "FclModel";
+      break;
+    }
+    case ModelType::kUnusable: {
+      *os << "UnusableModel";
+      break;
+    }
+  }
+}
+
+TEST_P(ShapeVsShapeTest, ComputeMaximumDepthCollisionPoints) {
+  // Numerical precision tolerance to perform floating point comparisons.
+  // Its magnitude was chosen to be the minimum value for which these tests can
+  // successfully pass.
+  tolerance_ = 1.0e-9;
+
+  // List of collision points.
+  std::vector<PointPair> points;
+
+  // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
+  // Not using margins.
+  points.clear();
+  model_->ComputeMaximumDepthCollisionPoints(false, &points);
+
+  ASSERT_EQ(1u, points.size());
+
+  auto point = points[0];
+  Vector3d p_WP_expected = solution_[point.elementA].world_frame;
+  Vector3d p_WQ_expected = solution_[point.elementB].world_frame;
+  Vector3d n_QP_W_expected = solution_[point.elementB].normal;
+  // Remainder of test assumes unit normal
+  ASSERT_DOUBLE_EQ(n_QP_W_expected.norm(), 1);
+  Vector3d p_QP_W_expected = p_WP_expected - p_WQ_expected;
+  double distance_expected{p_QP_W_expected.dot(n_QP_W_expected)};
+
+  EXPECT_NEAR(point.distance, distance_expected, tolerance_);
+  // Points are in the world frame on the surface of the corresponding body.
+  // That is why ptA is generally different from ptB, unless there is
+  // an exact non-penetrating collision.
+  // WARNING:
+  // This convention is different from the one used by closestPointsAllToAll
+  // which computes points in the local frame of the body.
+  // TODO(amcastro-tri): make these two conventions match? does this interfere
+  // with any Matlab functionality?
+  EXPECT_TRUE(CompareMatrices(point.normal, n_QP_W_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(point.ptA, p_WP_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(point.ptB, p_WQ_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+}
+
+std::vector<ShapeVsShapeTestParam> generateSphereVsSphereParam() {
+  // First sphere
+  DrakeShapes::Sphere sphere_A{0.5};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  X_WA.rotate(Eigen::AngleAxisd(M_PI_2, Vector3d(-1.0, 0.0, 0.0)));
+  Vector3d p_WP{0.0, 0.5, 0.0};
+  Vector3d p_AP{0.0, 0.0, 0.5};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second sphere
+  DrakeShapes::Sphere sphere_B{0.5};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  X_WB.translation() = Vector3d(0.0, 0.75, 0.0);
+  Vector3d p_WQ{0.0, 0.25, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : kUsableModelTypes) {
+    params.push_back(ShapeVsShapeTestParam(model_type, sphere_A, sphere_B, X_WA,
+                                           X_WB, surface_point_A,
+                                           surface_point_B));
+  }
+
+  return params;
+}
+
+INSTANTIATE_TEST_CASE_P(ShapeVsShapeTest, ShapeVsShapeTest,
+                        ::testing::ValuesIn(generateSphereVsSphereParam()));
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,
