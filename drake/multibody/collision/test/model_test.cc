@@ -65,28 +65,30 @@ class ModelTestBase : public ::testing::Test {
     return model_->AddElement(make_unique<Element>(geom));
   }
 
+  void CallUpdateModel() { model_->UpdateModel(); }
+
  protected:
   unique_ptr<drake::multibody::collision::Model> model_;
 };
 
 // Fixture for tests that should be applied to all collision model types
-class ModelTest : public ModelTestBase,
-                  public ::testing::WithParamInterface<
-                      drake::multibody::collision::ModelType> {
-protected:
+class AllModelTypesTests : public ModelTestBase,
+                           public ::testing::WithParamInterface<
+                               drake::multibody::collision::ModelType> {
+ protected:
   void SetUp() override {
     model_ = drake::multibody::collision::newModel(GetParam());
   }
 };
 
-TEST_P(ModelTest, NewModel) { EXPECT_FALSE(model_ == nullptr); }
+TEST_P(AllModelTypesTests, NewModel) { EXPECT_FALSE(model_ == nullptr); }
 
-TEST_P(ModelTest, AddElement) {
+TEST_P(AllModelTypesTests, AddElement) {
   Element* elem = AddSphere();
   EXPECT_EQ(elem->getShape(), DrakeShapes::SPHERE);
 }
 
-INSTANTIATE_TEST_CASE_P(NewModelTest, ModelTest,
+INSTANTIATE_TEST_CASE_P(AllModelTypesTests, AllModelTypesTests,
                         ::testing::Values(
 #ifdef BULLET_COLLISION
                             ModelType::kBullet,
@@ -95,6 +97,19 @@ INSTANTIATE_TEST_CASE_P(NewModelTest, ModelTest,
                             ModelType::kFcl,
 #endif
                             ModelType::kUnusable));
+
+class UsableModelTypesTests : public AllModelTypesTests {};
+
+TEST_P(UsableModelTypesTests, UpdateModel) { EXPECT_NO_THROW(CallUpdateModel()); }
+
+#ifdef BULLET_COLLISION
+INSTANTIATE_TEST_CASE_P(BulletModelTests, UsableModelTypesTests,
+                        ::testing::Values(ModelType::kBullet));
+#endif
+#ifndef DRAKE_DISABLE_FCL
+INSTANTIATE_TEST_CASE_P(FclModelTests, UsableModelTypesTests,
+                        ::testing::Values(ModelType::kFcl));
+#endif
 
 #ifndef DRAKE_DISABLE_FCL
 // Fixture for locking down FclModel's not-yet-implemented functions.
@@ -127,8 +142,6 @@ class FclModelDeathTests : public ModelTestBase,
     const DrakeShapes::Capsule geom{1, 1};
     model_->AddElement(make_unique<Element>(geom));
   }
-
-  void CallUpdateModel() { model_->UpdateModel(); }
 
   void CallClosestPointsAllToAll() {
     std::vector<ElementId> ids;
@@ -177,7 +190,6 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(
         &FclModelDeathTests::CallAddBox, &FclModelDeathTests::CallAddCylinder,
         &FclModelDeathTests::CallAddCapsule, &FclModelDeathTests::CallAddMesh,
-        &FclModelDeathTests::CallUpdateModel,
         &FclModelDeathTests::CallClosestPointsAllToAll,
         &FclModelDeathTests::CallComputeMaximumDepthCollisionPoints,
         &FclModelDeathTests::CallCollisionDetectFromPoints,

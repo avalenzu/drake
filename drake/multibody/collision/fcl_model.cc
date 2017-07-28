@@ -51,7 +51,7 @@ void FclModel::DoAddElement(const Element& element) {
 }
 
 void FclModel::UpdateModel() {
-  DRAKE_ABORT_MSG("Not implemented.");
+  broadphase_manager_.update();
 }
 
 bool FclModel::ClosestPointsAllToAll(const std::vector<ElementId>& ids_to_check,
