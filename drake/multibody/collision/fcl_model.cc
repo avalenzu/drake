@@ -1,15 +1,79 @@
 #include "drake/multibody/collision/fcl_model.h"
 
+#include <Eigen/Dense>
 #include <fcl/fcl.h>
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/unused.h"
 
+using Eigen::Isometry3d;
+using Eigen::Vector3d;
+
 namespace drake {
 namespace multibody {
 namespace collision {
 
-// TODO(jamiesnape): Implement the model.
+/// @brief Distance data stores the distance request and the result given by distance algorithm.
+struct CollisionData
+{
+  /// @brief Collision request
+  fcl::CollisionRequestd request;
+
+  /// @brief Vector of distance results
+  std::vector<PointPair>* closest_points{nullptr};
+};
+
+bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
+    fcl::CollisionObjectd* fcl_object_B, void* callback_data)
+{
+  auto element_A = static_cast<Element*>(fcl_object_A->getUserData());
+  auto element_B = static_cast<Element*>(fcl_object_B->getUserData());
+  if (element_A && element_B && element_A->CanCollideWith(element_B)) {
+      // Unpack the callback data
+      auto* collision_data = static_cast<CollisionData*>(callback_data);
+      const fcl::CollisionRequestd& request = collision_data->request;
+      fcl::CollisionResultd result;
+
+      // Perform nearphase collision detection
+      fcl::collide(fcl_object_A, fcl_object_B, request, result);
+
+      // Process the contact points
+      std::vector<fcl::Contactd> contacts;
+      result.getContacts(contacts);
+
+      for (auto contact : contacts) {
+        // Signed distance is negative when penetration depth is positive
+        double d_QP = -contact.penetration_depth;
+        // Define the normal as the unit vector from Q to P (opposite
+        // convention from FCL)
+        Vector3d n_QP = -contact.normal;
+        if (element_B->getShape() == DrakeShapes::MESH) {
+          if (element_A->getShape() == DrakeShapes::SPHERE) {
+            // Penetration depth sign convention is reversed for sphere-mesh contact???
+            d_QP = -d_QP;
+          }
+          n_QP *= -1;
+        }
+
+        // FCL returns a single contact point, but PointPair expects two
+        const Vector3d p_WP{contact.pos + 0.5*d_QP*n_QP};
+        const Vector3d p_WQ{contact.pos - 0.5*d_QP*n_QP};
+
+        // Transform the closest points to their respective body frames.
+        // Let element A be on body C and element B
+        //const Isometry3d X_CA = element_A->getLocalTransform();
+        //const Isometry3d X_DB = element_B->getLocalTransform();
+        //const Isometry3d X_AW = element_A->getWorldTransform().inverse();
+        //const Isometry3d X_BW = element_B->getWorldTransform().inverse();
+        //const Vector3d p_CP = X_CA * X_AW * p_WP;
+        //const Vector3d p_DQ = X_DB * X_BW * p_WQ;
+
+        collision_data->closest_points->emplace_back(element_A, element_B, 
+            p_WP, p_WQ, n_QP, d_QP);
+      }
+  }
+  return false; // Check all pairs provided by the broadphase
+}
 
 void FclModel::DoAddElement(const Element& element) {
   ElementId id = element.getId();
@@ -54,6 +118,16 @@ void FclModel::UpdateModel() {
   broadphase_manager_.update();
 }
 
+bool FclModel::UpdateElementWorldTransform(
+    ElementId id, const Isometry3d& T_local_to_world) {
+  const bool element_exists(
+      Model::UpdateElementWorldTransform(id, T_local_to_world));
+  if (element_exists) {
+    fcl_collision_objects_[id]->setTransform(FindElement(id)->getWorldTransform());
+  }
+  return element_exists;
+}
+
 bool FclModel::ClosestPointsAllToAll(const std::vector<ElementId>& ids_to_check,
                                      bool use_margins,
                                      std::vector<PointPair>* closest_points) {
@@ -64,9 +138,12 @@ bool FclModel::ClosestPointsAllToAll(const std::vector<ElementId>& ids_to_check,
 
 bool FclModel::ComputeMaximumDepthCollisionPoints(
     bool use_margins, std::vector<PointPair>* points) {
-  drake::unused(use_margins, points);
-  DRAKE_ABORT_MSG("Not implemented.");
-  return false;
+  CollisionData collision_data;
+  collision_data.closest_points = points;
+  collision_data.request.enable_contact = true;
+  collision_data.request.num_max_contacts = 1e3;
+  broadphase_manager_.collide(static_cast<void*>(&collision_data), collisionPointsFunction);
+  return true;
 }
 
 bool FclModel::ClosestPointsPairwise(const std::vector<ElementIdPair>& id_pairs,

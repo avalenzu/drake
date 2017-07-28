@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -14,8 +15,8 @@
 
 using Eigen::AngleAxisd;
 using Eigen::Isometry3d;
-using Eigen::Vector3d;
 using Eigen::Matrix3Xd;
+using Eigen::Vector3d;
 using std::make_unique;
 using std::move;
 using std::unique_ptr;
@@ -30,10 +31,12 @@ namespace {
 // world and body frames.
 struct SurfacePoint {
   SurfacePoint() {}
-  SurfacePoint(Vector3d wf, Vector3d bf) : world_frame(wf), body_frame(bf) {}
+  SurfacePoint(Vector3d wf, Vector3d bf, Vector3d n = Vector3d::Zero())
+      : world_frame(wf), body_frame(bf), normal(n) {}
   // Eigen variables are left uninitalized by default.
   Vector3d world_frame;
   Vector3d body_frame;
+  Vector3d normal;
 };
 
 // Solutions are accessed by collision element id using an std::unordered_set.
@@ -67,6 +70,11 @@ class ModelTestBase : public ::testing::Test {
 
   void CallUpdateModel() { model_->UpdateModel(); }
 
+  void CallComputeMaximumDepthCollisionPoints() {
+    std::vector<PointPair> pairs;
+    model_->ComputeMaximumDepthCollisionPoints(true, &pairs);
+  }
+
  protected:
   unique_ptr<drake::multibody::collision::Model> model_;
 };
@@ -88,28 +96,44 @@ TEST_P(AllModelTypesTests, AddElement) {
   EXPECT_EQ(elem->getShape(), DrakeShapes::SPHERE);
 }
 
-INSTANTIATE_TEST_CASE_P(AllModelTypesTests, AllModelTypesTests,
-                        ::testing::Values(
 #ifdef BULLET_COLLISION
-                            ModelType::kBullet,
-#endif
+
 #ifndef DRAKE_DISABLE_FCL
-                            ModelType::kFcl,
+std::vector<ModelType> kAllModelTypes{ModelType::kBullet, ModelType::kFcl,
+                                      ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kBullet, ModelType::kFcl};
+#else
+std::vector<ModelType> kAllModelTypes{ModelType::kBullet, ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kBullet};
 #endif
-                            ModelType::kUnusable));
+
+#else
+
+#ifndef DRAKE_DISABLE_FCL
+std::vector<ModelType> kAllModelTypes{ModelType::kFcl, ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{ModelType::kFcl};
+#else
+std::vector<ModelType> kAllModelTypes{ModelType::kUnusable};
+std::vector<ModelType> kUsableModelTypes{};
+#endif
+
+#endif
+
+INSTANTIATE_TEST_CASE_P(AllModelTypesTests, AllModelTypesTests,
+                        ::testing::ValuesIn(kAllModelTypes));
 
 class UsableModelTypesTests : public AllModelTypesTests {};
 
-TEST_P(UsableModelTypesTests, UpdateModel) { EXPECT_NO_THROW(CallUpdateModel()); }
+TEST_P(UsableModelTypesTests, UpdateModel) {
+  EXPECT_NO_THROW(CallUpdateModel());
+}
 
-#ifdef BULLET_COLLISION
-INSTANTIATE_TEST_CASE_P(BulletModelTests, UsableModelTypesTests,
-                        ::testing::Values(ModelType::kBullet));
-#endif
-#ifndef DRAKE_DISABLE_FCL
-INSTANTIATE_TEST_CASE_P(FclModelTests, UsableModelTypesTests,
-                        ::testing::Values(ModelType::kFcl));
-#endif
+TEST_P(UsableModelTypesTests, ComputeMaximumDepthCollisionPoints) {
+  EXPECT_NO_THROW(CallComputeMaximumDepthCollisionPoints());
+}
+
+INSTANTIATE_TEST_CASE_P(UsableModelTypesTests, UsableModelTypesTests,
+                        ::testing::ValuesIn(kUsableModelTypes));
 
 #ifndef DRAKE_DISABLE_FCL
 // Fixture for locking down FclModel's not-yet-implemented functions.
@@ -149,11 +173,6 @@ class FclModelDeathTests : public ModelTestBase,
     model_->ClosestPointsAllToAll(ids, true, &pairs);
   }
 
-  void CallComputeMaximumDepthCollisionPoints() {
-    std::vector<PointPair> pairs;
-    model_->ComputeMaximumDepthCollisionPoints(true, &pairs);
-  }
-
   void CallCollisionDetectFromPoints() {
     Eigen::Matrix3Xd points;
     std::vector<PointPair> closest_points;
@@ -187,17 +206,171 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
-    ::testing::Values(
-        &FclModelDeathTests::CallAddBox, &FclModelDeathTests::CallAddCylinder,
-        &FclModelDeathTests::CallAddCapsule, &FclModelDeathTests::CallAddMesh,
-        &FclModelDeathTests::CallClosestPointsAllToAll,
-        &FclModelDeathTests::CallComputeMaximumDepthCollisionPoints,
-        &FclModelDeathTests::CallCollisionDetectFromPoints,
-        &FclModelDeathTests::CallClearCachedResults,
-        &FclModelDeathTests::CallCollisionRaycast,
-        &FclModelDeathTests::CallCollidingPointsCheckOnly,
-        &FclModelDeathTests::CallCollidingPoints));
+    ::testing::Values(&FclModelDeathTests::CallAddBox,
+                      &FclModelDeathTests::CallAddCylinder,
+                      &FclModelDeathTests::CallAddCapsule,
+                      &FclModelDeathTests::CallAddMesh,
+                      &FclModelDeathTests::CallClosestPointsAllToAll,
+                      &FclModelDeathTests::CallCollisionDetectFromPoints,
+                      &FclModelDeathTests::CallClearCachedResults,
+                      &FclModelDeathTests::CallCollisionRaycast,
+                      &FclModelDeathTests::CallCollidingPointsCheckOnly,
+                      &FclModelDeathTests::CallCollidingPoints));
 #endif
+
+ //Fixture for testing pairs of collision geometries
+class ShapeVsShapeTestParam {
+ public:
+  ShapeVsShapeTestParam(ModelType model_type,
+                        const DrakeShapes::Geometry& shape_A,
+                        const DrakeShapes::Geometry& shape_B, Isometry3d X_WA,
+                        Isometry3d X_WB, SurfacePoint surface_point_A,
+                        SurfacePoint surface_point_B)
+      : model_type_(model_type),
+        elements_(std::piecewise_construct, std::forward_as_tuple(shape_A),
+                  std::forward_as_tuple(shape_B)),
+        surface_points_(surface_point_A, surface_point_B) {
+    elements_.first.updateWorldTransform(X_WA);
+    elements_.second.updateWorldTransform(X_WB);
+  }
+
+  // ShapeVsShapeTestParam() : ShapeVsShapeTestParam(DrakeShapes
+
+  ShapeVsShapeTestParam(const ShapeVsShapeTestParam& other)
+      : ShapeVsShapeTestParam(
+            other.model_type_, other.elements_.first.getGeometry(),
+            other.elements_.second.getGeometry(),
+            other.elements_.first.getWorldTransform(),
+            other.elements_.second.getWorldTransform(),
+            other.surface_points_.first, other.surface_points_.second) {}
+
+  ModelType model_type_;
+  std::pair<DrakeShapes::Element, DrakeShapes::Element> elements_;
+  std::pair<SurfacePoint, SurfacePoint> surface_points_;
+};
+
+class ShapeVsShapeTest
+    : public ModelTestBase,
+      public ::testing::WithParamInterface<ShapeVsShapeTestParam> {
+ protected:
+  void SetUp() override {
+    // Populate the model.
+    model_ = newModel(GetParam().model_type_);
+    element_A_ = model_->AddElement(
+        make_unique<Element>(GetParam().elements_.first.getGeometry()));
+    element_B_ = model_->AddElement(
+        make_unique<Element>(GetParam().elements_.second.getGeometry()));
+    model_->UpdateElementWorldTransform(
+        element_A_->getId(), GetParam().elements_.first.getWorldTransform());
+    model_->UpdateElementWorldTransform(
+        element_B_->getId(), GetParam().elements_.second.getWorldTransform());
+    solution_ = {{element_A_, GetParam().surface_points_.first},
+                 {element_B_, GetParam().surface_points_.second}};
+  }
+
+ protected:
+  double tolerance_;
+  ElementToSurfacePointMap solution_;
+  Element* element_A_;
+  Element* element_B_;
+};
+
+void PrintTo(const ShapeVsShapeTestParam& param, ::std::ostream* os) {
+  *os << DrakeShapes::ShapeToString(param.elements_.first.getShape());
+  *os << "_";
+  *os << DrakeShapes::ShapeToString(param.elements_.second.getShape());
+  *os << ", ";
+  switch (param.model_type_) {
+    case ModelType::kBullet: {
+      *os << "BulletModel";
+      break;
+    }
+    case ModelType::kFcl: {
+      *os << "FclModel";
+      break;
+    }
+    case ModelType::kUnusable: {
+      *os << "UnusableModel";
+      break;
+    }
+  }
+}
+
+TEST_P(ShapeVsShapeTest, ComputeMaximumDepthCollisionPoints) {
+  // Numerical precision tolerance to perform floating point comparisons.
+  // Its magnitude was chosen to be the minimum value for which these tests can
+  // successfully pass.
+  tolerance_ = 1.0e-9;
+
+  // List of collision points.
+  std::vector<PointPair> points;
+
+  // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
+  // Not using margins.
+  points.clear();
+  model_->ComputeMaximumDepthCollisionPoints(false, &points);
+
+  ASSERT_EQ(1u, points.size());
+
+  auto point = points[0];
+  Vector3d p_WP_expected = solution_[point.elementA].world_frame;
+  Vector3d p_WQ_expected = solution_[point.elementB].world_frame;
+  Vector3d n_QP_W_expected = solution_[point.elementB].normal;
+  // Remainder of test assumes unit normal
+  ASSERT_DOUBLE_EQ(n_QP_W_expected.norm(), 1);
+  Vector3d p_QP_W_expected = p_WP_expected - p_WQ_expected;
+  double distance_expected{p_QP_W_expected.dot(n_QP_W_expected)};
+
+  EXPECT_NEAR(point.distance, distance_expected, tolerance_);
+  // Points are in the world frame on the surface of the corresponding body.
+  // That is why ptA is generally different from ptB, unless there is
+  // an exact non-penetrating collision.
+  // WARNING:
+  // This convention is different from the one used by closestPointsAllToAll
+  // which computes points in the local frame of the body.
+  // TODO(amcastro-tri): make these two conventions match? does this interfere
+  // with any Matlab functionality?
+  EXPECT_TRUE(CompareMatrices(point.normal, n_QP_W_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(point.ptA, p_WP_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(point.ptB, p_WQ_expected, tolerance_,
+                              drake::MatrixCompareType::absolute));
+}
+
+std::vector<ShapeVsShapeTestParam> generateSphereVsSphereParam() {
+  // First sphere
+  DrakeShapes::Sphere sphere_A{0.5};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  X_WA.rotate(Eigen::AngleAxisd(M_PI_2, Vector3d(-1.0, 0.0, 0.0)));
+  Vector3d p_WP{0.0, 0.5, 0.0};
+  Vector3d p_AP{0.0, 0.0, 0.5};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second sphere
+  DrakeShapes::Sphere sphere_B{0.5};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  X_WB.translation() = Vector3d(0.0, 0.75, 0.0);
+  Vector3d p_WQ{0.0, 0.25, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : kUsableModelTypes) {
+    params.push_back(ShapeVsShapeTestParam(model_type, sphere_A, sphere_B, X_WA,
+                                           X_WB, surface_point_A,
+                                           surface_point_B));
+  }
+
+  return params;
+}
+
+INSTANTIATE_TEST_CASE_P(ShapeVsShapeTest, ShapeVsShapeTest,
+                        ::testing::ValuesIn(generateSphereVsSphereParam()));
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,
@@ -263,8 +436,8 @@ GTEST_TEST(ModelTest, ClosestPointsAllToAll) {
   // Populate the model.
   unique_ptr<Model> model = newModel();
   auto element_1 = model->AddElement(make_unique<Element>(geometry_1));
-  auto element_2 = model->AddElement(
-      make_unique<Element>(geometry_2, T_elem2_to_body));
+  auto element_2 =
+      model->AddElement(make_unique<Element>(geometry_2, T_elem2_to_body));
   auto element_3 = model->AddElement(make_unique<Element>(geometry_3));
   ElementId id1 = element_1->getId();
   ElementId id2 = element_2->getId();
@@ -309,8 +482,7 @@ GTEST_TEST(ModelTest, ClosestPointsAllToAll) {
   // Notice the y component is positive given that the body's frame is rotated
   // 90 degrees around the z axis.
   // Therefore x_body = y_world, y_body=-x_world and z_body=z_world
-  EXPECT_TRUE(
-      points[1].ptB.isApprox(Vector3d(-sqrt(2) / 4, sqrt(2) / 4, 0)));
+  EXPECT_TRUE(points[1].ptB.isApprox(Vector3d(-sqrt(2) / 4, sqrt(2) / 4, 0)));
 
   // Check the closest point between object 2 and object 3.
   EXPECT_EQ(id2, points[2].idA);
@@ -402,10 +574,9 @@ class BoxVsSphereTest : public ::testing::Test {
     // Access the analytical solution to the contact point on the surface of
     // each collision element by element id.
     // Solutions are expressed in world and body frames.
-    solution_ = {
-        /*           world frame     , body frame  */
-        {box_,    {{0.0,  1.0, 0.0}, {0.0,  0.5, 0.0}}},
-        {sphere_, {{0.0, 0.75, 0.0}, {0.0, -0.5, 0.0}}}};
+    solution_ = {/*           world frame     , body frame  */
+                 {box_, {{0.0, 1.0, 0.0}, {0.0, 0.5, 0.0}}},
+                 {sphere_, {{0.0, 0.75, 0.0}, {0.0, -0.5, 0.0}}}};
 
     // Body 1 pose
     Isometry3d box_pose;
@@ -423,7 +594,7 @@ class BoxVsSphereTest : public ::testing::Test {
  protected:
   double tolerance_;
   std::unique_ptr<Model> model_;
-  Element* box_, * sphere_;
+  Element *box_, *sphere_;
   ElementToSurfacePointMap solution_;
 };
 
@@ -443,10 +614,8 @@ TEST_F(BoxVsSphereTest, SingleContact) {
   EXPECT_NEAR(-0.25, points[0].distance, tolerance_);
   // Points are in the bodies' frame on the surface of the corresponding body.
   EXPECT_TRUE(points[0].normal.isApprox(Vector3d(0.0, -1.0, 0.0)));
-  EXPECT_TRUE(
-      points[0].ptA.isApprox(solution_[points[0].elementA].body_frame));
-  EXPECT_TRUE(
-      points[0].ptB.isApprox(solution_[points[0].elementB].body_frame));
+  EXPECT_TRUE(points[0].ptA.isApprox(solution_[points[0].elementA].body_frame));
+  EXPECT_TRUE(points[0].ptB.isApprox(solution_[points[0].elementB].body_frame));
 
   // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
   // Not using margins.
@@ -500,7 +669,7 @@ TEST_F(BoxVsSphereTest, SingleContact) {
 // reports a single (randomly chosen) point at one of the smaller box corners.
 // In previous runs this was the corner at (0.5, 0.5, z) where z = 5.0 for the
 // top of the large box and z = 4.9 for the bottom of the smaller box.
-class SmallBoxSittingOnLargeBox: public ::testing::Test {
+class SmallBoxSittingOnLargeBox : public ::testing::Test {
  public:
   void SetUp() override {
     // Boxes centered around the origin in their local frames.
@@ -515,10 +684,9 @@ class SmallBoxSittingOnLargeBox: public ::testing::Test {
     // Access the analytical solution to the contact point on the surface of
     // each collision element by element id.
     // Solutions are expressed in world and body frames.
-    solution_ = {
-        /*              world frame    , body frame  */
-        {large_box_, {{0.0, 5.0, 0.0}, {0.0,  2.5, 0.0}}},
-        {small_box_, {{0.0, 4.9, 0.0}, {0.0, -0.5, 0.0}}}};
+    solution_ = {/*              world frame    , body frame  */
+                 {large_box_, {{0.0, 5.0, 0.0}, {0.0, 2.5, 0.0}}},
+                 {small_box_, {{0.0, 4.9, 0.0}, {0.0, -0.5, 0.0}}}};
 
     // Large body pose
     Isometry3d large_box_pose;
@@ -536,7 +704,7 @@ class SmallBoxSittingOnLargeBox: public ::testing::Test {
  protected:
   double tolerance_;
   std::unique_ptr<Model> model_;
-  Element* small_box_, * large_box_;
+  Element *small_box_, *large_box_;
   ElementToSurfacePointMap solution_;
 };
 
@@ -568,10 +736,10 @@ TEST_F(SmallBoxSittingOnLargeBox, SingleContact) {
   EXPECT_TRUE(points[0].normal.isApprox(Vector3d(0.0, -1.0, 0.0)));
   // Collision points are reported on each of the respective bodies' frames.
   // Only test for vertical position.
-  EXPECT_NEAR(points[0].ptA.y(),
-              solution_[points[0].elementA].body_frame.y(), tolerance_);
-  EXPECT_NEAR(points[0].ptB.y(),
-              solution_[points[0].elementB].body_frame.y(), tolerance_);
+  EXPECT_NEAR(points[0].ptA.y(), solution_[points[0].elementA].body_frame.y(),
+              tolerance_);
+  EXPECT_NEAR(points[0].ptB.y(), solution_[points[0].elementB].body_frame.y(),
+              tolerance_);
 
   // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
   // Not using margins.
@@ -586,10 +754,10 @@ TEST_F(SmallBoxSittingOnLargeBox, SingleContact) {
   EXPECT_NEAR(-0.1, points[0].distance, tolerance_);
   // Collision points are reported in the world's frame.
   // Only test for vertical position.
-  EXPECT_NEAR(points[0].ptA.y(),
-              solution_[points[0].elementA].world_frame.y(), tolerance_);
-  EXPECT_NEAR(points[0].ptB.y(),
-              solution_[points[0].elementB].world_frame.y(), tolerance_);
+  EXPECT_NEAR(points[0].ptA.y(), solution_[points[0].elementA].world_frame.y(),
+              tolerance_);
+  EXPECT_NEAR(points[0].ptB.y(), solution_[points[0].elementB].world_frame.y(),
+              tolerance_);
 
   // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
   // Using margins.
@@ -600,10 +768,10 @@ TEST_F(SmallBoxSittingOnLargeBox, SingleContact) {
   EXPECT_NEAR(-0.1, points[0].distance, tolerance_);
   // Collision points are reported in the world's frame.
   // Only test for vertical position.
-  EXPECT_NEAR(points[0].ptA.y(),
-              solution_[points[0].elementA].world_frame.y(), tolerance_);
-  EXPECT_NEAR(points[0].ptB.y(),
-              solution_[points[0].elementB].world_frame.y(), tolerance_);
+  EXPECT_NEAR(points[0].ptA.y(), solution_[points[0].elementA].world_frame.y(),
+              tolerance_);
+  EXPECT_NEAR(points[0].ptB.y(), solution_[points[0].elementB].world_frame.y(),
+              tolerance_);
 }
 
 // This test seeks to find out whether drake::multibody::collision::Model can
@@ -615,7 +783,7 @@ TEST_F(SmallBoxSittingOnLargeBox, SingleContact) {
 
 // Unfortunately these tests show that drake::multibody::collision::Model only
 // reports a single (randomly chosen) point within this octagonal contact area.
-class NonAlignedBoxes: public ::testing::Test {
+class NonAlignedBoxes : public ::testing::Test {
  public:
   void SetUp() override {
     // Boxes centered around the origin in their local frames.
@@ -630,10 +798,9 @@ class NonAlignedBoxes: public ::testing::Test {
     // Access the analytical solution to the contact point on the surface of
     // each collision element by element id.
     // Solutions are expressed in world and body frames.
-    solution_ = {
-        /*         world frame    , body frame  */
-        {box1_, {{0.0, 1.0, 0.0}, {0.0,  0.5, 0.0}}},
-        {box2_, {{0.0, 0.9, 0.0}, {0.0, -0.5, 0.0}}}};
+    solution_ = {/*         world frame    , body frame  */
+                 {box1_, {{0.0, 1.0, 0.0}, {0.0, 0.5, 0.0}}},
+                 {box2_, {{0.0, 0.9, 0.0}, {0.0, -0.5, 0.0}}}};
 
     // Box 1 pose.
     Isometry3d box1_pose;
@@ -655,7 +822,7 @@ class NonAlignedBoxes: public ::testing::Test {
  protected:
   double tolerance_;
   std::unique_ptr<Model> model_;
-  Element* box1_, * box2_;
+  Element *box1_, *box2_;
   ElementToSurfacePointMap solution_;
 };
 
@@ -685,10 +852,10 @@ TEST_F(NonAlignedBoxes, SingleContact) {
   EXPECT_TRUE(points[0].normal.isApprox(Vector3d(0.0, -1.0, 0.0)));
   // Collision points are reported on each of the respective bodies' frames.
   // Only test for vertical position.
-  EXPECT_NEAR(points[0].ptA.y(),
-              solution_[points[0].elementA].body_frame.y(), tolerance_);
-  EXPECT_NEAR(points[0].ptB.y(),
-              solution_[points[0].elementB].body_frame.y(), tolerance_);
+  EXPECT_NEAR(points[0].ptA.y(), solution_[points[0].elementA].body_frame.y(),
+              tolerance_);
+  EXPECT_NEAR(points[0].ptB.y(), solution_[points[0].elementB].body_frame.y(),
+              tolerance_);
 
   // Collision test performed with Model::ComputeMaximumDepthCollisionPoints.
   points.clear();
@@ -702,10 +869,10 @@ TEST_F(NonAlignedBoxes, SingleContact) {
   EXPECT_TRUE(points[0].normal.isApprox(Vector3d(0.0, -1.0, 0.0)));
   // Collision points are reported in the world's frame.
   // Only test for vertical position.
-  EXPECT_NEAR(points[0].ptA.y(),
-              solution_[points[0].elementA].world_frame.y(), tolerance_);
-  EXPECT_NEAR(points[0].ptB.y(),
-              solution_[points[0].elementB].world_frame.y(), tolerance_);
+  EXPECT_NEAR(points[0].ptA.y(), solution_[points[0].elementA].world_frame.y(),
+              tolerance_);
+  EXPECT_NEAR(points[0].ptB.y(), solution_[points[0].elementB].world_frame.y(),
+              tolerance_);
 }
 
 // Tests the model is not caching results from a series of different queries.
@@ -736,9 +903,9 @@ TEST_F(SmallBoxSittingOnLargeBox, ClearCachedResults) {
   for (int i = 0; i < 4; ++i) {
     // Small disturbance so that tests are slightly different causing Bullet's
     // dispatcher to cache these results.
-    if (i == 0) small_box_pose.translation() = Vector3d(   0.0, 5.4,    0.0);
-    if (i == 1) small_box_pose.translation() = Vector3d(1.0e-3, 5.4,    0.0);
-    if (i == 2) small_box_pose.translation() = Vector3d(   0.0, 5.4, 1.0e-3);
+    if (i == 0) small_box_pose.translation() = Vector3d(0.0, 5.4, 0.0);
+    if (i == 1) small_box_pose.translation() = Vector3d(1.0e-3, 5.4, 0.0);
+    if (i == 2) small_box_pose.translation() = Vector3d(0.0, 5.4, 1.0e-3);
     if (i == 3) small_box_pose.translation() = Vector3d(1.0e-3, 5.4, 1.0e-3);
     model_->UpdateElementWorldTransform(small_box_->getId(), small_box_pose);
 
@@ -755,13 +922,12 @@ TEST_F(SmallBoxSittingOnLargeBox, ClearCachedResults) {
 
   for (const PointPair& point : points) {
     EXPECT_NEAR(-0.1, point.distance, tolerance_);
-    EXPECT_TRUE(
-        point.normal.isApprox(Vector3d(0.0, -1.0, 0.0), tolerance_));
+    EXPECT_TRUE(point.normal.isApprox(Vector3d(0.0, -1.0, 0.0), tolerance_));
     // Only test for vertical position.
-    EXPECT_NEAR(point.ptA.y(),
-                solution_[points[0].elementA].world_frame.y(), tolerance_);
-    EXPECT_NEAR(point.ptB.y(),
-                solution_[points[0].elementB].world_frame.y(), tolerance_);
+    EXPECT_NEAR(point.ptA.y(), solution_[points[0].elementA].world_frame.y(),
+                tolerance_);
+    EXPECT_NEAR(point.ptB.y(), solution_[points[0].elementB].world_frame.y(),
+                tolerance_);
   }
 }
 
@@ -854,9 +1020,9 @@ GTEST_TEST(ModelTest, AnchoredMeshes) {
   // NOTE: The elements are being instantiated here so that the anchored state
   // can be set *before* registering with the collision model.
   auto sphere_element = make_unique<Element>(sphere_shape);
-  Element *sphere = sphere_element.get();
+  Element* sphere = sphere_element.get();
   auto cap_element = make_unique<Element>(cap_shape);
-  Element *cap = cap_element.get();
+  Element* cap = cap_element.get();
   cap_element->set_anchored();
 
   // Populate the model.
@@ -892,8 +1058,8 @@ GTEST_TEST(ModelTest, AnchoredMeshes) {
 
   EXPECT_TRUE(points[0].normal.isApprox(Vector3d(0, 0, 1), tolerance));
 
-  EXPECT_TRUE(points[0].ptA.isApprox(
-      solution[points[0].elementA].world_frame, tolerance));
+  EXPECT_TRUE(points[0].ptA.isApprox(solution[points[0].elementA].world_frame,
+                                     tolerance));
 
   EXPECT_TRUE(CompareMatrices(points[0].ptB,
                               solution[points[0].elementB].world_frame,
@@ -989,12 +1155,12 @@ GTEST_TEST(ModelTest, DistanceToNonConvex) {
   // NOTE: The elements are being instantiated here so that the anchored state
   // can be set *before* registering with the collision model.
   auto cap_element = make_unique<Element>(cap_shape);
-  Element *cap = cap_element.get();
+  Element* cap = cap_element.get();
   cap_element->set_anchored();
 
   // Populate the model.
   unique_ptr<Model> model = newModel();
-  Element *sphere = model->AddElement(make_unique<Element>(sphere_shape));
+  Element* sphere = model->AddElement(make_unique<Element>(sphere_shape));
   model->AddElement(move(cap_element));
 
   // Sets the collision elements' pose.
