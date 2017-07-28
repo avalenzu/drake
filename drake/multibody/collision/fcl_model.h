@@ -14,7 +14,8 @@ namespace drake {
 namespace multibody {
 namespace collision {
 
-typedef std::unordered_map<ElementId, std::unique_ptr<fcl::CollisionObject<double>>>
+typedef std::unordered_map<ElementId,
+                           std::unique_ptr<fcl::CollisionObject<double>>>
     ElementToFclObjMap;
 
 class FclModel : public Model {
@@ -48,10 +49,7 @@ class FclModel : public Model {
       const Eigen::Matrix3Xd& points, bool use_margins,
       std::vector<PointPair>* closest_points) override;
   void UpdateModel() override;
-  fcl::GJKSolverType get_narrowphase_solver_type() const;
-  void set_narrowphase_solver_type(fcl::GJKSolverType new_type);
  private:
-  fcl::GJKSolverType narrowphase_solver_type_ = fcl::GJKSolverType::GST_LIBCCD;
   fcl::DynamicAABBTreeCollisionManager<double> broadphase_manager_;
   ElementToFclObjMap fcl_collision_objects_;
 };
