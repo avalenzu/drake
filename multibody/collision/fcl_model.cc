@@ -63,8 +63,18 @@ bool CollisionCallback(fcl::CollisionObjectd* fcl_object_A,
       // equi-distant to the contact point. Recall that signed_distance is
       // strictly non-positive, so signed_distance * drake_normal points out of
       // A and into B.
-      const Vector3d p_WAc{contact.pos + 0.5 * signed_distance * drake_normal};
-      const Vector3d p_WBc{contact.pos - 0.5 * signed_distance * drake_normal};
+      Vector3d p_WAc;
+      Vector3d p_WBc;
+
+      if (element_B->getShape() == DrakeShapes::BOX &&
+          element_A->getShape() == DrakeShapes::BOX) {
+        signed_distance *= -1;
+        p_WAc = contact.pos + signed_distance * drake_normal;
+        p_WBc = contact.pos;
+      } else {
+        p_WAc = contact.pos + 0.5 * signed_distance * drake_normal;
+        p_WBc = contact.pos - 0.5 * signed_distance * drake_normal;
+      }
 
       collision_data->closest_points->emplace_back(
           element_A, element_B, p_WAc, p_WBc, drake_normal, signed_distance);
@@ -96,6 +106,51 @@ void FclModel::DoAddElement(const Element& element) {
           static_cast<const DrakeShapes::Cylinder&>(element.getGeometry());
       fcl_geometry =
           std::make_shared<fcl::Cylinderd>(cylinder.radius, cylinder.length);
+    } break;
+    case DrakeShapes::BOX: {
+      const auto box =
+          static_cast<const DrakeShapes::Box&>(element.getGeometry());
+      fcl_geometry =
+          std::shared_ptr<fcl::CollisionGeometryd>(new fcl::Boxd(box.size));
+      //Vector3d normals[6]{{1, 0, 0},  {0, 1, 0},  {0, 0, 1},
+                                //{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
+      //double distances[6]{box.size.x(), box.size.y(), box.size.z(),
+                                //box.size.x(), box.size.y(), box.size.z()};
+      // Lexicographic vertex numbering
+      //
+      //         3---------7
+      //        /|        /|
+      //       / |       / |
+      //      1---------5  |
+      //      |  |      |  |
+      //      |  2------|--6     z
+      //      | /       | /      | y
+      //      |/        |/       |/
+      //      0---------4        +----x
+      //Vector3d vertices[8]{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1},
+                           //{1, 0, 0},  {1, 0, 1},  {1, 1, 0},  {1, 1, 1}};
+      //for (Vector3d vertex : vertices) {
+        //vertex.cwiseProduct(box.size);
+        //vertex -= 0.5*box.size;
+      //}
+      // FCL takes the following format:
+      //  - Number of vertices in polygon (N)
+      //  - Vertex 0 index
+      //       .
+      //       .
+      //       .
+      //  - Vertex N-1 index
+      // The indices should be listed CCW. To preserve my sanity I'm putting
+      // the polygons in the same order as the normals.
+      //int polygons[30]{4, 4, 6, 7, 5,
+                       //4, 2, 3, 6, 6,
+                       //4, 1, 5, 7, 3,
+                       //4, 0, 1, 3, 2,
+                       //4, 0, 4, 5, 1,
+                       //4, 0, 2, 6, 4};
+      //fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+          //new fcl::Convexd(normals, distances, 6 [>num_planes<], vertices,
+                           //8 [>num_points<], polygons));
     } break;
     default:
       DRAKE_ABORT_MSG("Not implemented.");
