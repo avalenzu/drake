@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -67,6 +68,11 @@ class ModelTestBase : public ::testing::Test {
     return model_->AddElement(make_unique<Element>(geom));
   }
 
+  Element* AddBox(Vector3d size = Vector3d::Ones()) {
+    const DrakeShapes::Box geom{size};
+    return model_->AddElement(make_unique<Element>(geom));
+  }
+
   void CallUpdateModel() { model_->UpdateModel(); }
 
   void CallComputeMaximumDepthCollisionPoints() {
@@ -93,6 +99,8 @@ TEST_P(AllModelTypesTests, NewModel) { EXPECT_FALSE(model_ == nullptr); }
 TEST_P(AllModelTypesTests, AddElement) {
   Element* elem = AddSphere();
   EXPECT_EQ(elem->getShape(), DrakeShapes::SPHERE);
+  elem = AddBox();
+  EXPECT_EQ(elem->getShape(), DrakeShapes::BOX);
 }
 
 #ifdef BULLET_COLLISION
@@ -142,11 +150,6 @@ class FclModelDeathTests : public ModelTestBase,
  public:
   FclModelDeathTests() {
     model_ = drake::multibody::collision::newModel(ModelType::kFcl);
-  }
-
-  void CallAddBox() {
-    const DrakeShapes::Box geom{Vector3d::Ones()};
-    model_->AddElement(make_unique<Element>(geom));
   }
 
   void CallAddCylinder() {
@@ -205,8 +208,7 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
-    ::testing::Values(&FclModelDeathTests::CallAddBox,
-                      &FclModelDeathTests::CallAddCylinder,
+    ::testing::Values(&FclModelDeathTests::CallAddCylinder,
                       &FclModelDeathTests::CallAddCapsule,
                       &FclModelDeathTests::CallAddMesh,
                       &FclModelDeathTests::CallClosestPointsAllToAll,
@@ -363,6 +365,9 @@ std::vector<ShapeVsShapeTestParam> generateSphereVsSphereParam() {
     params.push_back(ShapeVsShapeTestParam(model_type, sphere_A, sphere_B, X_WA,
                                            X_WB, surface_point_A,
                                            surface_point_B));
+    params.push_back(ShapeVsShapeTestParam(model_type, sphere_B, sphere_A, X_WB,
+                                           X_WA, surface_point_B,
+                                           surface_point_A));
   }
 
   return params;
@@ -370,6 +375,83 @@ std::vector<ShapeVsShapeTestParam> generateSphereVsSphereParam() {
 
 INSTANTIATE_TEST_CASE_P(ShapeVsShapeTest, ShapeVsShapeTest,
                         ::testing::ValuesIn(generateSphereVsSphereParam()));
+
+// A sphere of diameter 1.0 is placed  above a box.  The sphere overlaps with
+// the box with its deepest penetration point (the bottom) 0.25 units into the
+// box (negative distance). Only one contact point is expected when colliding
+// with a sphere.
+std::vector<ShapeVsShapeTestParam> generateBoxVsSphereParam() {
+  // Box
+  DrakeShapes::Box box{Vector3d(1, 1, 1)};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  X_WA.translation() = Vector3d(0, 0.5, 0);
+  Vector3d p_WP{0.0, 1.0, 0.0};
+  Vector3d p_AP{0.0, 0.5, 0.0};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Sphere
+  DrakeShapes::Sphere sphere{0.5};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
+  Vector3d p_WQ{0.0, 0.75, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : kUsableModelTypes) {
+    params.push_back(ShapeVsShapeTestParam(model_type, box, sphere, X_WA, X_WB,
+                                           surface_point_A, surface_point_B));
+    params.push_back(ShapeVsShapeTestParam(model_type, sphere, box, X_WB, X_WA,
+                                           surface_point_B, surface_point_A));
+  }
+
+  return params;
+}
+
+INSTANTIATE_TEST_CASE_P(BoxVsSphereTest, ShapeVsShapeTest,
+                        ::testing::ValuesIn(generateBoxVsSphereParam()));
+
+std::vector<ShapeVsShapeTestParam> generateBoxVsBoxParam() {
+  // First box
+  DrakeShapes::Box box_A{Vector3d(1, 1, 1)};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  X_WA.translation() = Vector3d(0, 0.5, 0);
+  Vector3d p_WP{0.0, 1.0, 0.0};
+  Vector3d p_AP{0.0, 0.5, 0.0};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second box
+  DrakeShapes::Box box_B{1.0 / std::sqrt(3) * Vector3d(1, 1, 1)};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  double theta{atan2(M_SQRT1_2, 0.5)};
+  X_WB.rotate(Eigen::AngleAxisd(-theta,
+                                Vector3d(M_SQRT1_2, 0, M_SQRT1_2)));
+  X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
+  Vector3d p_WQ{0.0, 0.75, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : kUsableModelTypes) {
+    params.push_back(ShapeVsShapeTestParam(model_type, box_A, box_B, X_WA, X_WB,
+                                           surface_point_A, surface_point_B));
+    params.push_back(ShapeVsShapeTestParam(model_type, box_B, box_A, X_WB, X_WA,
+                                           surface_point_B, surface_point_A));
+  }
+
+  return params;
+}
+
+INSTANTIATE_TEST_CASE_P(BoxVsBox, ShapeVsShapeTest,
+                        ::testing::ValuesIn(generateBoxVsBoxParam()));
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,

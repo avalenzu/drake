@@ -48,22 +48,32 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
         // convention from FCL)
         Vector3d n_QP = -contact.normal;
 
-        // FCL returns a single contact point, but PointPair expects two
-        const Vector3d p_WP{contact.pos + 0.5*d_QP*n_QP};
-        const Vector3d p_WQ{contact.pos - 0.5*d_QP*n_QP};
+      // FCL returns a single contact point, but PointPair expects two
+      Vector3d p_WP;
+      Vector3d p_WQ;
 
-        // Transform the closest points to their respective body frames.
-        // Let element A be on body C and element B
-        //const Isometry3d X_CA = element_A->getLocalTransform();
-        //const Isometry3d X_DB = element_B->getLocalTransform();
-        //const Isometry3d X_AW = element_A->getWorldTransform().inverse();
-        //const Isometry3d X_BW = element_B->getWorldTransform().inverse();
-        //const Vector3d p_CP = X_CA * X_AW * p_WP;
-        //const Vector3d p_DQ = X_DB * X_BW * p_WQ;
-
-        collision_data->closest_points->emplace_back(element_A, element_B, 
-            p_WP, p_WQ, n_QP, d_QP);
+      if (element_B->getShape() == DrakeShapes::BOX &&
+          element_A->getShape() == DrakeShapes::BOX) {
+        d_QP *= -1;
+        p_WP = contact.pos + d_QP * n_QP;
+        p_WQ = contact.pos;
+      } else {
+        p_WP = contact.pos + 0.5 * d_QP * n_QP;
+        p_WQ = contact.pos - 0.5 * d_QP* n_QP;
       }
+
+      // Transform the closest points to their respective body frames.
+      // Let element A be on body C and element B
+      // const Isometry3d X_CA = element_A->getLocalTransform();
+      // const Isometry3d X_DB = element_B->getLocalTransform();
+      // const Isometry3d X_AW = element_A->getWorldTransform().inverse();
+      // const Isometry3d X_BW = element_B->getWorldTransform().inverse();
+      // const Vector3d p_CP = X_CA * X_AW * p_WP;
+      // const Vector3d p_DQ = X_DB * X_BW * p_WQ;
+
+      collision_data->closest_points->emplace_back(element_A, element_B, p_WP,
+                                                   p_WQ, n_QP, d_QP);
+    }
   }
   return false; // Check all pairs provided by the broadphase
 }
@@ -76,6 +86,51 @@ void FclModel::DoAddElement(const Element& element) {
     std::shared_ptr<fcl::CollisionGeometryd> fcl_geometry;
 
     switch (element.getShape()) {
+      case DrakeShapes::BOX: {
+        const auto box =
+            static_cast<const DrakeShapes::Box&>(element.getGeometry());
+        fcl_geometry =
+            std::shared_ptr<fcl::CollisionGeometryd>(new fcl::Boxd(box.size));
+        //Vector3d normals[6]{{1, 0, 0},  {0, 1, 0},  {0, 0, 1},
+                                  //{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
+        //double distances[6]{box.size.x(), box.size.y(), box.size.z(),
+                                  //box.size.x(), box.size.y(), box.size.z()};
+        // Lexicographic vertex numbering
+        //
+        //         3---------7                                                     
+        //        /|        /|                                                     
+        //       / |       / |                                                     
+        //      1---------5  |                                                     
+        //      |  |      |  |                                                     
+        //      |  2------|--6     z                                               
+        //      | /       | /      | y                                             
+        //      |/        |/       |/                                              
+        //      0---------4        +----x    
+        //Vector3d vertices[8]{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1},
+                             //{1, 0, 0},  {1, 0, 1},  {1, 1, 0},  {1, 1, 1}};
+        //for (Vector3d vertex : vertices) {
+          //vertex.cwiseProduct(box.size);
+          //vertex -= 0.5*box.size;
+        //}
+        // FCL takes the following format:
+        //  - Number of vertices in polygon (N)
+        //  - Vertex 0 index
+        //       .
+        //       .
+        //       .
+        //  - Vertex N-1 index
+        // The indices should be listed CCW. To preserve my sanity I'm putting
+        // the polygons in the same order as the normals.
+        //int polygons[30]{4, 4, 6, 7, 5,
+                         //4, 2, 3, 6, 6,
+                         //4, 1, 5, 7, 3,
+                         //4, 0, 1, 3, 2,
+                         //4, 0, 4, 5, 1,
+                         //4, 0, 2, 6, 4};
+        //fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+            //new fcl::Convexd(normals, distances, 6 [>num_planes<], vertices,
+                             //8 [>num_points<], polygons));
+      } break;
       case DrakeShapes::SPHERE: {
         const auto sphere =
             static_cast<const DrakeShapes::Sphere&>(element.getGeometry());
