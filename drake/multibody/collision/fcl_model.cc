@@ -13,9 +13,9 @@ namespace drake {
 namespace multibody {
 namespace collision {
 
-/// @brief Distance data stores the distance request and the result given by distance algorithm.
-struct CollisionData
-{
+/// @brief Distance data stores the distance request and the result given by
+/// distance algorithm.
+struct CollisionData {
   /// @brief Collision request
   fcl::CollisionRequestd request;
 
@@ -24,29 +24,29 @@ struct CollisionData
 };
 
 bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
-    fcl::CollisionObjectd* fcl_object_B, void* callback_data)
-{
+                             fcl::CollisionObjectd* fcl_object_B,
+                             void* callback_data) {
   auto element_A = static_cast<Element*>(fcl_object_A->getUserData());
   auto element_B = static_cast<Element*>(fcl_object_B->getUserData());
   if (element_A && element_B && element_A->CanCollideWith(element_B)) {
-      // Unpack the callback data
-      auto* collision_data = static_cast<CollisionData*>(callback_data);
-      const fcl::CollisionRequestd& request = collision_data->request;
-      fcl::CollisionResultd result;
+    // Unpack the callback data
+    auto* collision_data = static_cast<CollisionData*>(callback_data);
+    const fcl::CollisionRequestd& request = collision_data->request;
+    fcl::CollisionResultd result;
 
-      // Perform nearphase collision detection
-      fcl::collide(fcl_object_A, fcl_object_B, request, result);
+    // Perform nearphase collision detection
+    fcl::collide(fcl_object_A, fcl_object_B, request, result);
 
-      // Process the contact points
-      std::vector<fcl::Contactd> contacts;
-      result.getContacts(contacts);
+    // Process the contact points
+    std::vector<fcl::Contactd> contacts;
+    result.getContacts(contacts);
 
-      for (auto contact : contacts) {
-        // Signed distance is negative when penetration depth is positive
-        double d_QP = -contact.penetration_depth;
-        // Define the normal as the unit vector from Q to P (opposite
-        // convention from FCL)
-        Vector3d n_QP = -contact.normal;
+    for (auto contact : contacts) {
+      // Signed distance is negative when penetration depth is positive
+      double d_QP = -contact.penetration_depth;
+      // Define the normal as the unit vector from Q to P (opposite
+      // convention from FCL)
+      Vector3d n_QP = -contact.normal;
 
       // FCL returns a single contact point, but PointPair expects two
       Vector3d p_WP;
@@ -59,7 +59,7 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
         p_WQ = contact.pos;
       } else {
         p_WP = contact.pos + 0.5 * d_QP * n_QP;
-        p_WQ = contact.pos - 0.5 * d_QP* n_QP;
+        p_WQ = contact.pos - 0.5 * d_QP * n_QP;
       }
 
       // Transform the closest points to their respective body frames.
@@ -75,7 +75,7 @@ bool collisionPointsFunction(fcl::CollisionObjectd* fcl_object_A,
                                                    p_WQ, n_QP, d_QP);
     }
   }
-  return false; // Check all pairs provided by the broadphase
+  return false;  // Check all pairs provided by the broadphase
 }
 
 void FclModel::DoAddElement(const Element& element) {
@@ -91,26 +91,26 @@ void FclModel::DoAddElement(const Element& element) {
             static_cast<const DrakeShapes::Box&>(element.getGeometry());
         fcl_geometry =
             std::shared_ptr<fcl::CollisionGeometryd>(new fcl::Boxd(box.size));
-        //Vector3d normals[6]{{1, 0, 0},  {0, 1, 0},  {0, 0, 1},
-                                  //{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
-        //double distances[6]{box.size.x(), box.size.y(), box.size.z(),
-                                  //box.size.x(), box.size.y(), box.size.z()};
+        // Vector3d normals[6]{{1, 0, 0},  {0, 1, 0},  {0, 0, 1},
+        //{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
+        // double distances[6]{box.size.x(), box.size.y(), box.size.z(),
+        // box.size.x(), box.size.y(), box.size.z()};
         // Lexicographic vertex numbering
         //
-        //         3---------7                                                     
-        //        /|        /|                                                     
-        //       / |       / |                                                     
-        //      1---------5  |                                                     
-        //      |  |      |  |                                                     
-        //      |  2------|--6     z                                               
-        //      | /       | /      | y                                             
-        //      |/        |/       |/                                              
-        //      0---------4        +----x    
-        //Vector3d vertices[8]{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1},
-                             //{1, 0, 0},  {1, 0, 1},  {1, 1, 0},  {1, 1, 1}};
-        //for (Vector3d vertex : vertices) {
-          //vertex.cwiseProduct(box.size);
-          //vertex -= 0.5*box.size;
+        //         3---------7
+        //        /|        /|
+        //       / |       / |
+        //      1---------5  |
+        //      |  |      |  |
+        //      |  2------|--6     z
+        //      | /       | /      | y
+        //      |/        |/       |/
+        //      0---------4        +----x
+        // Vector3d vertices[8]{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1},
+        //{1, 0, 0},  {1, 0, 1},  {1, 1, 0},  {1, 1, 1}};
+        // for (Vector3d vertex : vertices) {
+        // vertex.cwiseProduct(box.size);
+        // vertex -= 0.5*box.size;
         //}
         // FCL takes the following format:
         //  - Number of vertices in polygon (N)
@@ -121,28 +121,30 @@ void FclModel::DoAddElement(const Element& element) {
         //  - Vertex N-1 index
         // The indices should be listed CCW. To preserve my sanity I'm putting
         // the polygons in the same order as the normals.
-        //int polygons[30]{4, 4, 6, 7, 5,
-                         //4, 2, 3, 6, 6,
-                         //4, 1, 5, 7, 3,
-                         //4, 0, 1, 3, 2,
-                         //4, 0, 4, 5, 1,
-                         //4, 0, 2, 6, 4};
-        //fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
-            //new fcl::Convexd(normals, distances, 6 [>num_planes<], vertices,
-                             //8 [>num_points<], polygons));
+        // int polygons[30]{4, 4, 6, 7, 5,
+        // 4, 2, 3, 6, 6,
+        // 4, 1, 5, 7, 3,
+        // 4, 0, 1, 3, 2,
+        // 4, 0, 4, 5, 1,
+        // 4, 0, 2, 6, 4};
+        // fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+        // new fcl::Convexd(normals, distances, 6 [>num_planes<], vertices,
+        // 8 [>num_points<], polygons));
       } break;
       case DrakeShapes::SPHERE: {
         const auto sphere =
             static_cast<const DrakeShapes::Sphere&>(element.getGeometry());
-        fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(new fcl::Sphered(sphere.radius));
+        fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+            new fcl::Sphered(sphere.radius));
       } break;
       default:
         DRAKE_ABORT_MSG("Not implemented.");
         break;
     }
-    
+
     if (fcl_geometry != nullptr) {
-      std::unique_ptr<fcl::CollisionObjectd> fcl_object{new fcl::CollisionObjectd(fcl_geometry)};
+      std::unique_ptr<fcl::CollisionObjectd> fcl_object{
+          new fcl::CollisionObjectd(fcl_geometry)};
 
       // Store a pointer to the Element in the fcl collision object
       fcl_object->setUserData(FindMutableElement(id));
@@ -162,16 +164,15 @@ void FclModel::DoAddElement(const Element& element) {
   }
 }
 
-void FclModel::UpdateModel() {
-  broadphase_manager_.update();
-}
+void FclModel::UpdateModel() { broadphase_manager_.update(); }
 
-bool FclModel::UpdateElementWorldTransform(
-    ElementId id, const Isometry3d& T_local_to_world) {
+bool FclModel::UpdateElementWorldTransform(ElementId id,
+                                           const Isometry3d& T_local_to_world) {
   const bool element_exists(
       Model::UpdateElementWorldTransform(id, T_local_to_world));
   if (element_exists) {
-    fcl_collision_objects_[id]->setTransform(FindElement(id)->getWorldTransform());
+    fcl_collision_objects_[id]->setTransform(
+        FindElement(id)->getWorldTransform());
   }
   return element_exists;
 }
@@ -191,7 +192,8 @@ bool FclModel::ComputeMaximumDepthCollisionPoints(
   collision_data.closest_points = points;
   collision_data.request.enable_contact = true;
   collision_data.request.num_max_contacts = 1e3;
-  broadphase_manager_.collide(static_cast<void*>(&collision_data), collisionPointsFunction);
+  broadphase_manager_.collide(static_cast<void*>(&collision_data),
+                              collisionPointsFunction);
   return true;
 }
 

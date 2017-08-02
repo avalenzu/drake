@@ -219,7 +219,7 @@ INSTANTIATE_TEST_CASE_P(
                       &FclModelDeathTests::CallCollidingPoints));
 #endif
 
- //Fixture for testing pairs of collision geometries
+// Fixture for testing pairs of collision geometries
 class ShapeVsShapeTestParam {
  public:
   ShapeVsShapeTestParam(ModelType model_type,
@@ -431,8 +431,7 @@ std::vector<ShapeVsShapeTestParam> generateBoxVsBoxParam() {
   Isometry3d X_WB;
   X_WB.setIdentity();
   double theta{atan2(M_SQRT1_2, 0.5)};
-  X_WB.rotate(Eigen::AngleAxisd(-theta,
-                                Vector3d(M_SQRT1_2, 0, M_SQRT1_2)));
+  X_WB.rotate(Eigen::AngleAxisd(-theta, Vector3d(M_SQRT1_2, 0, M_SQRT1_2)));
   X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
   Vector3d p_WQ{0.0, 0.75, 0.0};
   Vector3d p_BQ{0.0, -0.5, 0.0};
