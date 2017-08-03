@@ -137,6 +137,12 @@ void FclModel::DoAddElement(const Element& element) {
         fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
             new fcl::Sphered(sphere.radius));
       } break;
+      case DrakeShapes::CAPSULE: {
+        const auto capsule =
+            static_cast<const DrakeShapes::Capsule&>(element.getGeometry());
+        fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+            new fcl::Capsuled(capsule.radius, capsule.length));
+      } break;
       default:
         DRAKE_ABORT_MSG("Not implemented.");
         break;
