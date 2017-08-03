@@ -137,6 +137,12 @@ void FclModel::DoAddElement(const Element& element) {
         fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
             new fcl::Sphered(sphere.radius));
       } break;
+      case DrakeShapes::CYLINDER: {
+        const auto cylinder =
+            static_cast<const DrakeShapes::Cylinder&>(element.getGeometry());
+        fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+            new fcl::Cylinderd(cylinder.radius, cylinder.length));
+      } break;
       case DrakeShapes::CAPSULE: {
         const auto capsule =
             static_cast<const DrakeShapes::Capsule&>(element.getGeometry());
