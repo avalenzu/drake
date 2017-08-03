@@ -280,6 +280,7 @@ toolchain {
   compiler_flag: "-B/usr/bin"
   compiler_flag: "-fcolor-diagnostics"
   compiler_flag: "-fno-omit-frame-pointer"
+  compiler_flag: "-DEIGEN_UNALIGNED_VECTORIZE=0"
   cxx_builtin_include_directory: "/usr/include/c++/4.9"
   cxx_builtin_include_directory: "/usr/include/x86_64-linux-gnu/c++/4.9"
   cxx_builtin_include_directory: "/usr/include/c++/4.9/backward"
