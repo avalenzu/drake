@@ -152,6 +152,12 @@ void FclModel::DoAddElement(const Element& element) {
           //new fcl::Convexd(normals, distances, 6 [>num_planes<], vertices,
                            //8 [>num_points<], polygons));
     } break;
+    case DrakeShapes::CAPSULE: {
+      const auto capsule =
+          static_cast<const DrakeShapes::Capsule&>(element.getGeometry());
+      fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+          new fcl::Capsuled(capsule.radius, capsule.length));
+    } break;
     default:
       DRAKE_ABORT_MSG("Not implemented.");
       break;

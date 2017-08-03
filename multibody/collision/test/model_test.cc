@@ -79,6 +79,11 @@ class ModelTestBase : public ::testing::Test {
     return model_->AddElement(make_unique<Element>(geom));
   }
 
+  Element* AddCapsule(double radius = 1.0, double length = 1.0) {
+    const DrakeShapes::Capsule geom{radius, length};
+    return model_->AddElement(make_unique<Element>(geom));
+  }
+
   void RemoveElement(const Element& element) {
     model_->RemoveElement(element.getId());
   }
@@ -113,6 +118,8 @@ TEST_P(AllModelTypesTests, AddElement) {
   EXPECT_EQ(elem->getShape(), DrakeShapes::CYLINDER);
   elem = AddBox();
   EXPECT_EQ(elem->getShape(), DrakeShapes::BOX);
+  elem = AddCapsule();
+  EXPECT_EQ(elem->getShape(), DrakeShapes::CAPSULE);
 }
 
 std::vector<ModelType> GetAllModelTypes() {
@@ -185,11 +192,6 @@ class FclModelDeathTests : public ModelTestBase,
     model_->AddElement(make_unique<Element>(geom));
   }
 
-  void CallAddCapsule() {
-    const DrakeShapes::Capsule geom{1, 1};
-    model_->AddElement(make_unique<Element>(geom));
-  }
-
   void CallClosestPointsAllToAll() {
     std::vector<ElementId> ids;
     std::vector<PointPair> pairs;
@@ -229,8 +231,7 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
-    ::testing::Values(&FclModelDeathTests::CallAddCapsule,
-                      &FclModelDeathTests::CallAddMesh,
+    ::testing::Values(&FclModelDeathTests::CallAddMesh,
                       &FclModelDeathTests::CallClosestPointsAllToAll,
                       &FclModelDeathTests::CallCollisionDetectFromPoints,
                       &FclModelDeathTests::CallClearCachedResults,
@@ -485,21 +486,11 @@ std::vector<ShapeVsShapeTestParam> GenerateSphereVsCylinderParam() {
   return params;
 }
 
-// Instantiate pairwise test cases.
-INSTANTIATE_TEST_CASE_P(SphereVsSphere, ShapeVsShapeTest,
-                        ::testing::ValuesIn(GenerateSphereVsSphereParam()));
-
-INSTANTIATE_TEST_CASE_P(CylinderVsCylinder, ShapeVsShapeTest,
-                        ::testing::ValuesIn(GenerateCylinderVsCylinderParam()));
-
-INSTANTIATE_TEST_CASE_P(SphereVsCylinder, ShapeVsShapeTest,
-                        ::testing::ValuesIn(GenerateSphereVsCylinderParam()));
-
 // A sphere of diameter 1.0 is placed  above a box.  The sphere overlaps with
 // the box with its deepest penetration point (the bottom) 0.25 units into the
 // box (negative distance). Only one contact point is expected when colliding
 // with a sphere.
-std::vector<ShapeVsShapeTestParam> generateBoxVsSphereParam() {
+std::vector<ShapeVsShapeTestParam> GenerateBoxVsSphereParam() {
   // Box
   DrakeShapes::Box box{Vector3d(1, 1, 1)};
   Isometry3d X_WA;
@@ -531,10 +522,7 @@ std::vector<ShapeVsShapeTestParam> generateBoxVsSphereParam() {
   return params;
 }
 
-INSTANTIATE_TEST_CASE_P(BoxVsSphereTest, ShapeVsShapeTest,
-                        ::testing::ValuesIn(generateBoxVsSphereParam()));
-
-std::vector<ShapeVsShapeTestParam> generateBoxVsBoxParam() {
+std::vector<ShapeVsShapeTestParam> GenerateBoxVsBoxParam() {
   // First box
   DrakeShapes::Box box_A{Vector3d(1, 1, 1)};
   Isometry3d X_WA;
@@ -568,8 +556,57 @@ std::vector<ShapeVsShapeTestParam> generateBoxVsBoxParam() {
   return params;
 }
 
+std::vector<ShapeVsShapeTestParam> GenerateCapsuleVsCapsuleParam() {
+  DrakeShapes::Capsule geom_A{0.5, 1};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  X_WA.rotate(Eigen::AngleAxisd(M_PI_2, Vector3d(-1.0, 0.0, 0.0)));
+  Vector3d p_WP{0.0, 1.0, 0.0};
+  Vector3d p_AP{0.0, 0.0, 1.0};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second geom
+  DrakeShapes::Capsule geom_B{0.5, 1};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
+  Vector3d p_WQ{0.0, 0.75, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : GetUsableModelTypes()) {
+    params.push_back(ShapeVsShapeTestParam(model_type, geom_A, geom_B, X_WA,
+                                           X_WB, surface_point_A,
+                                           surface_point_B));
+    params.push_back(ShapeVsShapeTestParam(model_type, geom_B, geom_A, X_WB,
+                                           X_WA, surface_point_B,
+                                           surface_point_A));
+  }
+
+  return params;
+}
+
+// Instantiate pairwise test cases.
+INSTANTIATE_TEST_CASE_P(SphereVsSphere, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateSphereVsSphereParam()));
+
+INSTANTIATE_TEST_CASE_P(CylinderVsCylinder, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateCylinderVsCylinderParam()));
+
+INSTANTIATE_TEST_CASE_P(SphereVsCylinder, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateSphereVsCylinderParam()));
+
+INSTANTIATE_TEST_CASE_P(BoxVsSphere, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateBoxVsSphereParam()));
+
 INSTANTIATE_TEST_CASE_P(BoxVsBox, ShapeVsShapeTest,
-                        ::testing::ValuesIn(generateBoxVsBoxParam()));
+                        ::testing::ValuesIn(GenerateBoxVsBoxParam()));
+
+INSTANTIATE_TEST_CASE_P(CapsuleVsCapsule, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateCapsuleVsCapsuleParam()));
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,
