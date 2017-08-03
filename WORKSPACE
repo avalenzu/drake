@@ -254,9 +254,9 @@ github_archive(
 
 github_archive(
     name = "fcl",
-    repository = "flexible-collision-library/fcl",
-    commit = "06d48b3b6f3605b8caf119d5208d8156eb64fe0d",
-    sha256 = "da86ed593a908d075657a305abec1670b895278a99ba76632b7afb6e678a9978",  # noqa
+    repository = "avalenzu/fcl",
+    commit = "57db3d7eece6b03d5e8f0025a587e1f0106161b1",
+    sha256 = "c80526f9ea29f4ce1a0e663ff3419995f9027442b09e02dd03deee1f85164f86",  # noqa
     build_file = "tools/workspace/fcl/fcl.BUILD.bazel",
 )
 
