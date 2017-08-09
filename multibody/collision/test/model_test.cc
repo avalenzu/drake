@@ -84,6 +84,13 @@ class ModelTestBase : public ::testing::Test {
     return model_->AddElement(make_unique<Element>(geom));
   }
 
+  Element* AddMesh(
+      std::string file = "drake/multibody/collision/test/ripple_cap.obj") {
+    std::string file_name = drake::FindResourceOrThrow(file);
+    const DrakeShapes::Mesh geom{file_name, file_name};
+    return model_->AddElement(make_unique<Element>(geom));
+  }
+
   void RemoveElement(const Element& element) {
     model_->RemoveElement(element.getId());
   }
@@ -120,6 +127,10 @@ TEST_P(AllModelTypesTests, AddElement) {
   EXPECT_EQ(elem->getShape(), DrakeShapes::BOX);
   elem = AddCapsule();
   EXPECT_EQ(elem->getShape(), DrakeShapes::CAPSULE);
+  elem = AddCylinder();
+  EXPECT_EQ(elem->getShape(), DrakeShapes::CYLINDER);
+  elem = AddMesh();
+  EXPECT_EQ(elem->getShape(), DrakeShapes::MESH);
 }
 
 std::vector<ModelType> GetAllModelTypes() {
@@ -185,13 +196,6 @@ class FclModelDeathTests : public ModelTestBase,
     model_ = drake::multibody::collision::newModel(ModelType::kFcl);
   }
 
-  void CallAddMesh() {
-    std::string file_name = drake::FindResourceOrThrow(
-        "drake/multibody/collision/test/ripple_cap.obj");
-    const DrakeShapes::Mesh geom{file_name, file_name};
-    model_->AddElement(make_unique<Element>(geom));
-  }
-
   void CallClosestPointsAllToAll() {
     std::vector<ElementId> ids;
     std::vector<PointPair> pairs;
@@ -231,8 +235,7 @@ TEST_P(FclModelDeathTests, NotImplemented) {
 
 INSTANTIATE_TEST_CASE_P(
     NotImplementedTest, FclModelDeathTests,
-    ::testing::Values(&FclModelDeathTests::CallAddMesh,
-                      &FclModelDeathTests::CallClosestPointsAllToAll,
+    ::testing::Values(&FclModelDeathTests::CallClosestPointsAllToAll,
                       &FclModelDeathTests::CallCollisionDetectFromPoints,
                       &FclModelDeathTests::CallClearCachedResults,
                       &FclModelDeathTests::CallCollisionRaycast,
@@ -589,6 +592,41 @@ std::vector<ShapeVsShapeTestParam> GenerateCapsuleVsCapsuleParam() {
   return params;
 }
 
+std::vector<ShapeVsShapeTestParam> GenerateMeshVsBoxParam() {
+  // First box (as mesh)
+  std::string file_name =
+      drake::FindResourceOrThrow("drake/multibody/collision/test/tri_cube.obj");
+  DrakeShapes::Mesh geom_A{file_name, file_name};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  Vector3d p_WP{0.0, 1.0, 0.0};
+  Vector3d p_AP{0.0, 0.5, 0.0};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second box
+  DrakeShapes::Box box_B{1.0 / std::sqrt(3) * Vector3d(1, 1, 1)};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  double theta{atan2(M_SQRT1_2, 0.5)};
+  X_WB.rotate(Eigen::AngleAxisd(-theta, Vector3d(M_SQRT1_2, 0, M_SQRT1_2)));
+  X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
+  Vector3d p_WQ{0.0, 0.75, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  for (ModelType model_type : GetUsableModelTypes()) {
+    params.push_back(ShapeVsShapeTestParam(model_type, geom_A, box_B, X_WA, X_WB,
+                                           surface_point_A, surface_point_B));
+    params.push_back(ShapeVsShapeTestParam(model_type, box_B, geom_A, X_WB, X_WA,
+                                           surface_point_B, surface_point_A));
+  }
+
+  return params;
+}
+
 // Instantiate pairwise test cases.
 INSTANTIATE_TEST_CASE_P(SphereVsSphere, ShapeVsShapeTest,
                         ::testing::ValuesIn(GenerateSphereVsSphereParam()));
@@ -607,6 +645,9 @@ INSTANTIATE_TEST_CASE_P(BoxVsBox, ShapeVsShapeTest,
 
 INSTANTIATE_TEST_CASE_P(CapsuleVsCapsule, ShapeVsShapeTest,
                         ::testing::ValuesIn(GenerateCapsuleVsCapsuleParam()));
+
+INSTANTIATE_TEST_CASE_P(MeshVsBox, ShapeVsShapeTest,
+                        ::testing::ValuesIn(GenerateMeshVsBoxParam()));
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,
