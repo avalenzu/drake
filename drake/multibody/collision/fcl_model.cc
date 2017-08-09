@@ -149,6 +149,37 @@ void FclModel::DoAddElement(const Element& element) {
         fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
             new fcl::Capsuled(capsule.radius, capsule.length));
       } break;
+      case DrakeShapes::MESH: {
+        const auto mesh =
+            static_cast<const DrakeShapes::Mesh&>(element.getGeometry());
+        // Create MeshData struct to own the actual data
+        fcl_mesh_data_.emplace_back();
+        MeshData& mesh_data = fcl_mesh_data_.back();
+
+        // Get the points and faces
+        DrakeShapes::PointsVector& vertices = mesh_data.points_;
+        DrakeShapes::TrianglesVector triangles;
+        mesh.LoadObjFile(&vertices, &triangles, DrakeShapes::Mesh::TriangulatePolicy::kTry);
+
+        // Store the necessary data in the struct
+        for (Eigen::Vector3i triangle : triangles) {
+          const Vector3d& v0 = vertices[triangle[0]];
+          const Vector3d& v1 = vertices[triangle[1]];
+          const Vector3d& v2 = vertices[triangle[2]];
+          mesh_data.plane_normals_.push_back((v1 - v0).cross(v2 - v0));
+          const Vector3d& normal = mesh_data.plane_normals_.back();
+          mesh_data.plane_dis_.push_back(normal.dot(v0));
+          mesh_data.polygons_.push_back(3);
+          for (int i = 0; i < 3; ++i) {
+            mesh_data.polygons_.push_back(triangle[i]);
+          }
+        }
+        fcl_geometry =
+            std::shared_ptr<fcl::CollisionGeometryd>(new fcl::Convexd(
+                mesh_data.plane_normals_.data(), mesh_data.plane_dis_.data(),
+                mesh_data.plane_dis_.size(), mesh_data.points_.data(),
+                mesh_data.points_.size(), mesh_data.polygons_.data()));
+      } break;
       default:
         DRAKE_ABORT_MSG("Not implemented.");
         break;

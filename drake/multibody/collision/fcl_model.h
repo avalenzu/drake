@@ -53,8 +53,17 @@ class FclModel : public Model {
       ElementId, const Eigen::Isometry3d& T_local_to_world) override;
 
  private:
+  struct MeshData {
+    std::vector<Eigen::Vector3d> plane_normals_;
+    std::vector<double> plane_dis_;
+    std::vector<Eigen::Vector3d> points_;
+    std::vector<int> polygons_;
+  };
+
   fcl::DynamicAABBTreeCollisionManager<double> broadphase_manager_;
   ElementToFclObjMap fcl_collision_objects_;
+  // The fcl::Convex class does not own its data, so we store it here.
+  std::vector<MeshData> fcl_mesh_data_{};
 };
 
 }  // namespace collision
