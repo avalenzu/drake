@@ -180,8 +180,8 @@ github_archive(
 github_archive(
     name = "fcl",
     repository = "avalenzu/fcl",
-    commit = "9536fdd139550bb03796ddb7781c75389cbe3c62",
-    sha256 = "687fed8f8c35340c0d419dccec9fbe98f22acf26ff2c44f90f6ba35bd97fa17b",  # noqa
+    commit = "57db3d7eece6b03d5e8f0025a587e1f0106161b1",
+    sha256 = "443039f2091ccd54d2fb655559f77635e0705692e6a63912ec212767985793f3",  # noqa
     build_file = "tools/fcl.BUILD",
 )
 
