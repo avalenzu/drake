@@ -238,9 +238,9 @@ github_archive(
 
 github_archive(
     name = "ccd",
-    repository = "danfis/libccd",
-    commit = "v2.0",
-    sha256 = "1b4997e361c79262cf1fe5e1a3bf0789c9447d60b8ae2c1f945693ad574f9471",  # noqa
+    repository = "avalenzu/libccd",
+    commit = "abe0572bc074bc6eda13437334dee780066a1a92",
+    sha256 = "8ed1fe10e6eb2291fdbe8dd12d3d7412cd7f8523db4b03a30ace6e547abf1eb6",  # noqa
     build_file = "tools/workspace/ccd/ccd.BUILD.bazel",
 )
 
