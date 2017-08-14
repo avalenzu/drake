@@ -94,6 +94,9 @@ class PickAndPlaceStateMachine {
 
   Vector3<double> loose_pos_tol_;
   double loose_rot_tol_;
+
+  // Desired end-effector end-pose for various states
+  std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
 };
 
 }  // namespace pick_and_place

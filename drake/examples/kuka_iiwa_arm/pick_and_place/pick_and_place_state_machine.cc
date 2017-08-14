@@ -91,6 +91,41 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
   return planner_result;
 }
 
+// 
+//  (ApproachPickPregrasp,                               (ApproachPlacePregrasp
+//   LiftFromPick ),                                      LiftFromPlace)
+//       +--------------------------------------------------------+
+//       |                                                        |
+//       |                                                        |
+//       + (ApproachPick)                         (ApproachPlace) +
+void SetDesiredTransforms(
+    const WorldState& env_state, const Isometry3<double>& place_location,
+    std::map<PickAndPlaceState, Isometry3<double>>* X_WE_desired) {
+  X_WE_desired->clear();
+
+  // Set ApproachPick pose
+  X_WE_desired->at(kApproachPick) =
+      ComputeGraspPose(env_state.get_object_pose());
+
+  // Set ApproachPickPregrasp pose
+  X_WE_desired->at(kApproachPickPregrasp) = X_WE_desired->at(kApproachPick);
+  X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
+      kPreGraspHeightOffset;
+
+  // Set LiftFromPick pose
+  X_WE_desired->at(kLiftFromPick) = X_WE_desired->at(kApproachPickPregrasp);
+
+  // Set ApproachPlace pose
+  X_WE_desired->at(kApproachPlace) = env_state.get_iiwa_base() * place_location;
+
+  // Set ApproachPlacePregrasp pose
+  X_WE_desired->at(kApproachPlacePregrasp).translation()[2] +=
+      kPreGraspHeightOffset;
+
+  // Set LiftFromPlace pose
+  X_WE_desired->at(kLiftFromPlace) = X_WE_desired->at(kApproachPlacePregrasp);
+}
+
 }  // namespace
 
 
