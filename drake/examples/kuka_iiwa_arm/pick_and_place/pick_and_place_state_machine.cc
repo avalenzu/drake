@@ -98,32 +98,36 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
 //       |                                                        |
 //       |                                                        |
 //       + (ApproachPick)                         (ApproachPlace) +
-void SetDesiredTransforms(
+void ComputeDesiredPoses(
     const WorldState& env_state, const Isometry3<double>& place_location,
     std::map<PickAndPlaceState, Isometry3<double>>* X_WE_desired) {
   X_WE_desired->clear();
 
   // Set ApproachPick pose
-  X_WE_desired->at(kApproachPick) =
-      ComputeGraspPose(env_state.get_object_pose());
+  X_WE_desired->emplace(kApproachPick,
+                        ComputeGraspPose(env_state.get_object_pose()));
 
   // Set ApproachPickPregrasp pose
-  X_WE_desired->at(kApproachPickPregrasp) = X_WE_desired->at(kApproachPick);
+  X_WE_desired->emplace(kApproachPickPregrasp, X_WE_desired->at(kApproachPick));
   X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
       kPreGraspHeightOffset;
 
   // Set LiftFromPick pose
-  X_WE_desired->at(kLiftFromPick) = X_WE_desired->at(kApproachPickPregrasp);
+  X_WE_desired->emplace(kLiftFromPick, X_WE_desired->at(kApproachPickPregrasp));
 
   // Set ApproachPlace pose
-  X_WE_desired->at(kApproachPlace) = env_state.get_iiwa_base() * place_location;
+  X_WE_desired->emplace(kApproachPlace,
+                        env_state.get_iiwa_base() * place_location);
 
   // Set ApproachPlacePregrasp pose
+  X_WE_desired->emplace(kApproachPlacePregrasp,
+                        X_WE_desired->at(kApproachPlace));
   X_WE_desired->at(kApproachPlacePregrasp).translation()[2] +=
       kPreGraspHeightOffset;
 
   // Set LiftFromPlace pose
-  X_WE_desired->at(kLiftFromPlace) = X_WE_desired->at(kApproachPlacePregrasp);
+  X_WE_desired->emplace(kLiftFromPlace,
+                        X_WE_desired->at(kApproachPlacePregrasp));
 }
 
 }  // namespace
@@ -179,13 +183,15 @@ void PickAndPlaceStateMachine::Update(
       }
 
     case kApproachPickPregrasp: {
+      // Compute all the desired end-effector poses now
+      ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
+                          &X_WE_desired_);
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
         // Computes the desired end effector pose in the world frame to be
         // kPreGraspHeightOffset above the object.
         X_Wend_effector_0_ = env_state.get_iiwa_end_effector_pose();
-        X_Wend_effector_1_ = ComputeGraspPose(env_state.get_object_pose());
-        X_Wend_effector_1_.translation()[2] += kPreGraspHeightOffset;
+        X_Wend_effector_1_ = X_WE_desired_[kApproachPickPregrasp];
 
         // 2 seconds, no via points.
         bool res = PlanStraightLineMotion(
