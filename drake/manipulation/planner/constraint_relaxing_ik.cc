@@ -55,7 +55,7 @@ bool ConstraintRelaxingIk::PlanSequentialTrajectory(
   enum class RelaxMode { kRelaxPosTol = 0, kRelaxRotTol = 1 };
 
   // These numbers are arbitrarily picked by siyuan.
-  const int kMaxNumInitialGuess = 50;
+  const int kMaxNumInitialGuess = 1;
   const int kMaxNumConstraintRelax = 10;
   const Vector3<double> kInitialPosTolerance(0.01, 0.01, 0.01);
   const double kInitialRotTolerance = 0.01;

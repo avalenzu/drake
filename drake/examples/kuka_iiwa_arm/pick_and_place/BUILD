@@ -42,11 +42,20 @@ drake_cc_library(
 drake_cc_googletest(
     name = "pick_and_place_state_machine_test",
     data = [
+        "//drake/examples/kuka_iiwa_arm:models",
         "//drake/manipulation/models/iiwa_description:models",
     ],
     deps = [
         ":pick_and_place",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody/parsers",
+        "//drake/lcm",
         "//drake/common:find_resource",
+        "//drake/multibody/rigid_body_plant:drake_visualizer",
+        "//drake/examples/kuka_iiwa_arm:robot_plan_interpolator",
+        "//drake/systems/analysis:simulator",
+        "//drake/systems/primitives:zero_order_hold",
+        "//drake/systems/primitives:signal_logger",
     ],
 )
 

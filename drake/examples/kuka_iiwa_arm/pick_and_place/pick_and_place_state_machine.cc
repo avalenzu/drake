@@ -42,7 +42,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
                             const double via_points_rot_tolerance,
                             ConstraintRelaxingIk* planner, IKResults* ik_res,
                             std::vector<double>* times) {
-  DRAKE_DEMAND(duration > 0 && num_via_points >= 0);
+  DRAKE_THROW_UNLESS(duration > 0 && num_via_points >= 0);
   // Makes a slerp trajectory from start to end.
   const eigen_aligned_std_vector<Quaternion<double>> quats = {
       Quaternion<double>(X_WEndEffector0.linear()),
@@ -80,7 +80,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
     }
     waypoints[i].constrain_orientation = true;
   }
-  DRAKE_DEMAND(times->size() == waypoints.size() + 1);
+  DRAKE_THROW_UNLESS(times->size() == waypoints.size() + 1);
   const bool planner_result =
       planner->PlanSequentialTrajectory(waypoints, q_current, ik_res);
   drake::log()->debug("q initial: {}", q_current.transpose());
@@ -147,7 +147,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.05, 0.05, 0.05),
       loose_rot_tol_(0.5) {
-  DRAKE_DEMAND(!place_locations.empty());
+  DRAKE_THROW_UNLESS(!place_locations.empty());
 }
 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
@@ -199,7 +199,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 0, 2,
             X_Wend_effector_0_, X_Wend_effector_1_,
             loose_pos_tol_, loose_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -228,7 +228,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 3, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -289,7 +289,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 3, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -316,7 +316,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 0, 2,
             X_Wend_effector_0_, X_Wend_effector_1_,
             loose_pos_tol_, loose_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -345,7 +345,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 3, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -390,7 +390,7 @@ void PickAndPlaceStateMachine::Update(
             env_state.get_iiwa_q(), 5, 2,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
-        DRAKE_DEMAND(res);
+        DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
