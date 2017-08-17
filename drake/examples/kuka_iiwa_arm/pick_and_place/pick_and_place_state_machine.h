@@ -97,6 +97,7 @@ class PickAndPlaceStateMachine {
 
   // Desired end-effector end-pose for various states
   std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
+  std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
 };
 
 }  // namespace pick_and_place

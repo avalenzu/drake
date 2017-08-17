@@ -131,6 +131,46 @@ void ComputeDesiredPoses(
                         X_WE_desired->at(kApproachPlacePregrasp));
 }
 
+void ComputeNominalConfigurations(
+    const RigidBodyTree<double>& iiwa,
+    const std::map<PickAndPlaceState, Isometry3<double>>& X_WE_desired,
+    std::map<PickAndPlaceState, VectorX<double>>* nominal_q_map) {
+  std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
+  IKoptions ikoptions(robot.get());
+  ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(), robot->get_num_positions()));
+  int num_knots = X_WE_desired.size();
+  VectorX<double> t = VectorX<double>::LinSpaced(num_knots, 0, num_knots-1);
+  MatrixX<double> q_seed = MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
+  MatrixX<double> q_nom = MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
+  std::vector<WorldPositionConstraint> position_constraints;
+  std::vector<WorldQuatConstraint> orientation_constraints;
+  std::vector<RigidBodyConstraint*> constraint_array;
+  Vector2<double> tspan;
+  tspan << 0, 0;
+  int  end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
+  Matrix3X<double> end_effector_points = Matrix3X<double>::Zero(3, 1);
+  std::vector<PickAndPlaceState> pick_and_place_states{
+      kApproachPickPregrasp,  kApproachPick,  kLiftFromPick,
+      kApproachPlacePregrasp, kApproachPlace, kLiftFromPlace};
+  for (PickAndPlaceState state : pick_and_place_states) {
+    const Isometry3<double>& X_WE = X_WE_desired.at(state);
+    const Vector3<double>& r_WE = X_WE.translation();
+    const Quaternion<double>& quat_WE{X_WE.rotation()};
+    position_constraints.emplace_back(robot.get(), end_effector_body_idx, end_effector_points, r_WE, r_WE, tspan);
+    orientation_constraints.emplace_back(robot.get(), end_effector_body_idx, quat_WE.coeffs(), 0, tspan);
+    constraint_array.push_back(&position_constraints.back());
+    constraint_array.push_back(&orientation_constraints.back());
+    tspan[0] += 1.0;
+    tspan[1] += 1.0;
+  }
+  IKResults ik_res = inverseKinTrajSimple(robot.get(), t, q_seed, q_nom, constraint_array, ikoptions); 
+  int knot_index{0};
+  for (PickAndPlaceState state : pick_and_place_states) {
+    nominal_q_map->emplace(state, ik_res.q_sol[knot_index]);
+    ++knot_index;
+  }
+}
+
 }  // namespace
 
 
@@ -187,6 +227,8 @@ void PickAndPlaceStateMachine::Update(
       // Compute all the desired end-effector poses now
       ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
                           &X_WE_desired_);
+      ComputeNominalConfigurations(planner->get_robot(), X_WE_desired_, &nominal_q_map_);
+
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
         // Computes the desired end effector pose in the world frame to be
