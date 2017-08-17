@@ -1,5 +1,7 @@
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_state_machine.h"
 
+#include <fstream>
+
 #include <gtest/gtest.h>
 #include "bot_core/robot_state_t.hpp"
 #include "robotlocomotion/robot_plan_t.hpp"
@@ -28,6 +30,7 @@ const char* const kIiwaUrdf =
     "drake/manipulation/models/iiwa_description/urdf/"
     "iiwa14_polytope_collision.urdf";
 
+
 struct TestStep {
   int iiwa_plan_count_expected;
   int wsg_command_count_expected;
@@ -39,7 +42,10 @@ class PickAndPlaceInitialConditionTest
           std::tuple<double, double, double, bool>> {
  public:
   virtual void SetUp() {
-    bool visualize{std::get<3>(GetParam())};
+    x_ += std::get<0>(GetParam());
+    y_ += std::get<1>(GetParam());
+    theta_ += std::get<2>(GetParam());
+    visualize_ =std::get<3>(GetParam());
 
     systems::DiagramBuilder<double> builder;
 
@@ -61,7 +67,7 @@ class PickAndPlaceInitialConditionTest
     builder.Connect(iiwa_trajectory_generator_->get_state_output_port(),
                     logger_->get_input_port(0));
 
-    if (visualize) {
+    if (visualize()) {
       auto visualizer =
           builder.AddSystem<systems::DrakeVisualizer>(*iiwa_, &lcm_);
       builder.Connect(iiwa_trajectory_generator_->get_state_output_port(),
@@ -71,7 +77,7 @@ class PickAndPlaceInitialConditionTest
     sys_ = builder.Build();
 
     simulator_ = std::make_unique<systems::Simulator<double>>(*sys_);
-    if (visualize) {
+    if (visualize()) {
       simulator_->set_target_realtime_rate(1);
     }
     simulator_->get_mutable_integrator()->set_maximum_step_size(0.1);
@@ -98,13 +104,45 @@ class PickAndPlaceInitialConditionTest
     return logger_->data();
   }
 
+  void WriteToResultsFile(bool success) {
+    if (!visualize()) {
+      std::ofstream status_file{"pick_and_place_status.csv",
+                                std::ofstream::app};
+      Eigen::IOFormat FlattenedCsvFormat(Eigen::FullPrecision,
+                                         Eigen::DontAlignCols, ", ", ", ", "",
+                                         "", "", "");
+      Eigen::Vector4d x_y_z_theta{x(), y(), z(), theta()};
+      status_file << x_y_z_theta.format(FlattenedCsvFormat) << ", " << success
+                  << '\n';
+      status_file.close();
+      if (success) {
+        std::ofstream trajectory_file{"pick_and_place_trajectories.csv",
+                                      std::ofstream::app};
+        trajectory_file << x_y_z_theta.format(FlattenedCsvFormat) << ", "
+                        << joint_positions().format(FlattenedCsvFormat) << '\n';
+        trajectory_file.close();
+      }
+    }
+  }
+
+  double x() const { return x_; }
+  double y() const { return y_; }
+  double z() const { return z_; }
+  double theta() const { return theta_; }
+  double visualize() const { return visualize_; }
+
  private:
+  bool visualize_;
   lcm::DrakeLcm lcm_;
   std::unique_ptr<RigidBodyTree<double>> iiwa_;
   std::unique_ptr<systems::Simulator<double>> simulator_;
   RobotPlanInterpolator* iiwa_trajectory_generator_;
   systems::SignalLogger<double>* logger_;
   std::unique_ptr<systems::Diagram<double>> sys_;
+  double x_{0.80};
+  double y_{-0.36};
+  double z_{0.27};
+  double theta_;
 };
 
 // Create a test scenario where the iiwa picks up an object 80cm in
@@ -156,14 +194,13 @@ TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
 
   bot_core::robot_state_t object_msg{};
   object_msg.utime = 1000;
-  object_msg.pose.translation.x = std::get<0>(GetParam());
-  object_msg.pose.translation.y = std::get<1>(GetParam());
-  object_msg.pose.translation.z = 0.27;
-  double theta = std::get<2>(GetParam());
-  object_msg.pose.rotation.w = cos(theta/2);
+  object_msg.pose.translation.x = x();
+  object_msg.pose.translation.y = y();
+  object_msg.pose.translation.z = z();
+  object_msg.pose.rotation.w = cos(theta()/2);
   object_msg.pose.rotation.x = 0;
   object_msg.pose.rotation.y = 0;
-  object_msg.pose.rotation.z = sin(theta/2);
+  object_msg.pose.rotation.z = sin(theta()/2);
   world_state.HandleObjectStatus(object_msg);
 
   int iiwa_plan_count = 0;
@@ -217,28 +254,25 @@ TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
       world_state.HandleObjectStatus(object_msg);
     }
 
-    ASSERT_NO_THROW(
-        dut.Update(world_state, iiwa_callback, wsg_callback, &planner));
-  }
-  ASSERT_TRUE(kIiwaArmNumJoints < joint_positions().rows());
-  double kTolerance{2e-1};
-  for (int i = 0; i < kIiwaArmNumJoints; ++i) {
-    for (int j = 1; j < joint_positions().cols(); ++j) {
-      EXPECT_LE(std::abs(joint_positions()(i, j) - joint_positions()(i, j - 1)),
-                kTolerance);
+    try {
+        dut.Update(world_state, iiwa_callback, wsg_callback, &planner);
+    } catch (...) {
+      WriteToResultsFile(false);
+      ASSERT_TRUE(false);
     }
   }
+  WriteToResultsFile(true);
 }
 
 INSTANTIATE_TEST_CASE_P(WithoutVisualization, PickAndPlaceInitialConditionTest,
-                        ::testing::Combine(::testing::Range(-1.0, 1.0, 0.2),
-                                           ::testing::Range(-1.0, 1.0, 0.2),
-                                           ::testing::Range(-M_PI, M_PI-M_PI_4, M_PI_4),
+                        ::testing::Combine(::testing::Range(-0.1, 0.1, 0.01),
+                                           ::testing::Range(-0.1, 0.1, 0.01),
+                                           ::testing::Range(-M_PI_2, M_PI_2, 0.5*M_PI_4),
                                            ::testing::Values(false)));
 INSTANTIATE_TEST_CASE_P(WithVisualization, PickAndPlaceInitialConditionTest,
-                        ::testing::Combine(::testing::Range(-1.0, 1.0, 0.2),
-                                           ::testing::Range(-1.0, 1.0, 0.2),
-                                           ::testing::Range(-M_PI, M_PI-M_PI_4, M_PI_4),
+                        ::testing::Combine(::testing::Range(-0.1, 0.1, 0.01),
+                                           ::testing::Range(-0.1, 0.1, 0.01),
+                                           ::testing::Range(-M_PI_2, M_PI_2, 0.5*M_PI_4),
                                            ::testing::Values(true)));
 }  // namespace
 }  // namespace pick_and_place
