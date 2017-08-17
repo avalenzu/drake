@@ -112,6 +112,7 @@ class PickAndPlaceInitialConditionTest
 // center of the robot).  The test uses a single place location and
 // does not loop.  The choice of the pick/place location is arbitrary.
 TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
+  drake::log()->set_level(spdlog::level::err);
   Isometry3<double> place_location;
   place_location.translation() = Eigen::Vector3d(0.80, 0.36, 0);
   place_location.linear().setIdentity();
@@ -155,8 +156,8 @@ TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
 
   bot_core::robot_state_t object_msg{};
   object_msg.utime = 1000;
-  object_msg.pose.translation.x = 0.80 + std::get<0>(GetParam());
-  object_msg.pose.translation.y = -0.36 + std::get<1>(GetParam());
+  object_msg.pose.translation.x = std::get<0>(GetParam());
+  object_msg.pose.translation.y = std::get<1>(GetParam());
   object_msg.pose.translation.z = 0.27;
   double theta = std::get<2>(GetParam());
   object_msg.pose.rotation.w = cos(theta/2);
@@ -230,14 +231,14 @@ TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
 }
 
 INSTANTIATE_TEST_CASE_P(WithoutVisualization, PickAndPlaceInitialConditionTest,
-                        ::testing::Combine(::testing::Range(-0.25, 0.25, 0.05),
-                                           ::testing::Range(-0.25, 0.25, 0.05),
-                                           ::testing::Values(0),
+                        ::testing::Combine(::testing::Range(-1.0, 1.0, 0.2),
+                                           ::testing::Range(-1.0, 1.0, 0.2),
+                                           ::testing::Range(-M_PI, M_PI-M_PI_4, M_PI_4),
                                            ::testing::Values(false)));
 INSTANTIATE_TEST_CASE_P(WithVisualization, PickAndPlaceInitialConditionTest,
-                        ::testing::Combine(::testing::Range(-0.25, 0.25, 0.05),
-                                           ::testing::Range(-0.25, 0.25, 0.05),
-                                           ::testing::Values(0),
+                        ::testing::Combine(::testing::Range(-1.0, 1.0, 0.2),
+                                           ::testing::Range(-1.0, 1.0, 0.2),
+                                           ::testing::Range(-M_PI, M_PI-M_PI_4, M_PI_4),
                                            ::testing::Values(true)));
 }  // namespace
 }  // namespace pick_and_place
