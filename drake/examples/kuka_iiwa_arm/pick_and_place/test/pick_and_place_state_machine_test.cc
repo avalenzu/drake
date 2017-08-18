@@ -150,7 +150,7 @@ class PickAndPlaceInitialConditionTest
 // center of the robot).  The test uses a single place location and
 // does not loop.  The choice of the pick/place location is arbitrary.
 TEST_P(PickAndPlaceInitialConditionTest, InitialConditionTest) {
-  drake::log()->set_level(spdlog::level::err);
+  drake::log()->set_level(spdlog::level::debug);
   Isometry3<double> place_location;
   place_location.translation() = Eigen::Vector3d(0.80, 0.36, 0);
   place_location.linear().setIdentity();

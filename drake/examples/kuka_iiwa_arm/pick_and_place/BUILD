@@ -4,6 +4,7 @@
 load(
     "//tools:drake.bzl",
     "drake_cc_googletest",
+    "drake_cc_binary",
     "drake_cc_library",
 )
 load("//tools:lint.bzl", "add_lint_tests")
@@ -36,6 +37,30 @@ drake_cc_library(
         "//drake/util:lcm_util",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_binary(
+    name = "ik_traj_scratch",
+    srcs = [
+        "ik_traj_scratch.cc",
+    ],
+    data = [
+        "//drake/examples/kuka_iiwa_arm:models",
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":pick_and_place",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody/parsers",
+        "//drake/lcm",
+        "//drake/common:find_resource",
+        "//drake/multibody/rigid_body_plant:drake_visualizer",
+        "//drake/examples/kuka_iiwa_arm:robot_plan_interpolator",
+        "//drake/systems/analysis:simulator",
+        "//drake/systems/primitives:zero_order_hold",
+        "//drake/systems/primitives:signal_logger",
+        "@com_github_gflags_gflags//:gflags",
     ],
 )
 

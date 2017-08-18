@@ -532,6 +532,7 @@ void inverseKinTrajBackend(RigidBodyTree<double>* model, const int nT,
 
   const SolutionResult result = prog.Solve();
   *info = GetIKSolverInfo(result);
+  drake::log()->debug("Info: {}", *info);
 
   // Populate the output arguments.
   const auto q_value = prog.GetSolution(q);
