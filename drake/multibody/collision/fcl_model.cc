@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <fcl/fcl.h>
+#include <octomap/octomap.h>
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/unused.h"
@@ -179,6 +180,12 @@ void FclModel::DoAddElement(const Element& element) {
                 mesh_data.plane_normals_.data(), mesh_data.plane_dis_.data(),
                 mesh_data.plane_dis_.size(), mesh_data.points_.data(),
                 mesh_data.points_.size(), mesh_data.polygons_.data()));
+      } break;
+      case DrakeShapes::OCTREE: {
+        const auto octree =
+            static_cast<const DrakeShapes::OcTree&>(element.getGeometry());
+        fcl_geometry = std::shared_ptr<fcl::CollisionGeometryd>(
+            new fcl::OcTreed(octree.tree()));
       } break;
       default:
         DRAKE_ABORT_MSG("Not implemented.");

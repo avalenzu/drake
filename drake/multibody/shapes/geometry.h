@@ -1,9 +1,11 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <Eigen/Dense>
+#include <octomap/octomap.h>
 
 #include "drake/common/unused.h"
 
@@ -15,7 +17,8 @@ enum Shape {
   CYLINDER = 3,
   MESH = 4,
   MESH_POINTS = 5,
-  CAPSULE = 6
+  CAPSULE = 6,
+  OCTREE = 7
 };
 
 typedef std::vector<Eigen::Vector3d> PointsVector;
@@ -280,6 +283,16 @@ class MeshPoints : public Geometry {
   friend std::ostream& operator<<(std::ostream&, const MeshPoints&);
 
   Eigen::Matrix3Xd points;
+};
+
+class OcTree : public Geometry {
+ public:
+  explicit OcTree(const octomap::OcTree& tree);
+  virtual ~OcTree(){};
+  virtual OcTree* clone() const;
+  const std::shared_ptr<const octomap::OcTree>& tree() const { return tree_; };
+ private:
+  std::shared_ptr<const octomap::OcTree> tree_;
 };
 
 }  // namespace DrakeShapes

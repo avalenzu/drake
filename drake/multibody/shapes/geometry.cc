@@ -43,6 +43,8 @@ string ShapeToString(Shape ss) {
       return "MESH_POINTS";
     case CAPSULE:
       return "CAPSULE";
+    case OCTREE:
+      return "OCTREE";
   }
   return "UNDEFINED";
 }
@@ -550,5 +552,10 @@ ostream& operator<<(ostream& out, const MeshPoints& mp) {
   out << static_cast<const Geometry&>(mp) << ",\n" << mp.points;
   return out;
 }
+
+OcTree::OcTree(const octomap::OcTree& tree)
+    : Geometry(OCTREE), tree_(std::make_shared<octomap::OcTree>(tree)) {}
+
+OcTree* OcTree::clone() const { return new OcTree(*this); }
 
 }  // namespace DrakeShapes

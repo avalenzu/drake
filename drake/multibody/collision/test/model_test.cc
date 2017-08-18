@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <octomap/octomap.h>
 
 #include "drake/common/eigen_matrix_compare.h"
 #include "drake/common/find_resource.h"
@@ -87,6 +88,26 @@ class ModelTestBase : public ::testing::Test {
       std::string file = "drake/multibody/collision/test/ripple_cap.obj") {
     std::string file_name = drake::FindResourceOrThrow(file);
     const DrakeShapes::Mesh geom{file_name, file_name};
+    return model_->AddElement(make_unique<Element>(geom));
+  }
+
+  Element* AddOcTree() {
+    // Taken from fcl/test/test_fcl_utility.h generateOcTree
+    octomap::OcTree tree{0.05};
+
+    // Occupied region is a one meter, axis-aligned cube with its center at (0,
+    // 0, 0.5)
+    for (int x = -9; x < 10; x++) {
+      for (int z = -9; z < 10; z++) {
+        for (int y = 1; y < 20; y++) {
+          tree.updateNode(octomap::point3d(x * 0.05 - 0.025, y * 0.05 - 0.025,
+                                           z * 0.05 - 0.025),
+                          true);
+        }
+      }
+    }
+
+    const DrakeShapes::OcTree geom{tree};
     return model_->AddElement(make_unique<Element>(geom));
   }
 
@@ -578,6 +599,58 @@ std::vector<ShapeVsShapeTestParam> generateMeshVsBoxParam() {
 
 INSTANTIATE_TEST_CASE_P(MeshVsBox, ShapeVsShapeTest,
                         ::testing::ValuesIn(generateMeshVsBoxParam()));
+
+#ifndef DRAKE_DISABLE_FCL
+std::vector<ShapeVsShapeTestParam> generateOcTreeVsBoxParam() {
+  // First box (as OcTree)
+  octomap::OcTree tree{0.05};
+
+  // Occupied region is a one meter, axis-aligned cube with its center at (0,
+  // 0, 0.5)
+  for (int x = -9; x < 10; x++) {
+    for (int z = -9; z < 10; z++) {
+      for (int y = 1; y < 20; y++) {
+        tree.updateNode(octomap::point3d(x * 0.05 - 0.025, y * 0.05 - 0.025,
+                                         z * 0.05 - 0.025),
+                        true);
+      }
+    }
+  }
+
+  DrakeShapes::OcTree geom_A{tree};
+  Isometry3d X_WA;
+  X_WA.setIdentity();
+  Vector3d p_WP{0.0, 1.0, 0.0};
+  Vector3d p_AP{0.0, 0.5, 0.0};
+  Vector3d n_PQ_W{0.0, 1.0, 0.0};
+  SurfacePoint surface_point_A = {p_WP, p_AP, n_PQ_W};
+
+  // Second box
+  DrakeShapes::Box box_B{1.0 / std::sqrt(3) * Vector3d(1, 1, 1)};
+  Isometry3d X_WB;
+  X_WB.setIdentity();
+  double theta{atan2(M_SQRT1_2, 0.5)};
+  X_WB.rotate(Eigen::AngleAxisd(-theta, Vector3d(M_SQRT1_2, 0, M_SQRT1_2)));
+  X_WB.translation() = Vector3d(0.0, 1.25, 0.0);
+  Vector3d p_WQ{0.0, 0.75, 0.0};
+  Vector3d p_BQ{0.0, -0.5, 0.0};
+  Vector3d n_QP_W{0.0, -1.0, 0.0};
+  SurfacePoint surface_point_B = {p_WQ, p_BQ, n_QP_W};
+
+  std::vector<ShapeVsShapeTestParam> params;
+  params.push_back(ShapeVsShapeTestParam(ModelType::kFcl, geom_A, box_B, X_WA,
+                                         X_WB, surface_point_A,
+                                         surface_point_B));
+  params.push_back(ShapeVsShapeTestParam(ModelType::kFcl, box_B, geom_A, X_WB,
+                                         X_WA, surface_point_B,
+                                         surface_point_A));
+
+  return params;
+}
+
+INSTANTIATE_TEST_CASE_P(OcTreeVsBox, ShapeVsShapeTest,
+                        ::testing::ValuesIn(generateOcTreeVsBoxParam()));
+#endif
 
 // GENERAL REMARKS ON THE TESTS PERFORMED
 // A series of canonical tests are performed. These are Box_vs_Sphere,

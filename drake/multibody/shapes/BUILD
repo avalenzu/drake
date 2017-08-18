@@ -23,6 +23,7 @@ drake_cc_library(
         "//drake/common",
         "//drake/common:unused",
         "//drake/thirdParty:spruce",
+        "@octomap",
         "@tinyobjloader",
     ],
 )
