@@ -155,9 +155,8 @@ void ComputeNominalConfigurations(
   for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
     // Set up an inverse kinematics trajectory problem with one knot for each
     // state
-    int num_knots = 2*states.size() - 1;
-    int num_states = states.size();
-    VectorX<double> t = VectorX<double>::LinSpaced(num_knots, 0, num_states - 1);
+    int num_knots = states.size();
+    VectorX<double> t = VectorX<double>::LinSpaced(num_knots, 0, num_knots - 1);
     MatrixX<double> q_nom =
         MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
 
@@ -167,7 +166,7 @@ void ComputeNominalConfigurations(
     std::vector<RigidBodyConstraint*> constraint_array;
     Vector2<double> tspan;
     tspan << 0, 0;
-    for (int i = 0; i < num_states; ++i) {
+    for (int i = 0; i < num_knots; ++i) {
       // Extract desired position and orientation of end effector at the given
       // state
       PickAndPlaceState state{states[i]};
@@ -188,20 +187,8 @@ void ComputeNominalConfigurations(
           orientation_tolerance, tspan));
       constraint_array.push_back(position_constraints.back().get());
       constraint_array.push_back(orientation_constraints.back().get());
-      //tspan[0] += 2.0;
-      //tspan[1] += 2.0;
-      if (i < num_states-1) {
-        tspan[0] += 0.5;
-        tspan[1] += 0.5;
-        Vector3<double> r_WE_mid = 0.5 * (X_WE.translation() +
-                      X_WE_desired.at(states[i + 1]).translation());
-        position_constraints.emplace_back(new WorldPositionConstraint(
-              robot.get(), end_effector_body_idx, end_effector_points,
-              r_WE_mid - position_tolerance, r_WE_mid + position_tolerance, tspan));
-        constraint_array.push_back(position_constraints.back().get());
-        tspan[0] += 0.5;
-        tspan[1] += 0.5;
-      }
+      tspan[0] += 1.0;
+      tspan[1] += 1.0;
     }
     // Solve the IK problem
     const int kNumRestarts = 50;
