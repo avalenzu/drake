@@ -36,6 +36,7 @@ Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1. 
 bool PlanStraightLineMotion(const VectorX<double>& q_current,
+                            const VectorX<double>& q_final_seed,
                             const int num_via_points, double duration,
                             const Isometry3<double>& X_WEndEffector0,
                             const Isometry3<double>& X_WEndEffector1,
@@ -46,6 +47,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
   DRAKE_THROW_UNLESS(duration > 0 && num_via_points >= 0);
 
   std::unique_ptr<RigidBodyTree<double>> robot{planner->get_robot().Clone()};
+  int kNumJoints{robot->get_num_positions()};
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   int world_body_idx = robot->FindBodyIndex("world");
 
@@ -56,11 +58,10 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
       Quaternion<double>(X_WEndEffector0.linear()),
       Quaternion<double>(X_WEndEffector1.linear())};
 
-  drake::log()->debug("Planning straight line from {} {} to {} {}",
-                      pos[0].transpose(),
-                      math::rotmat2rpy(X_WEndEffector0.rotation()).transpose(),
-                      pos[1].transpose(),
-                      math::rotmat2rpy(X_WEndEffector1.rotation()).transpose());
+  drake::log()->debug(
+      "Planning straight line from {} {} to {} {}",
+      pos[0].transpose(), math::rotmat2rpy(X_WEndEffector0.rotation()).transpose(),
+      pos[1].transpose(), math::rotmat2rpy(X_WEndEffector1.rotation()).transpose());
 
   // Setup knot times
   const double dt = duration / (num_via_points + 1);
@@ -72,10 +73,14 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
     times->push_back(time);
   }
 
+  const int kNumKnots = times->size();
+
   // Define active times for initial, final, and intermediate constraints
   const Vector2<double> initial_tspan{times->front(), times->front()};
   const Vector2<double> intermediate_tspan{times->front(), times->back()};
   const Vector2<double> final_tspan{times->back(), times->back()};
+
+  std::vector<RigidBodyConstraint*> constraint_array;
 
   // Initial and final constraints
   const Vector3<double> end_points_pos_tolerance{0.1 * via_points_pos_tolerance};
@@ -105,6 +110,11 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
       robot.get(), end_effector_body_idx,
       Eigen::Vector4d(quats[1].w(), quats[1].x(), quats[1].y(), quats[1].z()),
       end_points_rot_tolerance, final_tspan};
+  const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots-1);
+  PostureConstraint final_posture_constraint{robot.get(), final_tspan};
+  final_posture_constraint.setJointLimits(
+      joint_indices.size(), joint_indices.data(), q_final_seed, q_final_seed);
+  constraint_array.push_back(&final_posture_constraint);
 
   // Construct intermediate constraints for via points
   // Find axis-angle representation of the rotation from X_WEndEffector0 to
@@ -133,32 +143,53 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
       dist_lb,
       dist_ub,
       intermediate_tspan};
+  constraint_array.push_back(&intermediate_position_constraint);
 
-  WorldGazeDirConstraint intermediate_orientation_constraint{
+  WorldGazeDirConstraint intermediate_gaze_constraint{
       robot.get(), end_effector_body_idx,    axis_E,
       dir_W,       via_points_rot_tolerance, intermediate_tspan};
 
-  std::vector<RigidBodyConstraint*> constraint_array;
+  WorldQuatConstraint intermediate_orientation_constraint{
+      robot.get(), end_effector_body_idx,
+      Eigen::Vector4d(quats[0].w(), quats[0].x(), quats[0].y(), quats[0].z()),
+      via_points_rot_tolerance, intermediate_tspan};
+  if (aaxis.angle() < via_points_rot_tolerance) {
+    constraint_array.push_back(&intermediate_orientation_constraint);
+  } else {
+    constraint_array.push_back(&intermediate_gaze_constraint);
+  }
+
   //constraint_array.push_back(&initial_position_constraint);
   //constraint_array.push_back(&initial_orientation_constraint);
-  constraint_array.push_back(&intermediate_position_constraint);
-  constraint_array.push_back(&intermediate_orientation_constraint);
-  constraint_array.push_back(&final_position_constraint);
-  constraint_array.push_back(&final_orientation_constraint);
+  //constraint_array.push_back(&final_position_constraint);
+  //constraint_array.push_back(&final_orientation_constraint);
+  const VectorX<double> ub_change = M_PI*VectorX<double>::Ones(kNumJoints);
+  const VectorX<double> lb_change = -ub_change;
+  PostureChangeConstraint posture_change_constraint{
+    robot.get(), joint_indices, lb_change, ub_change,
+      Vector2<double>(0, kNumKnots - 1)};
+  //constraint_array.push_back(&posture_change_constraint);
 
-  const int kNumKnots = times->size();
   std::default_random_engine rand_generator{1234};
   MatrixX<double> q_seed{robot->get_num_positions(), kNumKnots};
-  MatrixX<double> q_nom =
-      MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
+  MatrixX<double> q_nom{robot->get_num_positions(), kNumKnots};
+  Eigen::RowVectorXd t_samples{kNumKnots-1};
   for (int j = 0; j < kNumKnots; ++j) {
-    q_seed.col(j) = q_current;
+    double s{times->at(j)/times->back()};
+    q_seed.col(j) = (1-s)*q_current + s*q_final_seed;
+    q_nom.col(j) = (1-s)*q_current + s*q_final_seed;
+    if (j < kNumKnots - 1) {
+      t_samples(j) = 0.5*(times->at(j) + times->at(j+1));
+    }
   }
   const Eigen::Map<Eigen::VectorXd> t{times->data(), kNumKnots};
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
+  //ikoptions.setAdditionaltSamples(t_samples);
   ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
                                        robot->get_num_positions()));
+  //ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
+                                            //robot->get_num_positions()));
   *ik_res = inverseKinTrajSimple(robot.get(), t, q_seed, q_nom,
                                 constraint_array, ikoptions);
   bool planner_result{ik_res->info[0] == 1};
@@ -214,12 +245,13 @@ void ComputeNominalConfigurations(
     std::map<PickAndPlaceState, VectorX<double>>* nominal_q_map) {
   std::default_random_engine rand_generator{1234};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
+  int kNumJoints{robot->get_num_positions()};
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(false);
   ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
                                        robot->get_num_positions()));
-  //ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
-                                       //robot->get_num_positions()));
+  ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
+                                       robot->get_num_positions()));
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   Matrix3X<double> end_effector_points = Matrix3X<double>::Zero(3, 1);
   std::vector<PickAndPlaceState> pick_states{kApproachPickPregrasp,
@@ -230,10 +262,10 @@ void ComputeNominalConfigurations(
   for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
     // Set up an inverse kinematics trajectory problem with one knot for each
     // state
-    int num_knots = states.size();
-    VectorX<double> t = VectorX<double>::LinSpaced(num_knots, 0, num_knots - 1);
+    int kNumKnots = states.size();
+    VectorX<double> t = VectorX<double>::LinSpaced(kNumKnots, 0, kNumKnots - 1);
     MatrixX<double> q_nom =
-        MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
+        MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
 
     // Create vectors to hold the constraint objects
     std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
@@ -241,7 +273,7 @@ void ComputeNominalConfigurations(
     std::vector<RigidBodyConstraint*> constraint_array;
     Vector2<double> tspan;
     tspan << 0, 0;
-    for (int i = 0; i < num_knots; ++i) {
+    for (int i = 0; i < kNumKnots; ++i) {
       // Extract desired position and orientation of end effector at the given
       // state
       PickAndPlaceState state{states[i]};
@@ -265,13 +297,21 @@ void ComputeNominalConfigurations(
       tspan[0] += 1.0;
       tspan[1] += 1.0;
     }
+    const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots-1);
+    const VectorX<double> ub_change = M_PI_4*VectorX<double>::Ones(kNumJoints);
+    const VectorX<double> lb_change = -ub_change;
+    PostureChangeConstraint posture_change_constraint{
+        robot.get(), joint_indices, lb_change, ub_change,
+        Vector2<double>(t(0), t(t.size()-1))};
+    constraint_array.push_back(&posture_change_constraint);
+
     // Solve the IK problem
     const int kNumRestarts = 50;
     IKResults ik_res;
     for (int i = 0; i < kNumRestarts; ++i) {
-      MatrixX<double> q_knots_seed{robot->get_num_positions(), num_knots};
+      MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
       //VectorX<double> q_seed{robot->getZeroConfiguration()};
-      for (int j = 0; j < num_knots; ++j) {
+      for (int j = 0; j < kNumKnots; ++j) {
         q_knots_seed.col(j) = q_seed;
       }
       drake::log()->debug("Attempt {}: t = ({})", i, t.transpose());
@@ -287,8 +327,8 @@ void ComputeNominalConfigurations(
     }
     DRAKE_THROW_UNLESS(ik_res.info[0] ==1);
     drake::log()->debug("Num knots in sol: {}", ik_res.q_sol.size());
-    //for (int i = 0; i < num_knots; i+=2) {
-    for (int i = 0; i < num_knots; ++i) {
+    //for (int i = 0; i < kNumKnots; i+=2) {
+    for (int i = 0; i < kNumKnots; ++i) {
       //nominal_q_map->emplace(states[i/2], ik_res.q_sol[i]);
       //VectorX<double> constraint_value;
       VectorX<double> lb;
@@ -404,10 +444,11 @@ void PickAndPlaceStateMachine::Update(
         // 1 second, 3 via points. More via points to ensure the end effector
         // moves in more or less a straight line.
         bool res = PlanStraightLineMotion(
-            env_state.get_iiwa_q(), 3, 1,
+            env_state.get_iiwa_q(), nominal_q_map_[kApproachPick], 2, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
-        DRAKE_THROW_UNLESS(res);
+        drake::unused(res);
+        //DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -451,9 +492,10 @@ void PickAndPlaceStateMachine::Update(
         // 1 second, 3 via points. More via points to ensure the end effector
         // moves in more or less a straight line.
         bool res = PlanStraightLineMotion(
-            env_state.get_iiwa_q(), 3, 1,
+            env_state.get_iiwa_q(), nominal_q_map_.at(kLiftFromPick), 2, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
+        drake::unused(res);
         DRAKE_THROW_UNLESS(res);
 
         robotlocomotion::robot_plan_t plan{};
@@ -478,10 +520,15 @@ void PickAndPlaceStateMachine::Update(
 
         // 2 seconds, no via points.
         //bool res = PlanStraightLineMotion(
-            //env_state.get_iiwa_q(), 0, 2,
+            //env_state.get_iiwa_q(), nominal_q_map_.at(kLiftFromPick), 2, 2,
             //X_Wend_effector_0_, X_Wend_effector_1_,
             //loose_pos_tol_, loose_rot_tol_, planner, &ik_res, &times);
+        //drake::unused(res);
         //DRAKE_THROW_UNLESS(res);
+
+        //robotlocomotion::robot_plan_t plan{};
+        //iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
+        //iiwa_callback(&plan);
 
         robotlocomotion::robot_plan_t plan{};
         times.clear();
@@ -513,7 +560,7 @@ void PickAndPlaceStateMachine::Update(
 
         // 1 seconds, 3 via points.
         bool res = PlanStraightLineMotion(
-            env_state.get_iiwa_q(), 3, 1,
+            env_state.get_iiwa_q(), nominal_q_map_.at(kApproachPlace), 3, 1,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
         DRAKE_THROW_UNLESS(res);
@@ -558,7 +605,7 @@ void PickAndPlaceStateMachine::Update(
 
         // 2 seconds, 5 via points.
         bool res = PlanStraightLineMotion(
-            env_state.get_iiwa_q(), 5, 2,
+            env_state.get_iiwa_q(), nominal_q_map_.at(kLiftFromPlace), 3, 2,
             X_Wend_effector_0_, X_Wend_effector_1_,
             tight_pos_tol_, tight_rot_tol_, planner, &ik_res, &times);
         DRAKE_THROW_UNLESS(res);
