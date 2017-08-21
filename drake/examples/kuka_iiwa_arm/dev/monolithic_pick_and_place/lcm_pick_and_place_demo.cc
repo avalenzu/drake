@@ -4,6 +4,7 @@
 
 #include <gflags/gflags.h>
 #include "bot_core/robot_state_t.hpp"
+#include "optitrack/optitrack_frame_t.hpp"
 #include "robotlocomotion/robot_plan_t.hpp"
 
 #include "drake/common/find_resource.h"
@@ -14,6 +15,7 @@
 #include "drake/lcmt_schunk_wsg_command.hpp"
 #include "drake/lcmt_schunk_wsg_status.hpp"
 #include "drake/lcmtypes/drake/lcmt_schunk_wsg_command.hpp"
+#include "drake/manipulation/perception/optitrack_pose_extractor.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/lcm/lcm_driven_loop.h"
@@ -22,6 +24,8 @@
 
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(end_position, 2, "Position index to end at");
+DEFINE_int32(object_id, 100000, "Optitrack id of item to pick");
+DEFINE_bool(use_optitrack, false, "Use object positions from optitrack data");
 
 using robotlocomotion::robot_plan_t;
 
@@ -30,6 +34,32 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace monolithic_pick_and_place {
 namespace {
+
+class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
+ public:
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(OptitrackTranslatorSystem);
+
+  OptitrackTranslatorSystem() {
+    this->DeclareInputPort(systems::kVectorValued, 7);
+    this->DeclareAbstractOutputPort(bot_core::robot_state_t(),
+                                    &OptitrackTranslatorSystem::OutputPose);
+  }
+
+ private:
+  void OutputPose(const systems::Context<double>& context,
+                  bot_core::robot_state_t* out) const {
+
+    auto in = EvalEigenVectorInput(context, 0);
+    out->utime = 0;
+    out->pose.translation.x = in(0);
+    out->pose.translation.y = in(1);
+    out->pose.translation.z = in(2);
+    out->pose.rotation.w = in(6);
+    out->pose.rotation.x = in(3);
+    out->pose.rotation.y = in(4);
+    out->pose.rotation.z = in(5);
+  }
+};
 
 const char kIiwaUrdf[] =
     "drake/manipulation/models/iiwa_description/urdf/"
@@ -144,19 +174,52 @@ int DoMain(void) {
   auto iiwa_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(
           "EST_ROBOT_STATE", &lcm));
+  builder.Connect(iiwa_status_sub->get_output_port(0),
+                  state_machine->get_input_port_iiwa_state());
+
   auto wsg_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_status>(
           "SCHUNK_WSG_STATUS", &lcm));
-  auto object_state_sub = builder.AddSystem(
-      systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(
-          "OBJECT_STATE_EST", &lcm));
-
-  builder.Connect(iiwa_status_sub->get_output_port(0),
-                  state_machine->get_input_port_iiwa_state());
   builder.Connect(wsg_status_sub->get_output_port(0),
                   state_machine->get_input_port_wsg_status());
-  builder.Connect(object_state_sub->get_output_port(0),
-                  state_machine->get_input_port_box_state());
+
+  systems::lcm::LcmSubscriberSystem* object_state_sub = nullptr;
+  systems::lcm::LcmSubscriberSystem* optitrack_sub = nullptr;
+  if (!FLAGS_use_optitrack) {
+    object_state_sub = builder.AddSystem(
+        systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(
+            "OBJECT_STATE_EST", &lcm));
+    builder.Connect(object_state_sub->get_output_port(0),
+                    state_machine->get_input_port_box_state());
+  } else {
+    optitrack_sub = builder.AddSystem(
+        systems::lcm::LcmSubscriberSystem::Make<optitrack::optitrack_frame_t>(
+            "OPTITRACK_FRAMES", &lcm));
+
+    Eigen::Isometry3d X_WO = Eigen::Isometry3d::Identity();
+    Eigen::Matrix3d rot_mat;
+    rot_mat.col(0) = Eigen::Vector3d::UnitY();
+    rot_mat.col(1) = Eigen::Vector3d::UnitZ();
+    rot_mat.col(2) = Eigen::Vector3d::UnitX();
+    X_WO.linear() = rot_mat;
+    Eigen::Vector3d translator;
+    translator = Eigen::Vector3d::Zero();
+    // translator<< 0.0, 0.0, 0;
+    translator << -0.342, -0.017, 0.154;
+    X_WO.translate(translator);
+
+    auto optitrack_pose_extractor =
+        builder.AddSystem<manipulation::perception::OptitrackPoseExtractor>(
+            FLAGS_object_id, X_WO, 1./120.);
+    builder.Connect(optitrack_sub->get_output_port(0),
+                    optitrack_pose_extractor->get_input_port(0));
+
+    auto optitrack_translator = builder.AddSystem<OptitrackTranslatorSystem>();
+    builder.Connect(optitrack_pose_extractor->get_measured_pose_output_port(),
+                    optitrack_translator->get_input_port(0));
+    builder.Connect(optitrack_translator->get_output_port(0),
+                    state_machine->get_input_port_box_state());
+  }
 
   auto iiwa_plan_sender = builder.AddSystem(
       systems::lcm::LcmPublisherSystem::Make<robot_plan_t>(
@@ -176,10 +239,14 @@ int DoMain(void) {
       *sys, *iiwa_status_sub, nullptr, &lcm,
       std::make_unique<systems::lcm::UtimeMessageToSeconds<
       bot_core::robot_state_t>>());
-  // Wait for the first object state message before doing anything else.
-  object_state_sub->WaitForMessage(0);
-  //  sys->GetSubsystemContext(*object_status_sub,
-  // loop.get_mutable_context());
+  // Wait for the first object state message before doing anything else (if we're not using the optitrack).
+  if (object_state_sub) {
+    object_state_sub->WaitForMessage(0);
+  } else if (optitrack_sub) {
+    optitrack_sub->WaitForMessage(0);
+  }
+  //sys->GetSubsystemContext(*object_status_sub,
+  //loop.get_mutable_context());
 
 
   // Waits for the first message.
