@@ -42,6 +42,8 @@ drake_cc_binary(
         "//drake/lcm",
         "//drake/lcmtypes:iiwa",
         "//drake/lcmtypes:schunk",
+        "//drake/manipulation/perception:optitrack_pose_extractor",
+        "//drake/systems/framework:leaf_system",
         "//drake/systems/lcm",
         "//drake/systems/lcm:lcm_driven_loop",
         "@com_github_gflags_gflags//:gflags",
