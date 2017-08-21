@@ -34,150 +34,128 @@ Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
 
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
-// @p X_WEndEffector1. 
+// @p X_WEndEffector1.
 bool PlanStraightLineMotion(const VectorX<double>& q_current,
-                            const VectorX<double>& q_final_seed,
                             const int num_via_points, double duration,
-                            const Isometry3<double>& X_WEndEffector0,
-                            const Isometry3<double>& X_WEndEffector1,
-                            const Vector3<double>& via_points_pos_tolerance,
-                            const double via_points_rot_tolerance,
-                            ConstraintRelaxingIk* planner, IKResults* ik_res,
-                            std::vector<double>* times) {
-  DRAKE_THROW_UNLESS(duration > 0 && num_via_points >= 0);
+                            const std::vector<Waypoint>& waypoints,
+                            const RigidBodyTree<double>& original_robot,
+                            IKResults* ik_res, std::vector<double>* times) {
 
-  std::unique_ptr<RigidBodyTree<double>> robot{planner->get_robot().Clone()};
+  std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
   int kNumJoints{robot->get_num_positions()};
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   int world_body_idx = robot->FindBodyIndex("world");
+  Matrix3X<double> end_effector_points = Matrix3X<double>::Zero(3, 1);
 
-  const std::vector<MatrixX<double>> pos = {X_WEndEffector0.translation(),
-                                            X_WEndEffector1.translation()};
+  // Create vectors to hold the constraint objects
+  std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
+  std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
+  std::vector<std::unique_ptr<Point2LineSegDistConstraint>> point_to_line_seg_constraints;
+  std::vector<std::unique_ptr<WorldGazeDirConstraint>> gaze_dir_constraints;
+  std::vector<RigidBodyConstraint*> constraint_array;
 
-  const eigen_aligned_std_vector<Quaternion<double>> quats = {
-      Quaternion<double>(X_WEndEffector0.linear()),
-      Quaternion<double>(X_WEndEffector1.linear())};
+  auto kinematics_cache = robot->CreateKinematicsCache();
+  kinematics_cache.initialize(q_current);
+  robot->doKinematics(kinematics_cache);
+  std::pair<Isometry3<double>, Isometry3<double>> X_WE;
+  X_WE.first = robot->relativeTransform(kinematics_cache, world_body_idx,
+                                        end_effector_body_idx);
 
-  drake::log()->debug(
-      "Planning straight line from {} {} to {} {}",
-      pos[0].transpose(), math::rotmat2rpy(X_WEndEffector0.rotation()).transpose(),
-      pos[1].transpose(), math::rotmat2rpy(X_WEndEffector1.rotation()).transpose());
-
-  // Setup knot times
-  const double dt = duration / (num_via_points + 1);
-  double time = 0;
   times->clear();
-  times->push_back(time);
-  for (int i = 0; i <= num_via_points; ++i) {
-    time += dt;
-    times->push_back(time);
+  for (Waypoint waypoint : waypoints) {
+    X_WE.second = waypoint.X_WE;
+    std::pair<Vector3<double>, Vector3<double>> r_WE{X_WE.first.translation(),
+                                                     X_WE.second.translation()};
+    std::pair<Quaternion<double>, Quaternion<double>> quat_WE{
+        Quaternion<double>(X_WE.first.linear()),
+        Quaternion<double>(X_WE.second.linear())};
+
+    drake::log()->debug(
+        "Planning straight line from {} {} to {} {}", r_WE.first,
+        math::rotmat2rpy(X_WE.first.rotation()).transpose(), r_WE.second,
+        math::rotmat2rpy(X_WE.second.rotation()).transpose());
+
+    // Define active times for initial, final, and intermediate constraints
+    const double segment_start_time = times->back();
+    const double segment_end_time = segment_start_time + waypoint.duration;
+    const Vector2<double> intermediate_tspan{segment_start_time,
+                                             segment_end_time};
+    const Vector2<double> waypoint_tspan{segment_end_time, segment_end_time};
+    const double dt = duration / (waypoint.num_via_points + 1);
+    for (int i = 0; i <= num_via_points; ++i) {
+      times->push_back(times->back() + dt);
+    }
+
+    // Constraints at waypoint
+    position_constraints.emplace_back(new WorldPositionConstraint(
+        robot.get(), end_effector_body_idx, end_effector_points,
+        r_WE.second - waypoint.position_tolerance,
+        r_WE.second + waypoint.position_tolerance, waypoint_tspan));
+    constraint_array.push_back(position_constraints.back().get());
+
+    orientation_constraints.emplace_back(new WorldQuatConstraint(
+        robot.get(), end_effector_body_idx,
+        Eigen::Vector4d(quat_WE.second.w(), quat_WE.second.x(),
+                        quat_WE.second.y(), quat_WE.second.z()),
+        waypoint.orientation_tolerance, waypoint_tspan));
+    constraint_array.push_back(orientation_constraints.back().get());
+
+    // Construct intermediate constraints for via points
+    // Find axis-angle representation of the rotation from X_WEndEffector0 to
+    // X_WEndEffector1.
+    Isometry3<double> X_10 = X_WE.second.inverse() * X_WE.first;
+    Eigen::AngleAxis<double> aaxis{X_10.linear()};
+    Vector3<double> axis_E{aaxis.axis()};
+    Vector3<double> dir_W{X_WE.first.linear() * axis_E};
+    drake::log()->debug("Axis in EE frame: ({})", axis_E.transpose());
+    drake::log()->debug("Dir in world frame: ({})", dir_W.transpose());
+
+    // We will impose a Point2LineSegDistConstraint and WorldGazeDirConstraint
+    // on the via points.
+    Eigen::Matrix<double, 3, 2> line_ends_W;
+    line_ends_W << r_WE.first, r_WE.second;
+
+    double dist_lb{0.0};
+    double dist_ub{waypoint.via_points_position_tolerance};
+    point_to_line_seg_constraints.emplace_back(new Point2LineSegDistConstraint(
+        robot.get(), end_effector_body_idx, end_effector_points, world_body_idx,
+        line_ends_W, dist_lb, dist_ub, intermediate_tspan));
+    constraint_array.push_back(point_to_line_seg_constraints.back().get());
+
+    gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
+        robot.get(), end_effector_body_idx, axis_E, dir_W,
+        waypoint.via_points_orientation_tolerance, intermediate_tspan));
+
+    orientation_constraints.emplace_back(new WorldQuatConstraint(
+        robot.get(), end_effector_body_idx,
+        Eigen::Vector4d(quat_WE.second.w(), quat_WE.second.x(),
+                        quat_WE.second.y(), quat_WE.second.z()),
+        waypoint.orientation_tolerance, intermediate_tspan));
+    if (aaxis.angle() < waypoint.via_points_orientation_tolerance) {
+      constraint_array.push_back(orientation_constraints.back().get());
+    } else {
+      constraint_array.push_back(gaze_dir_constraints.back().get());
+    }
+    X_WE.first = X_WE.second;
   }
 
   const int kNumKnots = times->size();
 
-  // Define active times for initial, final, and intermediate constraints
-  const Vector2<double> initial_tspan{times->front(), times->front()};
-  const Vector2<double> intermediate_tspan{times->front(), times->back()};
-  const Vector2<double> final_tspan{times->back(), times->back()};
-
-  std::vector<RigidBodyConstraint*> constraint_array;
-
-  // Initial and final constraints
-  const Vector3<double> end_points_pos_tolerance{0.1 * via_points_pos_tolerance};
-  const double end_points_rot_tolerance{0.1 * via_points_rot_tolerance};
-
-  // Construct position and orientation constraints
-  WorldPositionConstraint initial_position_constraint{
-      robot.get(),
-      end_effector_body_idx,
-      Vector3<double>::Zero(),
-      pos[0] - end_points_pos_tolerance,
-      pos[0] + end_points_pos_tolerance,
-      initial_tspan};
-  WorldQuatConstraint initial_orientation_constraint{
-      robot.get(), end_effector_body_idx,
-      Eigen::Vector4d(quats[0].w(), quats[0].x(), quats[0].y(), quats[0].z()),
-      end_points_rot_tolerance, initial_tspan};
-
-  WorldPositionConstraint final_position_constraint{
-      robot.get(),
-      end_effector_body_idx,
-      Vector3<double>::Zero(),
-      pos[1] - end_points_pos_tolerance,
-      pos[1] + end_points_pos_tolerance,
-      final_tspan};
-  WorldQuatConstraint final_orientation_constraint{
-      robot.get(), end_effector_body_idx,
-      Eigen::Vector4d(quats[1].w(), quats[1].x(), quats[1].y(), quats[1].z()),
-      end_points_rot_tolerance, final_tspan};
-  const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots-1);
-  PostureConstraint final_posture_constraint{robot.get(), final_tspan};
-  final_posture_constraint.setJointLimits(
-      joint_indices.size(), joint_indices.data(), q_final_seed, q_final_seed);
-  constraint_array.push_back(&final_posture_constraint);
-
-  // Construct intermediate constraints for via points
-  // Find axis-angle representation of the rotation from X_WEndEffector0 to
-  // X_WEndEffector1.
-  Isometry3<double> X_10 = X_WEndEffector1.inverse() * X_WEndEffector0;
-  Eigen::AngleAxis<double> aaxis{X_10.linear()};
-  Vector3<double> axis_E{aaxis.axis()};
-  Vector3<double> dir_W{X_WEndEffector0.linear() * axis_E};
-  drake::log()->debug("Axis in EE frame: ({})", axis_E.transpose());
-  drake::log()->debug("Dir in world frame: ({})", dir_W.transpose());
-
-  // We will impose a Point2LineSegDistConstraint and WorldGazeDirConstraint on
-  // the via points.
-  Eigen::Matrix<double, 3, 2> line_ends_W;
-  line_ends_W << X_WEndEffector0.translation(), X_WEndEffector1.translation();
-
-
-  double dist_lb{0.0};
-  double dist_ub{via_points_pos_tolerance(0)};
-  Point2LineSegDistConstraint intermediate_position_constraint{
-      robot.get(),
-      end_effector_body_idx,
-      Vector3<double>::Zero(),
-      world_body_idx,
-      line_ends_W,
-      dist_lb,
-      dist_ub,
-      intermediate_tspan};
-  constraint_array.push_back(&intermediate_position_constraint);
-
-  WorldGazeDirConstraint intermediate_gaze_constraint{
-      robot.get(), end_effector_body_idx,    axis_E,
-      dir_W,       via_points_rot_tolerance, intermediate_tspan};
-
-  WorldQuatConstraint intermediate_orientation_constraint{
-      robot.get(), end_effector_body_idx,
-      Eigen::Vector4d(quats[0].w(), quats[0].x(), quats[0].y(), quats[0].z()),
-      via_points_rot_tolerance, intermediate_tspan};
-  if (aaxis.angle() < via_points_rot_tolerance) {
-    constraint_array.push_back(&intermediate_orientation_constraint);
-  } else {
-    constraint_array.push_back(&intermediate_gaze_constraint);
-  }
-
-  //constraint_array.push_back(&initial_position_constraint);
-  //constraint_array.push_back(&initial_orientation_constraint);
-  //constraint_array.push_back(&final_position_constraint);
-  //constraint_array.push_back(&final_orientation_constraint);
-  const VectorX<double> ub_change = M_PI*VectorX<double>::Ones(kNumJoints);
+  const VectorX<double> ub_change = M_PI * VectorX<double>::Ones(kNumJoints);
   const VectorX<double> lb_change = -ub_change;
+  const VectorX<int> joint_indices =
+      VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots - 1);
   PostureChangeConstraint posture_change_constraint{
-    robot.get(), joint_indices, lb_change, ub_change,
-      Vector2<double>(0, kNumKnots - 1)};
-  //constraint_array.push_back(&posture_change_constraint);
+      robot.get(), joint_indices, lb_change, ub_change,
+      Vector2<double>(times->front(), times->back())};
+  constraint_array.push_back(&posture_change_constraint);
 
   std::default_random_engine rand_generator{1234};
-  MatrixX<double> q_seed{robot->get_num_positions(), kNumKnots};
-  MatrixX<double> q_nom{robot->get_num_positions(), kNumKnots};
+  MatrixX<double> q_seed{kNumJoints, kNumKnots};
+  MatrixX<double> q_nom{kNumJoints, kNumKnots};
   Eigen::RowVectorXd t_samples{kNumKnots-1};
   for (int j = 0; j < kNumKnots; ++j) {
-    double s{times->at(j)/times->back()};
-    q_seed.col(j) = (1-s)*q_current + s*q_final_seed;
-    q_nom.col(j) = (1-s)*q_current + s*q_final_seed;
+    q_seed.col(j) = q_current;
     if (j < kNumKnots - 1) {
       t_samples(j) = 0.5*(times->at(j) + times->at(j+1));
     }
@@ -397,6 +375,23 @@ void PickAndPlaceStateMachine::Update(
       // Compute all the desired end-effector poses now
       ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
                           &X_WE_desired_);
+      waypoints_.clear();
+      waypoints_.emplace_back();
+      waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
+      waypoints_.back().num_via_points = 1;
+      waypoints_.back().duration = 2;
+
+      waypoints_.emplace_back();
+      waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
+      waypoints_.back().num_via_points = 1;
+      waypoints_.back().duration = 2;
+
+      for (Waypoint waypoint : waypoints_) {
+        waypoints_.back().position_tolerance = tight_pos_tol_;
+        waypoints_.back().orientation_tolerance = tight_rot_tol_;
+        waypoints_.back().via_points_position_tolerance = loose_pos_tol_(1);
+        waypoints_.back().via_points_orientation_tolerance = loose_rot_tol_;
+      }
       if (nominal_q_map_.empty()) {
         ComputeNominalConfigurations(planner->get_robot(), X_WE_desired_, tight_pos_tol_, tight_rot_tol_, &nominal_q_map_);
       }

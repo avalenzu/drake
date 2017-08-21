@@ -33,6 +33,29 @@ enum PickAndPlaceState {
   kDone,
 };
 
+struct Waypoint {
+  // Desired end-effector pose in world frame
+  Isometry3<double> X_WE{Isometry3<double>::Identity()};
+
+  // Number of knot points in segment from previous waypoint to this waypoint
+  int num_via_points{0};
+
+  // Bounding box for the end effector in the world frame.
+  Vector3<double> position_tolerance{Vector3<double>(0.005, 0.005, 0.005)};
+
+  // Max angle difference (in radians) between solved end effector's
+  // orientation and the desired.
+  double orientation_tolerance{0.05};
+
+  double via_points_position_tolerance{0.05};
+
+  double via_points_orientation_tolerance{0.5};
+
+  // Total duration of the segment from the previous waypoint to this one
+  double duration;
+};
+
+
 /// A class which controls the pick and place actions for moving a
 /// single target in the environment.
 class PickAndPlaceStateMachine {
@@ -98,6 +121,9 @@ class PickAndPlaceStateMachine {
   // Desired end-effector end-pose for various states
   std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
   std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
+
+  // Waypoints
+  std::vector<Waypoint> waypoints_;
 };
 
 }  // namespace pick_and_place

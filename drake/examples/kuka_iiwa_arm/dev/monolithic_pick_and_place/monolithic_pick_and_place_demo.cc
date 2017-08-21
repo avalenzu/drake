@@ -153,6 +153,7 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
 
 
 int DoMain(void) {
+  drake::log()->set_level(spdlog::level::debug);
   // Locations for the posts from physical pick and place tests with
   // the iiwa+WSG.
   std::vector<Eigen::Vector3d> post_locations;

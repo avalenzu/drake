@@ -1,5 +1,5 @@
 #!/bin/bash
-
+ 
 set -e
 
 # If we are outside the sandbox, then change to the same relative directory as
