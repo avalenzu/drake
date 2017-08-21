@@ -36,62 +36,76 @@ Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1. Orientation is interpolated with slerp. Intermediate
 // waypoints' tolerance can be adjusted separately.
-//bool PlanStraightLineMotion(const VectorX<double>& q_current,
-                            //const int num_via_points, double duration,
-                            //const Isometry3<double>& X_WEndEffector0,
-                            //const Isometry3<double>& X_WEndEffector1,
-                            //const Vector3<double>& via_points_pos_tolerance,
-                            //const double via_points_rot_tolerance,
-                            //ConstraintRelaxingIk* planner, IKResults* ik_res,
-                            //std::vector<double>* times) {
-  //DRAKE_THROW_UNLESS(duration > 0 && num_via_points >= 0);
-  // Makes a slerp trajectory from start to end.
-  //const eigen_aligned_std_vector<Quaternion<double>> quats = {
-      //Quaternion<double>(X_WEndEffector0.linear()),
-      //Quaternion<double>(X_WEndEffector1.linear())};
+bool PlanStraightLineMotion(const VectorX<double>& q_current,
+                            const int num_via_points, double duration,
+                            const Isometry3<double>& X_WEndEffector0,
+                            const Isometry3<double>& X_WEndEffector1,
+                            const Vector3<double>& via_points_pos_tolerance,
+                            const double via_points_rot_tolerance,
+                            ConstraintRelaxingIk* planner, IKResults* ik_res,
+                            std::vector<double>* times) {
+  DRAKE_THROW_UNLESS(duration > 0 && num_via_points >= 0);
+  //Makes a slerp trajectory from start to end.
+  const eigen_aligned_std_vector<Quaternion<double>> quats = {
+      Quaternion<double>(X_WEndEffector0.linear()),
+      Quaternion<double>(X_WEndEffector1.linear())};
 
-  //const std::vector<MatrixX<double>> pos = {X_WEndEffector0.translation(),
-                                            //X_WEndEffector1.translation()};
-  //drake::log()->debug(
-      //"Planning straight line from {} {} to {} {}",
-      //pos[0].transpose(), math::rotmat2rpy(X_WEndEffector0.rotation()),
-      //pos[1].transpose(), math::rotmat2rpy(X_WEndEffector1.rotation()));
+  const std::vector<MatrixX<double>> pos = {X_WEndEffector0.translation(),
+                                            X_WEndEffector1.translation()};
+  drake::log()->debug(
+      "Planning straight line from {} {} to {} {}",
+      pos[0].transpose(), math::rotmat2rpy(X_WEndEffector0.rotation()),
+      pos[1].transpose(), math::rotmat2rpy(X_WEndEffector1.rotation()));
 
-  //PiecewiseQuaternionSlerp<double> rot_traj({0, duration}, quats);
-  //PiecewisePolynomial<double> pos_traj =
-      //PiecewisePolynomial<double>::FirstOrderHold({0, duration}, pos);
+  // Find axis-angle representation of the rotation from X_WEndEffector0 to
+  // X_WEndEffector1.
+  Isometry3<double> X_10 = X_WEndEffector1.inverse() * X_WEndEffector0;
+  Eigen::AngleAxis<double> aaxis{X_10.linear()};
+  Vector3<double> axis_0{aaxis.axis()};
+  Vector3<double> dir_W{X_WEndEffector0 * axis_0};
 
-  //std::vector<
-    //ConstraintRelaxingIk::IkCartesianWaypoint> waypoints(num_via_points + 1);
-  //const double dt = duration / (num_via_points + 1);
-  //double time = 0;
-  //times->clear();
-  //times->push_back(time);
-  //for (int i = 0; i <= num_via_points; ++i) {
-    //time += dt;
-    //times->push_back(time);
-    //waypoints[i].pose.translation() = pos_traj.value(time);
-    //waypoints[i].pose.linear() = Matrix3<double>(rot_traj.orientation(time));
-    //drake::log()->debug(
-        //"via ({}/{}): {} {}", i, num_via_points,
-        //waypoints[i].pose.translation().transpose(),
-        //math::rotmat2rpy(waypoints[i].pose.rotation()).transpose());
-    //if (i != num_via_points) {
-      //waypoints[i].pos_tol = via_points_pos_tolerance;
-      //waypoints[i].rot_tol = via_points_rot_tolerance;
-    //}
-    //waypoints[i].constrain_orientation = true;
-  //}
-  //DRAKE_THROW_UNLESS(times->size() == waypoints.size() + 1);
-  //const bool planner_result =
-      //planner->PlanSequentialTrajectory(waypoints, q_current, ik_res);
-  //drake::log()->debug("q initial: {}", q_current.transpose());
-  //if (!ik_res->q_sol.empty()) {
-    //drake::log()->debug("q final: {}", ik_res->q_sol.back().transpose());
-  //}
-  //drake::log()->debug("result: {}", planner_result);
-  //return planner_result;
-//}
+  // We will impose a Point2LineSegDistConstraint and WorldGazeDirConstraint on
+  // the via points.
+  Matrix3X<double> line_ends_W;
+  line_ends_W << X_WEndEffector0.translation(), X_WEndEffector1.translation();
+
+  Point2LineSegDistConstraint via_pos_constraint{planner->get_robot(),
+
+  PiecewiseQuaternionSlerp<double> rot_traj({0, duration}, quats);
+  PiecewisePolynomial<double> pos_traj =
+      PiecewisePolynomial<double>::FirstOrderHold({0, duration}, pos);
+
+  std::vector<
+    ConstraintRelaxingIk::IkCartesianWaypoint> waypoints(num_via_points + 1);
+  const double dt = duration / (num_via_points + 1);
+  double time = 0;
+  times->clear();
+  times->push_back(time);
+  for (int i = 0; i <= num_via_points; ++i) {
+    time += dt;
+    times->push_back(time);
+    waypoints[i].pose.translation() = pos_traj.value(time);
+    waypoints[i].pose.linear() = Matrix3<double>(rot_traj.orientation(time));
+    drake::log()->debug(
+        "via ({}/{}): {} {}", i, num_via_points,
+        waypoints[i].pose.translation().transpose(),
+        math::rotmat2rpy(waypoints[i].pose.rotation()).transpose());
+    if (i != num_via_points) {
+      waypoints[i].pos_tol = via_points_pos_tolerance;
+      waypoints[i].rot_tol = via_points_rot_tolerance;
+    }
+    waypoints[i].constrain_orientation = true;
+  }
+  DRAKE_THROW_UNLESS(times->size() == waypoints.size() + 1);
+  const bool planner_result =
+      planner->PlanSequentialTrajectory(waypoints, q_current, ik_res);
+  drake::log()->debug("q initial: {}", q_current.transpose());
+  if (!ik_res->q_sol.empty()) {
+    drake::log()->debug("q final: {}", ik_res->q_sol.back().transpose());
+  }
+  drake::log()->debug("result: {}", planner_result);
+  return planner_result;
+}
 
 // 
 //  (ApproachPickPregrasp,                               (ApproachPlacePregrasp
