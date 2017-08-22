@@ -128,7 +128,7 @@ class PickAndPlaceStateMachine {
 
   // Waypoints
   std::vector<Waypoint> waypoints_;
-  std::vector<Waypoint>::const_iterator next_waypoint_;
+  std::vector<Waypoint>::iterator next_waypoint_;
 
   // Seed trajectory
   MatrixX<double> q_seed_;
