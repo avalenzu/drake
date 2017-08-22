@@ -37,6 +37,10 @@ struct Waypoint {
   // Desired end-effector pose in world frame
   Isometry3<double> X_WE{Isometry3<double>::Identity()};
 
+  // Flag to turn off constraints during the segment from the previous waypoint
+  // to this one
+  bool constrain_intermediate_points{false};
+
   // Number of knot points in segment from previous waypoint to this waypoint
   int num_via_points{0};
 
@@ -124,6 +128,10 @@ class PickAndPlaceStateMachine {
 
   // Waypoints
   std::vector<Waypoint> waypoints_;
+  std::vector<Waypoint>::const_iterator next_waypoint_;
+
+  // Seed trajectory
+  MatrixX<double> q_seed_;
 };
 
 }  // namespace pick_and_place
