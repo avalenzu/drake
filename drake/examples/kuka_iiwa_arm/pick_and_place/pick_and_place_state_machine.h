@@ -57,6 +57,8 @@ struct Waypoint {
 
   // Total duration of the segment from the previous waypoint to this one
   double duration;
+
+  PickAndPlaceState state{kDone};
 };
 
 

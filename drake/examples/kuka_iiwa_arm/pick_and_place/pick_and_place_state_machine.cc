@@ -18,6 +18,9 @@ using manipulation::planner::ConstraintRelaxingIk;
 // Position the gripper 30cm above the object before grasp.
 const double kPreGraspHeightOffset = 0.3;
 
+// Position the gripper 15cm away from the object before grasp.
+const double kPreGraspOffset = 0.15;
+
 // Computes the desired end effector pose in the world frame given the object
 // pose in the world frame.
 //Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
@@ -171,6 +174,7 @@ bool PlanStraightLineMotion(
 
   std::default_random_engine rand_generator{1234};
   MatrixX<double> q_nom{MatrixX<double>::Zero(kNumJoints, kNumKnots)};
+  drake::log()->debug("q_seed_local.cols() = {}, kNumKnots = {}", q_seed_local.cols(), kNumKnots);
   DRAKE_THROW_UNLESS(q_seed_local.rows() == kNumJoints && q_seed_local.cols() == kNumKnots);
   int kNumSamplesPerKnot{2};
   Eigen::RowVectorXd t_samples{kNumSamplesPerKnot*(kNumKnots-1)};
@@ -187,11 +191,15 @@ bool PlanStraightLineMotion(
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
   drake::log()->debug("t_samples = {}", t_samples);
-  ikoptions.setAdditionaltSamples(t_samples);
+  //ikoptions.setAdditionaltSamples(t_samples);
   ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
                                        robot->get_num_positions()));
+  ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
+                                            robot->get_num_positions()));
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
+  ikoptions.setMajorOptimalityTolerance(1e-5);
+  //ikoptions.setIterationsLimit(2e4);
   const int kNumRestarts = 50;
   for (int i = 0; i < kNumRestarts; ++i) {
     *ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
@@ -199,11 +207,11 @@ bool PlanStraightLineMotion(
     if (ik_res->info[0] == 1) {
       break;
     } else {
-      VectorX<double> q_end{robot->getRandomConfiguration(rand_generator)};
+      //VectorX<double> q_end{robot->getRandomConfiguration(rand_generator)};
       for (int j = 1; j < kNumKnots; ++j) {
-        double s = j/(kNumKnots-1);
-        q_seed_local.col(j) = (1-s)*q_current + s*q_end;
-	//q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
+        //double s = j/(kNumKnots-1);
+        //q_seed_local.col(j) = (1-s)*q_current + s*q_end;
+        q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
       }
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res->info[0]);
     }
@@ -231,12 +239,15 @@ void ComputeDesiredPoses(
                         env_state.get_object_pose());
 
   // Set ApproachPickPregrasp pose
-  X_WE_desired->emplace(kApproachPickPregrasp, X_WE_desired->at(kApproachPick));
-  X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
-      kPreGraspHeightOffset;
+  Isometry3<double> X_OE{Isometry3<double>::Identity()};
+  X_OE.translation()[0] = -kPreGraspOffset;
+  X_WE_desired->emplace(kApproachPickPregrasp, X_WE_desired->at(kApproachPick)*X_OE);
+  //X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
+      //kPreGraspOffset;
 
   // Set LiftFromPick pose
-  X_WE_desired->emplace(kLiftFromPick, X_WE_desired->at(kApproachPickPregrasp));
+  X_WE_desired->emplace(kLiftFromPick, X_WE_desired->at(kApproachPick));
+  X_WE_desired->at(kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
 
   // Set ApproachPlace pose
   X_WE_desired->emplace(
@@ -370,9 +381,9 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       // adjusting to tighter bounds until IK stopped reliably giving
       // results.
       tight_pos_tol_(0.005, 0.005, 0.005),
-      tight_rot_tol_(0.05),
-      loose_pos_tol_(0.05, 0.05, 0.05),
-      loose_rot_tol_(0.5) {
+      tight_rot_tol_(0.01),
+      loose_pos_tol_(0.01, 0.01, 0.01),
+      loose_rot_tol_(0.1) {
   DRAKE_THROW_UNLESS(!place_locations.empty());
 }
 
@@ -415,51 +426,57 @@ void PickAndPlaceStateMachine::Update(
                           &X_WE_desired_);
       waypoints_.clear();
       waypoints_.emplace_back();
+      waypoints_.back().state = kApproachPickPregrasp;
       waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
       waypoints_.back().num_via_points = 1;
       waypoints_.back().duration = 2;
       waypoints_.back().constrain_intermediate_points = false;
 
       waypoints_.emplace_back();
+      waypoints_.back().state = kApproachPick;
       waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
-      waypoints_.back().num_via_points = 1;
+      waypoints_.back().num_via_points = 3;
       waypoints_.back().duration = 3;
       waypoints_.back().constrain_intermediate_points = true;
 
       waypoints_.emplace_back();
+      waypoints_.back().state = kLiftFromPick;
       waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPick);
-      waypoints_.back().num_via_points = 2;
+      waypoints_.back().num_via_points = 3;
       waypoints_.back().duration = 1;
       waypoints_.back().constrain_intermediate_points = true;
 
       waypoints_.emplace_back();
+      waypoints_.back().state = kApproachPlacePregrasp;
       waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
       waypoints_.back().num_via_points = 1;
       waypoints_.back().duration = 2;
       waypoints_.back().constrain_intermediate_points = false;
 
       waypoints_.emplace_back();
+      waypoints_.back().state = kApproachPlace;
       waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
-      waypoints_.back().num_via_points = 2;
-      waypoints_.back().duration = 1;
+      waypoints_.back().num_via_points = 3;
+      waypoints_.back().duration = 3;
       waypoints_.back().constrain_intermediate_points = true;
 
       waypoints_.emplace_back();
+      waypoints_.back().state = kLiftFromPlace;
       waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPlace);
-      waypoints_.back().num_via_points = 2;
+      waypoints_.back().num_via_points = 3;
       waypoints_.back().duration = 2;
       waypoints_.back().constrain_intermediate_points = true;
 
       for (Waypoint waypoint : waypoints_) {
         waypoints_.back().position_tolerance = tight_pos_tol_;
         waypoints_.back().orientation_tolerance = tight_rot_tol_;
-        waypoints_.back().via_points_position_tolerance = tight_pos_tol_(1);
-        waypoints_.back().via_points_orientation_tolerance = tight_rot_tol_;
+        waypoints_.back().via_points_position_tolerance = loose_pos_tol_(1);
+        waypoints_.back().via_points_orientation_tolerance = loose_rot_tol_;
       }
-      next_waypoint_ = waypoints_.begin();
 
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
+        next_waypoint_ = waypoints_.begin();
         // Computes the desired end effector pose in the world frame to be
         // kPreGraspHeightOffset above the object.
         X_Wend_effector_0_ = env_state.get_iiwa_end_effector_pose();
@@ -479,14 +496,15 @@ void PickAndPlaceStateMachine::Update(
             &ik_res, &times);
         DRAKE_THROW_UNLESS(res);
 
+        const int kNumTimes = next_waypoint_->num_via_points + (++next_waypoint_)->num_via_points;
         std::vector<double> plan_times{
-            times.begin(), times.begin() + next_waypoint_->num_via_points + 1};
+            times.begin(), times.begin() + kNumTimes + 1};
         std::vector<VectorX<double>> plan_q{
             ik_res.q_sol.begin(),
-            ik_res.q_sol.begin() + next_waypoint_->num_via_points + 1};
-        q_seed_.resize(q_seed_.rows(), q_seed_.cols() - next_waypoint_->num_via_points);
+            ik_res.q_sol.begin() + kNumTimes + 1};
+        q_seed_.resize(q_seed_.rows(), q_seed_.cols() - kNumTimes);
         for (int i = 0; i < q_seed_.cols(); ++i) {
-          q_seed_.col(i) = ik_res.q_sol[next_waypoint_->num_via_points + i];
+          q_seed_.col(i) = ik_res.q_sol[kNumTimes + i];
         }
         robotlocomotion::robot_plan_t plan{};
         //iiwa_move_.MoveJoints(env_state, iiwa, times, ik_res.q_sol, &plan);
@@ -498,7 +516,7 @@ void PickAndPlaceStateMachine::Update(
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPick;
+        state_ = kGrasp;
         ++next_waypoint_;
         iiwa_move_.Reset();
      }
@@ -575,14 +593,15 @@ void PickAndPlaceStateMachine::Update(
             &ik_res, &times);
         DRAKE_THROW_UNLESS(res);
 
+        const int kNumTimes = next_waypoint_->num_via_points + (++next_waypoint_)->num_via_points + (++next_waypoint_)->num_via_points;
         std::vector<double> plan_times{
-            times.begin(), times.begin() + next_waypoint_->num_via_points + 1};
+            times.begin(), times.begin() + kNumTimes + 1};
         std::vector<VectorX<double>> plan_q{
             ik_res.q_sol.begin(),
-            ik_res.q_sol.begin() + next_waypoint_->num_via_points + 1};
-        q_seed_.resize(q_seed_.rows(), q_seed_.cols() - next_waypoint_->num_via_points);
+            ik_res.q_sol.begin() + kNumTimes + 1};
+        q_seed_.resize(q_seed_.rows(), q_seed_.cols() - kNumTimes);
         for (int i = 0; i < q_seed_.cols(); ++i) {
-          q_seed_.col(i) = ik_res.q_sol[next_waypoint_->num_via_points + i];
+          q_seed_.col(i) = ik_res.q_sol[kNumTimes + i];
         }
         robotlocomotion::robot_plan_t plan{};
         iiwa_move_.MoveJoints(env_state, iiwa, plan_times, plan_q, &plan);
@@ -592,7 +611,7 @@ void PickAndPlaceStateMachine::Update(
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPlacePregrasp;
+        state_ = kPlace;
         ++next_waypoint_;
         iiwa_move_.Reset();
       }
