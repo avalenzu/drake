@@ -508,12 +508,12 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.back().duration = 2;
         waypoints_.back().constrain_intermediate_points = true;
 
-        for (Waypoint waypoint : waypoints_) {
-          waypoint.position_tolerance = tight_pos_tol_;
-          waypoint.orientation_tolerance = tight_rot_tol_;
-          waypoint.via_points_position_tolerance = loose_pos_tol_(1);
-          waypoint.via_points_orientation_tolerance = loose_rot_tol_;
-          waypoint.q = nominal_q_map_.at(waypoint.state);
+        for (auto waypoint = waypoints_.begin(); waypoint != waypoints_.end(); ++waypoint) {
+          waypoint->position_tolerance = tight_pos_tol_;
+          waypoint->orientation_tolerance = tight_rot_tol_;
+          waypoint->via_points_position_tolerance = tight_pos_tol_(1);
+          waypoint->via_points_orientation_tolerance = tight_rot_tol_;
+          waypoint->q = nominal_q_map_.at(waypoint->state);
         }
       }
 
