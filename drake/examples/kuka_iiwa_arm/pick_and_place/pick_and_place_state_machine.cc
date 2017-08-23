@@ -57,6 +57,7 @@ bool PlanStraightLineMotion(
 
   // Create vectors to hold the constraint objects
   std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
+  std::vector<std::unique_ptr<PostureConstraint>> posture_constraints;
   std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
   std::vector<std::unique_ptr<Point2LineSegDistConstraint>> point_to_line_seg_constraints;
   std::vector<std::unique_ptr<WorldGazeDirConstraint>> gaze_dir_constraints;
@@ -97,6 +98,13 @@ bool PlanStraightLineMotion(
     }
 
     // Constraints at waypoint
+    posture_constraints.emplace_back(
+        new PostureConstraint(robot.get(), waypoint_tspan));
+    const VectorX<double> q_lb{waypoint->q.array() - M_PI/8};
+    const VectorX<double> q_ub{waypoint->q.array() + M_PI/8};
+    posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
+    constraint_array.push_back(posture_constraints.back().get());
+
     position_constraints.emplace_back(new WorldPositionConstraint(
         robot.get(), end_effector_body_idx, end_effector_points,
         r_WE.second - waypoint->position_tolerance,
