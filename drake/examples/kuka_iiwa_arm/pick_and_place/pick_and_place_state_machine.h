@@ -58,6 +58,8 @@ struct Waypoint {
   // Total duration of the segment from the previous waypoint to this one
   double duration;
 
+  VectorX<double> q;
+
   PickAndPlaceState state{kDone};
 };
 

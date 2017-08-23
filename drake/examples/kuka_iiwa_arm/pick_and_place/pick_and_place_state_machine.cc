@@ -468,7 +468,7 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPick;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
-        waypoints_.back().num_via_points = 3;
+        waypoints_.back().num_via_points = 5;
         waypoints_.back().duration = 3;
         waypoints_.back().constrain_intermediate_points = true;
 
@@ -489,7 +489,7 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPlace;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
-        waypoints_.back().num_via_points = 3;
+        waypoints_.back().num_via_points = 5;
         waypoints_.back().duration = 3;
         waypoints_.back().constrain_intermediate_points = true;
 
@@ -501,10 +501,11 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.back().constrain_intermediate_points = true;
 
         for (Waypoint waypoint : waypoints_) {
-          waypoints_.back().position_tolerance = tight_pos_tol_;
-          waypoints_.back().orientation_tolerance = tight_rot_tol_;
-          waypoints_.back().via_points_position_tolerance = loose_pos_tol_(1);
-          waypoints_.back().via_points_orientation_tolerance = loose_rot_tol_;
+          waypoint.position_tolerance = tight_pos_tol_;
+          waypoint.orientation_tolerance = tight_rot_tol_;
+          waypoint.via_points_position_tolerance = loose_pos_tol_(1);
+          waypoint.via_points_orientation_tolerance = loose_rot_tol_;
+          waypoint.q = nominal_q_map_.at(waypoint.state);
         }
       }
 
