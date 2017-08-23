@@ -332,6 +332,55 @@ class IKInbetweenConstraint : public drake::solvers::Constraint {
     set_bounds(new_lb, new_ub);
   }
 
+  static int ComputeNumberOfConstraints(
+      const IKTrajectoryHelper& helper, int num_rigid_body_constraints,
+      const RigidBodyConstraint* const* constraint_array) {
+    // num_constraints will contain the rows in the output of DoEval
+    int num_constraints{0};
+
+    const int nT = helper.nT();
+    const double* t = helper.t();
+
+    // It's important that the order of evaluation for the constraints
+    // be the same in here where the bounds are being determined as
+    // when the constraints are being evaluated below.  This
+    // meta-constraint does all of the SingleTimeKinematicConstraints
+    // first, iterating by time samples in the outer loop and
+    // constraints in the inner loop.  This reduces recalculation of
+    // the KinematicsCache when calculating the constraint values
+    // later.  After all bounds/values are determined for the single
+    // time versions, we append all MultipleTimeKinematicConstraints.
+    for (int i = 0; i < nT - 1; i++) {
+      for (int j = 0; j < helper.t_inbetween()[i].size(); j++) {
+        double t_j = helper.t_inbetween()[i](j) + t[i];
+        for (int k = 0; k < num_rigid_body_constraints; k++) {
+          const RigidBodyConstraint* constraint = constraint_array[k];
+          const int constraint_category = constraint->getCategory();
+          if (constraint_category !=
+              RigidBodyConstraint::SingleTimeKinematicConstraintCategory) {
+            continue;
+          }
+          const SingleTimeKinematicConstraint* stc =
+              static_cast<const SingleTimeKinematicConstraint*>(constraint);
+          // Check to see if an inbetween constraint would be active at
+          // this timestep.
+          num_constraints += stc->getNumConstraint(&t_j);
+        }
+      }
+    }
+
+    for (int k = 0; k < num_rigid_body_constraints; k++) {
+      const RigidBodyConstraint* constraint = constraint_array[k];
+      const int constraint_category = constraint->getCategory();
+      if (constraint_category !=
+          RigidBodyConstraint::MultipleTimeKinematicConstraintCategory) {
+        continue;
+      }
+      const MultipleTimeKinematicConstraint* mtkc =
+          static_cast<const MultipleTimeKinematicConstraint*>(constraint);
+       num_constraints += mtkc->getNumConstraint(t, nT);
+  }
+
   const RigidBodyTree<double>* model_;
   const IKTrajectoryHelper& helper_;
   const int num_constraints_;
