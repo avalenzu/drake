@@ -205,7 +205,7 @@ bool PlanStraightLineMotion(
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
   drake::log()->debug("t_samples = {}", t_samples);
-  ikoptions.setAdditionaltSamples(t_samples);
+  //ikoptions.setAdditionaltSamples(t_samples);
   //ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
                                        //robot->get_num_positions()));
   ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
