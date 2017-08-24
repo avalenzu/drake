@@ -340,6 +340,7 @@ void ComputeNominalConfigurations(
     //  Create vectors to hold the constraint objects
     std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
     std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
+    std::vector<std::unique_ptr<PostureChangeConstraint>> posture_change_constraints;
     std::vector<RigidBodyConstraint*> constraint_array;
     for (int i = 0; i < kNumKnots; ++i) {
       // Extract desired position and orientation of end effector at the given
@@ -365,25 +366,23 @@ void ComputeNominalConfigurations(
       constraint_array.push_back(orientation_constraints.back().get());
       ++t_count;
     }
-    const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots-1);
+    const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints-1);
     VectorX<double> ub_change = M_PI_4*VectorX<double>::Ones(kNumJoints);
     VectorX<double> lb_change = -ub_change;
-    PostureChangeConstraint posture_change_constraint_pick{
-        robot.get(), joint_indices, lb_change, ub_change,
-        Vector2<double>(t(0),t(2))};
-    constraint_array.push_back(&posture_change_constraint_pick);
 
-    PostureChangeConstraint posture_change_constraint_place{
-        robot.get(), joint_indices, lb_change, ub_change,
-        Vector2<double>(t(3),t(5))};
-    constraint_array.push_back(&posture_change_constraint_place);
+    for (int i : {0, 1, 3, 4}) {
+      posture_change_constraints.emplace_back(new PostureChangeConstraint(
+          robot.get(), joint_indices, lb_change, ub_change,
+          Vector2<double>(t(i)-0.1, t(i + 1)+0.1)));
+      constraint_array.push_back(posture_change_constraints.back().get());
+    }
 
     ub_change = 0.75*M_PI*VectorX<double>::Ones(kNumJoints);
     lb_change = -ub_change;
-    PostureChangeConstraint posture_change_constraint_move{
-        robot.get(), joint_indices, lb_change, ub_change,
-        Vector2<double>(t(2),t(3))};
-    constraint_array.push_back(&posture_change_constraint_move);
+    posture_change_constraints.emplace_back(
+        new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
+                                    ub_change, Vector2<double>(t(2), t(3))));
+    constraint_array.push_back(posture_change_constraints.back().get());
 
     // Solve the IK problem
     const int kNumRestarts = 50;
