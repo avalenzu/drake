@@ -82,7 +82,7 @@ class IKInbetweenConstraint : public drake::solvers::Constraint {
   IKInbetweenConstraint(const RigidBodyTree<double>* model,
                         const IKTrajectoryHelper& helper, int num_constraints,
                         const RigidBodyConstraint* const* constraint_array)
-      : Constraint(0, helper.nq() * (helper.nT() +
+      : Constraint(ComputeNumberOfConstraints(helper, num_constraints, constraint_array), helper.nq() * (helper.nT() +
                                      helper.num_qdotfree())),  // Update bounds
                                                                // later in
                                                                // constructor.
@@ -254,66 +254,6 @@ class IKInbetweenConstraint : public drake::solvers::Constraint {
     }
     q_samples.col(nT + num_inbetween_tsamples - 1) = q.col(nT - 1);
 
-    // Using the q_samples assembled above which includes the
-    // inbetween data, evaluate any multiple time kinematic
-    // constraints.
-    for (int i = 0; i < num_constraints_; i++) {
-      const RigidBodyConstraint* constraint = constraint_array_[i];
-      const int constraint_category = constraint->getCategory();
-      if (constraint_category !=
-          RigidBodyConstraint::MultipleTimeKinematicConstraintCategory) {
-        continue;
-      }
-      const MultipleTimeKinematicConstraint* mtkc =
-          static_cast<const MultipleTimeKinematicConstraint*>(constraint);
-      const int nc = mtkc->getNumConstraint(helper_.t_samples().data(),
-                                            helper_.t_samples().size());
-      VectorXd mtkc_c(nc);
-      MatrixXd mtkc_dc(nc, nq * (num_qfree + num_inbetween_tsamples));
-      DRAKE_ASSERT(static_cast<int>(helper_.t_samples().size()) ==
-                   num_qfree + num_inbetween_tsamples);
-      mtkc->eval(helper_.t_samples().data(), helper_.t_samples().size(),
-                 q_samples.block(0, 0, nq, num_qfree + num_inbetween_tsamples),
-                 mtkc_c, mtkc_dc);
-      y_scalar.segment(y_idx, nc) = mtkc_c;
-
-      // Calculate our gradient output which should be the size of the
-      // input data (timesteps not including the inbetween times).
-      MatrixXd mtkc_dc_dx = MatrixXd::Zero(nc, nq * (num_qfree + num_qdotfree));
-      int mtkc_dc_off = 0;
-
-      // Initialize with the gradient outputs at the original timesteps.
-      for (int j = 0; j < nT; j++) {
-        mtkc_dc_dx.block(0, j * nq, nc, nq) =
-            mtkc_dc.block(0, mtkc_dc_off * nq, nc, nq);
-        if (j != nT - 1) {
-          mtkc_dc_off += 1 + t_inbetween[j].size();
-        }
-      }
-
-      // Iterate over each intermediate timestamp again, integrating
-      // the gradient results from the intermediate timesteps into our
-      // output (and building up the qdot0/qdotf gradients as well).
-      mtkc_dc_off = 0;
-      for (int j = 0; j < nT - 1; j++) {
-        MatrixXd dc_ij = mtkc_dc.block(0, nq * (mtkc_dc_off + 1), nc,
-                                       nq * t_inbetween[j].size());
-        mtkc_dc_off += 1 + t_inbetween[j].size();
-
-        mtkc_dc_dx.block(0, 0, nc, nq * num_qfree) +=
-            dc_ij *
-            helper_.dq_inbetween_dqknot()[j].block(
-                0, 0, nq * t_inbetween[j].size(), nq * num_qfree);
-        mtkc_dc_dx.block(0, nq * num_qfree, nc, nq) +=
-            dc_ij * helper_.dq_inbetween_dqd0()[j];
-        mtkc_dc_dx.block(0, nq * num_qfree + nq, nc, nq) +=
-            dc_ij * helper_.dq_inbetween_dqdf()[j];
-      }
-
-      dy_scalar.block(y_idx, 0, nc, x.size()) = mtkc_dc_dx;
-      y_idx += nc;
-    }
-
     y.resize(y_idx);
     drake::math::initializeAutoDiffGivenGradientMatrix(
         y_scalar, (dy_scalar * drake::math::autoDiffToGradientMatrix(x)), y);
@@ -348,8 +288,7 @@ class IKInbetweenConstraint : public drake::solvers::Constraint {
     // first, iterating by time samples in the outer loop and
     // constraints in the inner loop.  This reduces recalculation of
     // the KinematicsCache when calculating the constraint values
-    // later.  After all bounds/values are determined for the single
-    // time versions, we append all MultipleTimeKinematicConstraints.
+    // later.
     for (int i = 0; i < nT - 1; i++) {
       for (int j = 0; j < helper.t_inbetween()[i].size(); j++) {
         double t_j = helper.t_inbetween()[i](j) + t[i];
@@ -368,17 +307,8 @@ class IKInbetweenConstraint : public drake::solvers::Constraint {
         }
       }
     }
-
-    for (int k = 0; k < num_rigid_body_constraints; k++) {
-      const RigidBodyConstraint* constraint = constraint_array[k];
-      const int constraint_category = constraint->getCategory();
-      if (constraint_category !=
-          RigidBodyConstraint::MultipleTimeKinematicConstraintCategory) {
-        continue;
-      }
-      const MultipleTimeKinematicConstraint* mtkc =
-          static_cast<const MultipleTimeKinematicConstraint*>(constraint);
-       num_constraints += mtkc->getNumConstraint(t, nT);
+    drake::log()->debug("IKInbetweenConstraint: num_constraints = {}", num_constraints);
+    return num_constraints;
   }
 
   const RigidBodyTree<double>* model_;
