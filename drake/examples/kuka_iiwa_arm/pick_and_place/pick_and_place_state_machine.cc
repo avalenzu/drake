@@ -208,7 +208,7 @@ bool PlanStraightLineMotion(
                                             robot->get_num_positions()));
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
-  //ikoptions.setMajorOptimalityTolerance(1e-6);
+  ikoptions.setMajorOptimalityTolerance(1e-6);
   //ikoptions.setIterationsLimit(2e4);
   const int kNumRestarts = 50;
   for (int i = 0; i < kNumRestarts; ++i) {
@@ -432,7 +432,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       // Position and rotation tolerances.  These were hand-tuned by
       // adjusting to tighter bounds until IK stopped reliably giving
       // results.
-      tight_pos_tol_(0.005, 0.005, 0.005),
+      tight_pos_tol_(0.001, 0.001, 0.001),
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.01, 0.01, 0.01),
       loose_rot_tol_(0.1) {
