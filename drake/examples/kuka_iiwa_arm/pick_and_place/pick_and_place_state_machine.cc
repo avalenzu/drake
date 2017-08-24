@@ -370,8 +370,8 @@ void ComputeNominalConfigurations(
       ++t_count;
     }
     const VectorX<int> joint_indices = VectorX<int>::LinSpaced(kNumKnots, 0, kNumKnots-1);
-    const VectorX<double> ub_change = M_PI_4*VectorX<double>::Ones(kNumJoints);
-    const VectorX<double> lb_change = -ub_change;
+    VectorX<double> ub_change = M_PI_4*VectorX<double>::Ones(kNumJoints);
+    VectorX<double> lb_change = -ub_change;
     PostureChangeConstraint posture_change_constraint_pick{
         robot.get(), joint_indices, lb_change, ub_change,
         Vector2<double>(t(0),t(2))};
@@ -381,6 +381,13 @@ void ComputeNominalConfigurations(
         robot.get(), joint_indices, lb_change, ub_change,
         Vector2<double>(t(3),t(5))};
     constraint_array.push_back(&posture_change_constraint_place);
+
+    ub_change = 0.75*M_PI*VectorX<double>::Ones(kNumJoints);
+    lb_change = -ub_change;
+    PostureChangeConstraint posture_change_constraint_move{
+        robot.get(), joint_indices, lb_change, ub_change,
+        Vector2<double>(t(2),t(3))};
+    constraint_array.push_back(&posture_change_constraint_move);
 
     // Solve the IK problem
     const int kNumRestarts = 50;
