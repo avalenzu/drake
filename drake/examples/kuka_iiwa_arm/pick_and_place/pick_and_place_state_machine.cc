@@ -332,7 +332,7 @@ void ComputeNominalConfigurations(
   VectorX<double> q_seed{robot->getRandomConfiguration(rand_generator)};
   //for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
   VectorX<double> t{6};
-  t << 0, 1, 2, 5, 6, 7;
+  t << 0, 1, 2, 3, 4, 5;
   int t_count{0};
   for (std::vector<PickAndPlaceState> states : {pick_and_place_states}) {
     // Set up an inverse kinematics trajectory problem with one knot for each
