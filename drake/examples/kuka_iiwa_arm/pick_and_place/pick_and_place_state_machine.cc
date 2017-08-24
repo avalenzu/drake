@@ -535,6 +535,7 @@ void PickAndPlaceStateMachine::Update(
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
         next_waypoint_ = waypoints_.begin();
+        next_waypoint_->via_points_position_tolerance = 0.3;
         ExecuteSingleWaypointMove(env_state, iiwa,
                                       nominal_q_map_, next_waypoint_,
                                       iiwa_callback, &iiwa_move_);
@@ -605,6 +606,7 @@ void PickAndPlaceStateMachine::Update(
 
     case kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
+        next_waypoint_->via_points_position_tolerance = 0.3;
         ExecuteSingleWaypointMove(env_state, iiwa,
                                       nominal_q_map_, next_waypoint_,
                                       iiwa_callback, &iiwa_move_);
