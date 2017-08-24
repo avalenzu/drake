@@ -166,24 +166,20 @@ bool PlanStraightLineMotion(
       }
 
       const VectorX<double> ub_change =
-          M_PI * VectorX<double>::Ones(kNumJoints);
+          5.0/waypoint->num_via_points * (waypoint->q.array() - q_current.array()).abs().matrix();
       const VectorX<double> lb_change = -ub_change;
-      posture_change_constraints.emplace_back(
-          new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
-                                      ub_change, intermediate_tspan));
-      constraint_array.push_back(posture_change_constraints.back().get());
+      for (int i = 0; i < waypoint->num_via_points; ++i) {
+        Vector2<double> tspan{*(times->crbegin()+(i+1)), *(times->crbegin()+i)};
+        posture_change_constraints.emplace_back(
+            new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
+              ub_change, tspan));
+        constraint_array.push_back(posture_change_constraints.back().get());
+      }
     }
     X_WE.first = X_WE.second;
   }
 
   const int kNumKnots = times->size();
-
-  const VectorX<double> ub_change = M_PI * VectorX<double>::Ones(kNumJoints);
-  const VectorX<double> lb_change = -ub_change;
-  PostureChangeConstraint posture_change_constraint{
-      robot.get(), joint_indices, lb_change, ub_change,
-      Vector2<double>(times->front(), times->back())};
-  constraint_array.push_back(&posture_change_constraint);
 
   std::default_random_engine rand_generator{1234};
   //MatrixX<double> q_nom{MatrixX<double>::Zero(kNumJoints, kNumKnots)};
