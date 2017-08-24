@@ -481,43 +481,43 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPickPregrasp;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
-        waypoints_.back().num_via_points = 1;
+        waypoints_.back().num_via_points = 7;
         waypoints_.back().duration = 2;
-        waypoints_.back().constrain_intermediate_points = false;
+        waypoints_.back().constrain_intermediate_points = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPick;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 2;
+        waypoints_.back().num_via_points = 7;
+        waypoints_.back().duration = 1;
         waypoints_.back().constrain_intermediate_points = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kLiftFromPick;
         waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPick);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 3;
+        waypoints_.back().num_via_points = 7;
+        waypoints_.back().duration = 1;
         waypoints_.back().constrain_intermediate_points = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPlacePregrasp;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
-        waypoints_.back().num_via_points = 1;
-        waypoints_.back().duration = 3;
-        waypoints_.back().constrain_intermediate_points = false;
+        waypoints_.back().num_via_points = 7;
+        waypoints_.back().duration = 2;
+        waypoints_.back().constrain_intermediate_points = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPlace;
         waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
-        waypoints_.back().num_via_points = 5;
-        waypoints_.back().duration = 2;
+        waypoints_.back().num_via_points = 7;
+        waypoints_.back().duration = 1;
         waypoints_.back().constrain_intermediate_points = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kLiftFromPlace;
         waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPlace);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 2;
+        waypoints_.back().num_via_points = 7;
+        waypoints_.back().duration = 1;
         waypoints_.back().constrain_intermediate_points = true;
 
         for (auto waypoint = waypoints_.begin(); waypoint != waypoints_.end(); ++waypoint) {
