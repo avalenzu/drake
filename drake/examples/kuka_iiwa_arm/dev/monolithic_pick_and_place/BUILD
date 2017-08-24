@@ -46,6 +46,7 @@ drake_cc_binary(
         "//drake/systems/framework:leaf_system",
         "//drake/systems/lcm",
         "//drake/systems/lcm:lcm_driven_loop",
+        "//drake/util:lcm_util",
         "@com_github_gflags_gflags//:gflags",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",

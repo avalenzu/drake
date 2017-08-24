@@ -21,6 +21,7 @@
 #include "drake/systems/lcm/lcm_driven_loop.h"
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/lcm/lcm_subscriber_system.h"
+#include "drake/util/lcmUtil.h"
 
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(end_position, 2, "Position index to end at");
@@ -40,7 +41,8 @@ class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(OptitrackTranslatorSystem);
 
   OptitrackTranslatorSystem() {
-    this->DeclareInputPort(systems::kVectorValued, 7);
+    this->DeclareAbstractInputPort(
+        systems::Value<Isometry3<double>>(Isometry3<double>::Identity()));
     this->DeclareAbstractOutputPort(bot_core::robot_state_t(),
                                     &OptitrackTranslatorSystem::OutputPose);
   }
@@ -48,16 +50,11 @@ class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
  private:
   void OutputPose(const systems::Context<double>& context,
                   bot_core::robot_state_t* out) const {
+    const Isometry3<double>& in = this->EvalAbstractInput(
+        context, 0)->template GetValue<Isometry3<double>>();
 
-    auto in = EvalEigenVectorInput(context, 0);
     out->utime = 0;
-    out->pose.translation.x = in(0);
-    out->pose.translation.y = in(1);
-    out->pose.translation.z = in(2);
-    out->pose.rotation.w = in(6);
-    out->pose.rotation.x = in(3);
-    out->pose.rotation.y = in(4);
-    out->pose.rotation.z = in(5);
+    EncodePose(in, out->pose);
   }
 };
 
