@@ -210,7 +210,7 @@ bool PlanStraightLineMotion(
                                             robot->get_num_positions()));
   ikoptions.setMajorOptimalityTolerance(1e-6);
   //ikoptions.setIterationsLimit(2e4);
-  const int kNumRestarts = 50;
+  const int kNumRestarts = 10;
   for (int i = 0; i < kNumRestarts; ++i) {
     *ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
         constraint_array, ikoptions);
