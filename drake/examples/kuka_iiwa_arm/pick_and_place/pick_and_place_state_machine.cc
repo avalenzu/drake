@@ -549,20 +549,27 @@ void PickAndPlaceStateMachine::Update(
           }
         }
 
-        if (!iiwa_move_.ActionStarted()) {
-          next_waypoint_ = waypoints_.begin();
-          next_waypoint_->via_points_position_tolerance = 0.3;
-          ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                    next_waypoint_, iiwa_callback, &iiwa_move_);
+        bool skip_to_approach_pick = nominal_q_map_.at(kApproachPickPregrasp).isApprox(env_state.get_iiwa_q(), 10*M_PI/180);
 
-          drake::log()->info("kPrep at {}",
-                             env_state.get_iiwa_time());
-        }
+        if (skip_to_approach_pick) {
+          state_ = kApproachPick;
+          next_waypoint_ = waypoints_.begin() + 2;
+        } else {
+          if (!iiwa_move_.ActionStarted()) {
+            next_waypoint_ = waypoints_.begin();
+            next_waypoint_->via_points_position_tolerance = 0.3;
+            ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
+                                      next_waypoint_, iiwa_callback,
+                                      &iiwa_move_);
 
-        if (iiwa_move_.ActionFinished(env_state)) {
-          state_ = kApproachPickPregrasp;
-          next_waypoint_ += 1;
-          iiwa_move_.Reset();
+            drake::log()->info("kPrep at {}", env_state.get_iiwa_time());
+          }
+
+          if (iiwa_move_.ActionFinished(env_state)) {
+            state_ = kApproachPickPregrasp;
+            next_waypoint_ += 1;
+            iiwa_move_.Reset();
+          }
         }
         break;
       }
