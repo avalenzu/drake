@@ -313,6 +313,7 @@ void ComputeDesiredPoses(
 
 void ComputeNominalConfigurations(
     const RigidBodyTree<double>& iiwa,
+    const VectorX<double>& q_seed,
     const std::map<PickAndPlaceState, Isometry3<double>>& X_WE_desired,
     const Vector3<double>& position_tolerance, double orientation_tolerance,
     std::map<PickAndPlaceState, VectorX<double>>* nominal_q_map) {
@@ -336,7 +337,7 @@ void ComputeNominalConfigurations(
   std::vector<PickAndPlaceState> pick_and_place_states{
       kApproachPickPregrasp,  kApproachPick,  kLiftFromPick,
       kApproachPlacePregrasp, kApproachPlace, kLiftFromPlace};
-  VectorX<double> q_seed{robot->getRandomConfiguration(rand_generator)};
+  VectorX<double> q_seed_local{q_seed};
   //for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
   VectorX<double> t{6};
   t << 0, 1, 2, 3, 4, 5;
@@ -401,16 +402,16 @@ void ComputeNominalConfigurations(
     for (int i = 0; i < kNumRestarts; ++i) {
       MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
       for (int j = 0; j < kNumKnots; ++j) {
-        q_knots_seed.col(j) = q_seed;
+        q_knots_seed.col(j) = q_seed_local;
       }
       drake::log()->debug("Attempt {}: t = ({})", i, t.transpose());
       ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
           constraint_array, ikoptions);
       if (ik_res.info[0] == 1) {
-        q_seed = ik_res.q_sol.back();
+        q_seed_local = ik_res.q_sol.back();
         break;
       } else {
-        q_seed = robot->getRandomConfiguration(rand_generator);
+        q_seed_local = robot->getRandomConfiguration(rand_generator);
         drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
       }
     }
@@ -481,7 +482,7 @@ void PickAndPlaceStateMachine::Update(
       if (X_WE_desired_.empty()) {
         ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
                             &X_WE_desired_);
-        ComputeNominalConfigurations(iiwa, X_WE_desired_,
+        ComputeNominalConfigurations(iiwa, env_state.get_iiwa_q(), X_WE_desired_,
                                      tight_pos_tol_, tight_rot_tol_,
                                      &nominal_q_map_);
         waypoints_.clear();
