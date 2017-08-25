@@ -210,7 +210,7 @@ bool PlanStraightLineMotion(
                                             robot->get_num_positions()));
   ikoptions.setMajorOptimalityTolerance(1e-6);
   //ikoptions.setIterationsLimit(2e4);
-  const int kNumRestarts = 10;
+  const int kNumRestarts = (waypoints_start->fall_back_to_joint_space_interpolation) ? 5 : 50;
   for (int i = 0; i < kNumRestarts; ++i) {
     *ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
         constraint_array, ikoptions);
@@ -471,92 +471,123 @@ void PickAndPlaceStateMachine::Update(
         }
 
         if (wsg_act_.ActionFinished(env_state)) {
-          state_ = kApproachPickPregrasp;
+          state_ = kPrep;
           wsg_act_.Reset();
         }
         break;
       }
 
-    case kApproachPickPregrasp: {
-      // Compute all the desired end-effector poses now
-      if (X_WE_desired_.empty()) {
-        ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
-                            &X_WE_desired_);
-        ComputeNominalConfigurations(iiwa, env_state.get_iiwa_q(), X_WE_desired_,
-                                     tight_pos_tol_, tight_rot_tol_,
-                                     &nominal_q_map_);
-        waypoints_.clear();
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPickPregrasp;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 2;
-        waypoints_.back().constrain_intermediate_points = true;
-        waypoints_.back().fall_back_to_joint_space_interpolation = true;
+      case kPrep: {
+        // Compute all the desired end-effector poses now
+        if (X_WE_desired_.empty()) {
+          ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
+                              &X_WE_desired_);
+          ComputeNominalConfigurations(iiwa, env_state.get_iiwa_q(),
+                                       X_WE_desired_, tight_pos_tol_,
+                                       tight_rot_tol_, &nominal_q_map_);
+          waypoints_.clear();
+          waypoints_.emplace_back();
+          waypoints_.back().state = kApproachPickPregrasp;
+          waypoints_.back().q = nominal_q_map_.at(kApproachPickPregrasp);
+          waypoints_.back().q(1) = 0;
+          waypoints_.back().num_via_points = 1;
+          waypoints_.back().duration = 2;
+          waypoints_.back().constrain_intermediate_points = false;
+          waypoints_.back().fall_back_to_joint_space_interpolation = true;
 
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPick;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.emplace_back();
+          waypoints_.back().state = kApproachPickPregrasp;
+          waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
+          waypoints_.back().num_via_points = 7;
+          waypoints_.back().duration = 1;
+          waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.back().fall_back_to_joint_space_interpolation = true;
 
-        waypoints_.emplace_back();
-        waypoints_.back().state = kLiftFromPick;
-        waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPick);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.emplace_back();
+          waypoints_.back().state = kApproachPick;
+          waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
+          waypoints_.back().num_via_points = 3;
+          waypoints_.back().duration = 1;
+          waypoints_.back().constrain_intermediate_points = true;
 
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPlacePregrasp;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 2;
-        waypoints_.back().constrain_intermediate_points = true;
-        waypoints_.back().fall_back_to_joint_space_interpolation = true;
+          waypoints_.emplace_back();
+          waypoints_.back().state = kLiftFromPick;
+          waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPick);
+          waypoints_.back().num_via_points = 3;
+          waypoints_.back().duration = 1;
+          waypoints_.back().constrain_intermediate_points = true;
 
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPlace;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.emplace_back();
+          waypoints_.back().state = kApproachPlacePregrasp;
+          waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
+          waypoints_.back().num_via_points = 7;
+          waypoints_.back().duration = 2;
+          waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.back().fall_back_to_joint_space_interpolation = true;
 
-        waypoints_.emplace_back();
-        waypoints_.back().state = kLiftFromPlace;
-        waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPlace);
-        waypoints_.back().num_via_points = 7;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
+          waypoints_.emplace_back();
+          waypoints_.back().state = kApproachPlace;
+          waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
+          waypoints_.back().num_via_points = 3;
+          waypoints_.back().duration = 1;
+          waypoints_.back().constrain_intermediate_points = true;
 
-        for (auto waypoint = waypoints_.begin(); waypoint != waypoints_.end(); ++waypoint) {
-          waypoint->position_tolerance = tight_pos_tol_;
-          waypoint->orientation_tolerance = tight_rot_tol_;
-          waypoint->via_points_position_tolerance = tight_pos_tol_(1);
-          waypoint->via_points_orientation_tolerance = tight_rot_tol_;
-          waypoint->q = nominal_q_map_.at(waypoint->state);
+          waypoints_.emplace_back();
+          waypoints_.back().state = kLiftFromPlace;
+          waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPlace);
+          waypoints_.back().num_via_points = 3;
+          waypoints_.back().duration = 1;
+          waypoints_.back().constrain_intermediate_points = true;
+
+          for (auto waypoint = waypoints_.begin() + 1;
+               waypoint != waypoints_.end(); ++waypoint) {
+            waypoint->position_tolerance = tight_pos_tol_;
+            waypoint->orientation_tolerance = tight_rot_tol_;
+            waypoint->via_points_position_tolerance = tight_pos_tol_(1);
+            waypoint->via_points_orientation_tolerance = tight_rot_tol_;
+            waypoint->q = nominal_q_map_.at(waypoint->state);
+          }
         }
-      }
 
-      // Approaches kPreGraspHeightOffset above the center of the object.
-      if (!iiwa_move_.ActionStarted()) {
-        next_waypoint_ = waypoints_.begin();
-        next_waypoint_->via_points_position_tolerance = 0.3;
-        ExecuteSingleWaypointMove(env_state, iiwa,
-                                      nominal_q_map_, next_waypoint_,
-                                      iiwa_callback, &iiwa_move_);
+        if (!iiwa_move_.ActionStarted()) {
+          next_waypoint_ = waypoints_.begin();
+          next_waypoint_->via_points_position_tolerance = 0.3;
+          ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
+                                    next_waypoint_, iiwa_callback, &iiwa_move_);
 
-        drake::log()->info("kApproachPickPregrasp at {}",
-                           env_state.get_iiwa_time());
-      }
+          drake::log()->info("kPrep at {}",
+                             env_state.get_iiwa_time());
+        }
 
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPick;
-        next_waypoint_ += 1;
-        iiwa_move_.Reset();
+        if (iiwa_move_.ActionFinished(env_state)) {
+          state_ = kApproachPickPregrasp;
+          next_waypoint_ += 1;
+          iiwa_move_.Reset();
+        }
+        break;
       }
-      break;
+      case kApproachPickPregrasp: {
+        // Approaches kPreGraspHeightOffset above the center of the object.
+        if (!iiwa_move_.ActionStarted()) {
+          next_waypoint_ = waypoints_.begin();
+          next_waypoint_->via_points_position_tolerance = 0.3;
+          ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
+                                    next_waypoint_, iiwa_callback, &iiwa_move_);
+          ++next_waypoint_;
+          next_waypoint_->via_points_position_tolerance = 0.3;
+          ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
+                                    next_waypoint_, iiwa_callback, &iiwa_move_);
+
+          drake::log()->info("kApproachPickPregrasp at {}",
+                             env_state.get_iiwa_time());
+        }
+
+        if (iiwa_move_.ActionFinished(env_state)) {
+          state_ = kApproachPick;
+          next_waypoint_ += 1;
+          iiwa_move_.Reset();
+        }
+        break;
     }
 
     case kApproachPick: {
