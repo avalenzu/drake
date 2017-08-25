@@ -227,6 +227,16 @@ bool PlanStraightLineMotion(
     }
   }
   bool planner_result{ik_res->info[0] == 1};
+  if (!planner_result &&
+      waypoints_start->fall_back_to_joint_space_interpolation) {
+    planner_result = true;
+    PiecewisePolynomial<double> q_traj =
+        PiecewisePolynomial<double>::FirstOrderHold(
+            {times->front(), times->back()}, {q_current, waypoints_start->q});
+    for (int j = 0; j < kNumKnots; ++j) {
+      ik_res->q_sol[j] = q_traj.value(t[j]);
+    }
+  }
   drake::log()->debug("result: {}", planner_result);
   drake::log()->debug("t = ({})", t.transpose());
   return planner_result;
@@ -486,6 +496,7 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.back().num_via_points = 7;
         waypoints_.back().duration = 2;
         waypoints_.back().constrain_intermediate_points = true;
+        waypoints_.back().fall_back_to_joint_space_interpolation = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPick;
@@ -507,6 +518,7 @@ void PickAndPlaceStateMachine::Update(
         waypoints_.back().num_via_points = 7;
         waypoints_.back().duration = 2;
         waypoints_.back().constrain_intermediate_points = true;
+        waypoints_.back().fall_back_to_joint_space_interpolation = true;
 
         waypoints_.emplace_back();
         waypoints_.back().state = kApproachPlace;

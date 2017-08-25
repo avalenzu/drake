@@ -60,6 +60,8 @@ struct Waypoint {
 
   VectorX<double> q;
 
+  bool fall_back_to_joint_space_interpolation{false};
+
   PickAndPlaceState state{kDone};
 };
 
