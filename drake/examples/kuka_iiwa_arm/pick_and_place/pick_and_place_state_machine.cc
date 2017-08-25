@@ -291,6 +291,12 @@ void ComputeDesiredPoses(
   //X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
       //kPreGraspOffset;
 
+  X_OE.setIdentity();
+  X_OE.rotate(Eigen::AngleAxis<double>(-M_PI_4, Vector3<double>::UnitY()));
+  X_OE.translation()[2] = 1.5*kPreGraspHeightOffset;
+  X_OE.translation()[0] = -1.5*kPreGraspHeightOffset/2;
+  X_WE_desired->emplace(kPrep, X_WE_desired->at(kApproachPickPregrasp)*X_OE);
+
   // Set LiftFromPick pose
   X_WE_desired->emplace(kLiftFromPick, X_WE_desired->at(kApproachPick));
   X_WE_desired->at(kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
@@ -335,12 +341,12 @@ void ComputeNominalConfigurations(
   //std::vector<PickAndPlaceState> place_states{kApproachPlacePregrasp,
                                               //kApproachPlace, kLiftFromPlace};
   std::vector<PickAndPlaceState> pick_and_place_states{
-      kApproachPickPregrasp,  kApproachPick,  kLiftFromPick,
+      kPrep, kApproachPickPregrasp,  kApproachPick,  kLiftFromPick,
       kApproachPlacePregrasp, kApproachPlace, kLiftFromPlace};
   VectorX<double> q_seed_local{q_seed};
   //for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
-  VectorX<double> t{6};
-  t << 0, 1, 2, 3, 4, 5;
+  VectorX<double> t{7};
+  t << 0, 1, 2, 3, 4, 5, 6;
   int t_count{0};
   for (std::vector<PickAndPlaceState> states : {pick_and_place_states}) {
     // Set up an inverse kinematics trajectory problem with one knot for each
@@ -382,7 +388,7 @@ void ComputeNominalConfigurations(
     VectorX<double> ub_change = M_PI_4*VectorX<double>::Ones(kNumJoints);
     VectorX<double> lb_change = -ub_change;
 
-    for (int i : {0, 1, 3, 4}) {
+    for (int i : {0, 1, 2, 4, 5}) {
       posture_change_constraints.emplace_back(new PostureChangeConstraint(
           robot.get(), joint_indices, lb_change, ub_change,
           Vector2<double>(t(i)-0.1, t(i + 1)+0.1)));
@@ -393,7 +399,7 @@ void ComputeNominalConfigurations(
     lb_change = -ub_change;
     posture_change_constraints.emplace_back(
         new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
-                                    ub_change, Vector2<double>(t(2), t(3))));
+                                    ub_change, Vector2<double>(t(3), t(4))));
     constraint_array.push_back(posture_change_constraints.back().get());
 
     // Solve the IK problem
@@ -487,9 +493,7 @@ void PickAndPlaceStateMachine::Update(
                                        tight_rot_tol_, &nominal_q_map_);
           waypoints_.clear();
           waypoints_.emplace_back();
-          waypoints_.back().state = kApproachPickPregrasp;
-          waypoints_.back().q = nominal_q_map_.at(kApproachPickPregrasp);
-          waypoints_.back().q(1) = 0;
+          waypoints_.back().state = kPrep;
           waypoints_.back().num_via_points = 1;
           waypoints_.back().duration = 2;
           waypoints_.back().constrain_intermediate_points = false;
@@ -498,7 +502,7 @@ void PickAndPlaceStateMachine::Update(
           waypoints_.emplace_back();
           waypoints_.back().state = kApproachPickPregrasp;
           waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
-          waypoints_.back().num_via_points = 7;
+          waypoints_.back().num_via_points = 3;
           waypoints_.back().duration = 1;
           waypoints_.back().constrain_intermediate_points = true;
           waypoints_.back().fall_back_to_joint_space_interpolation = true;
@@ -520,7 +524,7 @@ void PickAndPlaceStateMachine::Update(
           waypoints_.emplace_back();
           waypoints_.back().state = kApproachPlacePregrasp;
           waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
-          waypoints_.back().num_via_points = 7;
+          waypoints_.back().num_via_points = 3;
           waypoints_.back().duration = 2;
           waypoints_.back().constrain_intermediate_points = true;
           waypoints_.back().fall_back_to_joint_space_interpolation = true;
@@ -539,7 +543,7 @@ void PickAndPlaceStateMachine::Update(
           waypoints_.back().duration = 1;
           waypoints_.back().constrain_intermediate_points = true;
 
-          for (auto waypoint = waypoints_.begin() + 1;
+          for (auto waypoint = waypoints_.begin();
                waypoint != waypoints_.end(); ++waypoint) {
             waypoint->position_tolerance = tight_pos_tol_;
             waypoint->orientation_tolerance = tight_rot_tol_;
@@ -549,13 +553,14 @@ void PickAndPlaceStateMachine::Update(
           }
         }
 
-        bool skip_to_approach_pick = nominal_q_map_.at(kApproachPickPregrasp).isApprox(env_state.get_iiwa_q(), 10*M_PI/180);
-
-        if (skip_to_approach_pick) {
-          state_ = kApproachPick;
-          next_waypoint_ = waypoints_.begin() + 2;
-        } else {
-          if (!iiwa_move_.ActionStarted()) {
+        if (!iiwa_move_.ActionStarted()) {
+          bool skip_to_approach_pick =
+              nominal_q_map_.at(kApproachPickPregrasp)
+                  .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
+          if (skip_to_approach_pick) {
+            state_ = kApproachPick;
+            next_waypoint_ = waypoints_.begin() + 2;
+          } else {
             next_waypoint_ = waypoints_.begin();
             next_waypoint_->via_points_position_tolerance = 0.3;
             ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
@@ -564,12 +569,11 @@ void PickAndPlaceStateMachine::Update(
 
             drake::log()->info("kPrep at {}", env_state.get_iiwa_time());
           }
-
-          if (iiwa_move_.ActionFinished(env_state)) {
-            state_ = kApproachPickPregrasp;
-            next_waypoint_ += 1;
-            iiwa_move_.Reset();
-          }
+        }
+        if (iiwa_move_.ActionFinished(env_state)) {
+          state_ = kApproachPickPregrasp;
+          next_waypoint_ += 1;
+          iiwa_move_.Reset();
         }
         break;
       }
