@@ -316,6 +316,7 @@ void ComputeNominalConfigurations(
     const std::map<PickAndPlaceState, Isometry3<double>>& X_WE_desired,
     const Vector3<double>& position_tolerance, double orientation_tolerance,
     std::map<PickAndPlaceState, VectorX<double>>* nominal_q_map) {
+  nominal_q_map->clear();
   std::default_random_engine rand_generator{1234};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   int kNumJoints{robot->get_num_positions()};
@@ -417,13 +418,7 @@ void ComputeNominalConfigurations(
     drake::log()->debug("Num knots in sol: {}", ik_res.q_sol.size());
     //for (int i = 0; i < kNumKnots; i+=2) {
     for (int i = 0; i < kNumKnots; ++i) {
-      nominal_q_map->emplace(states[i/2], ik_res.q_sol[i]);
-      VectorX<double> constraint_value;
-      VectorX<double> lb;
-      VectorX<double> ub;
-      position_constraints[i]->bounds(&t[i], lb, ub);
       drake::log()->debug("State {}: q = ({})", states[i], ik_res.q_sol[i].transpose());
-      drake::log()->debug("State {}: lb: ({}), ub: ({})", states[i], lb.transpose(), ub.transpose());
       nominal_q_map->emplace(states[i], ik_res.q_sol[i]);
     }
   }
