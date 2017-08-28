@@ -38,12 +38,11 @@ const double kPreGraspHeightOffset = 0.3;
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1.
-bool PlanStraightLineMotion(const VectorX<double>& q_current,
+bool PlanStraightLineMotion(const VectorX<double>& q_0,
                             const MatrixX<double>& q_seed,
                             std::vector<Waypoint>::const_iterator waypoint,
                             const RigidBodyTree<double>& original_robot,
                             IKResults* ik_res, std::vector<double>* times) {
-  MatrixX<double> q_seed_local{q_seed};
   const VectorX<double> q_f{waypoint->q};
   
   // Create a local copy of the robot
@@ -66,7 +65,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
   std::vector<RigidBodyConstraint*> constraint_array;
 
   auto kinematics_cache = robot->CreateKinematicsCache();
-  kinematics_cache.initialize(q_current);
+  kinematics_cache.initialize(q_0);
   robot->doKinematics(kinematics_cache);
   std::pair<Isometry3<double>, Isometry3<double>> X_WE;
   Isometry3<double> X_LE{Isometry3<double>::Identity()};
@@ -157,7 +156,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
 
   const VectorX<double> ub_change =
       5.0 / waypoint->num_via_points *
-      (q_f.array() - q_current.array()).abs().matrix();
+      (q_f.array() - q_0.array()).abs().matrix();
   const VectorX<double> lb_change = -ub_change;
   for (int i = 0; i < waypoint->num_via_points; ++i) {
     Vector2<double> tspan{*(times->crbegin() + (i + 1)),
@@ -171,15 +170,14 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
   const int kNumKnots = times->size();
 
   std::default_random_engine rand_generator{1234};
-  // MatrixX<double> q_nom{MatrixX<double>::Zero(kNumJoints, kNumKnots)};
+  MatrixX<double> q_seed_local{kNumJoints, kNumKnots};
+  for (int i = 0; i < kNumKnots; ++i) {
+    double s{static_cast<double>(i) / (static_cast<double>(kNumKnots) - 1)};
+    q_seed_local.col(i) = (1 - s) * q_0 + s * q_f;
+  }
   MatrixX<double> q_nom{q_seed};
-  drake::log()->debug("q_seed_local.cols() = {}, kNumKnots = {}",
-                      q_seed_local.cols(), kNumKnots);
-  DRAKE_THROW_UNLESS(q_seed_local.rows() == kNumJoints &&
-                     q_seed_local.cols() == kNumKnots);
   int kNumSamplesPerKnot{2};
   Eigen::RowVectorXd t_samples{kNumSamplesPerKnot * (kNumKnots - 1)};
-  q_seed_local.col(0) = q_current;
   for (int i = 0; i < kNumKnots; ++i) {
     if (i < kNumKnots - 1) {
       for (int j = 0; j < kNumSamplesPerKnot; ++j) {
@@ -214,7 +212,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
       // VectorX<double> q_end{robot->getRandomConfiguration(rand_generator)};
       for (int j = 1; j < kNumKnots; ++j) {
         // double s = j/(kNumKnots-1);
-        // q_seed_local.col(j) = (1-s)*q_current + s*q_end;
+        // q_seed_local.col(j) = (1-s)*q_0 + s*q_end;
         q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
       }
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res->info[0]);
@@ -225,7 +223,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_current,
     planner_result = true;
     PiecewisePolynomial<double> q_traj =
         PiecewisePolynomial<double>::FirstOrderHold(
-            {times->front(), times->back()}, {q_current, q_f});
+            {times->front(), times->back()}, {q_0, q_f});
     for (int j = 0; j < kNumKnots; ++j) {
       ik_res->q_sol[j] = q_traj.value(t[j]);
     }
