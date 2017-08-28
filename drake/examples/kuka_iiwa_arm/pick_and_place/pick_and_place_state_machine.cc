@@ -189,11 +189,16 @@ Result PlanStraightLineMotion(const Request& request,
   }
   X_WE.first = X_WE.second;
 
-  std::default_random_engine rand_generator{1234};
+  // Set the seed for the first attempt (and the nominal value for all attempts)
+  // to be the linear interpolation between the initial and final
+  // configurations.
+  VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
+  VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
   MatrixX<double> q_seed_local{kNumJoints, kNumKnots};
+  PiecewisePolynomial<double> q_seed_traj{PiecewisePolynomial<double>::Cubic(
+      {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf)};
   for (int i = 0; i < kNumKnots; ++i) {
-    double s{static_cast<double>(i) / (static_cast<double>(kNumKnots) - 1)};
-    q_seed_local.col(i) = (1 - s) * q_0 + s * q_f;
+    q_seed_local.col(i) = q_seed_traj.value(times[i]);
   }
   MatrixX<double> q_nom{q_seed_local};
   VectorX<double> t{kNumKnots};
@@ -221,8 +226,6 @@ Result PlanStraightLineMotion(const Request& request,
   }
   Result result;
   result.success = (ik_res.info[0] == 1);
-  VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
-  VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
   std::vector<MatrixX<double>> q_sol(kNumKnots);
   if (result.success) {
     for (int i = 0; i < kNumKnots; ++i) {
