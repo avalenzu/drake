@@ -240,61 +240,101 @@ void ExecuteSingleWaypointMove(
   iiwa_callback(&plan);
 }
 
-//
-//  (ApproachPickPregrasp,                               (ApproachPlacePregrasp
-//   LiftFromPick ),                                      LiftFromPlace)
-//       +--------------------------------------------------------+
-//       |                                                        |
-//       |                                                        |
-//       + (ApproachPick)                         (ApproachPlace) +
-void ComputeDesiredPoses(
-    const WorldState& env_state, const Isometry3<double>& place_location,
-    std::map<PickAndPlaceState, Isometry3<double>>* X_WE_desired) {
-  X_WE_desired->clear();
 
+}  // namespace
+
+void PickAndPlaceStateMachine::ComputeDesiredPoses(
+    const WorldState& env_state) {
+  X_WE_desired_.clear();
+
+  //   + (Prep)
+  //    \
+  //     \ (ApproachPickPregrasp,                         (ApproachPlacePregrasp
+  //      \ LiftFromPick ),                                LiftFromPlace)
+  //       +--------------------------------------------------------+
+  //       |                                                        |
+  //       |                                                        |
+  //       + (ApproachPick)                         (ApproachPlace) +
+  
   // Set ApproachPick pose
-  X_WE_desired->emplace(kApproachPick, env_state.get_object_pose());
+  X_WE_desired_.emplace(kApproachPick, env_state.get_object_pose());
 
   // Set ApproachPickPregrasp pose
   Isometry3<double> X_OE{Isometry3<double>::Identity()};
   X_OE.translation()[2] = kPreGraspHeightOffset;
-  // X_OE.translation()[0] = -kPreGraspHeightOffset/2;
-  X_WE_desired->emplace(kApproachPickPregrasp,
-                        X_WE_desired->at(kApproachPick) * X_OE);
-  // X_WE_desired->at(kApproachPickPregrasp).translation()[2] +=
-  // kPreGraspOffset;
+  X_WE_desired_.emplace(kApproachPickPregrasp,
+                        X_WE_desired_.at(kApproachPick) * X_OE);
 
+  // Set Prep pose
   X_OE.setIdentity();
   X_OE.rotate(Eigen::AngleAxis<double>(-M_PI_4, Vector3<double>::UnitY()));
   X_OE.translation()[2] = 1.5 * kPreGraspHeightOffset;
   X_OE.translation()[0] = -1.5 * kPreGraspHeightOffset / 2;
-  X_WE_desired->emplace(kPrep, X_WE_desired->at(kApproachPickPregrasp) * X_OE);
+  X_WE_desired_.emplace(kPrep, X_WE_desired_.at(kApproachPickPregrasp) * X_OE);
 
   // Set LiftFromPick pose
-  X_WE_desired->emplace(kLiftFromPick, X_WE_desired->at(kApproachPick));
-  X_WE_desired->at(kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
+  X_WE_desired_.emplace(kLiftFromPick, X_WE_desired_.at(kApproachPick));
+  X_WE_desired_.at(kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
 
   // Set ApproachPlace pose
-  X_WE_desired->emplace(kApproachPlace,
-                        env_state.get_iiwa_base() * place_location);
+  X_WE_desired_.emplace(kApproachPlace,
+                        env_state.get_iiwa_base() * place_locations_[next_place_location_]);
 
   // Set ApproachPlacePregrasp pose
-  X_WE_desired->emplace(kApproachPlacePregrasp,
-                        X_WE_desired->at(kApproachPlace));
-  X_WE_desired->at(kApproachPlacePregrasp).translation()[2] +=
+  X_WE_desired_.emplace(kApproachPlacePregrasp,
+                        X_WE_desired_.at(kApproachPlace));
+  X_WE_desired_.at(kApproachPlacePregrasp).translation()[2] +=
       kPreGraspHeightOffset;
 
   // Set LiftFromPlace pose
-  X_WE_desired->emplace(kLiftFromPlace,
-                        X_WE_desired->at(kApproachPlacePregrasp));
+  X_WE_desired_.emplace(kLiftFromPlace,
+                        X_WE_desired_.at(kApproachPlacePregrasp));
 }
 
-void ComputeNominalConfigurations(
-    const RigidBodyTree<double>& iiwa, const VectorX<double>& q_seed,
-    const std::map<PickAndPlaceState, Isometry3<double>>& X_WE_desired,
-    const Vector3<double>& position_tolerance, double orientation_tolerance,
-    std::map<PickAndPlaceState, VectorX<double>>* nominal_q_map) {
-  nominal_q_map->clear();
+
+PostureInterpolationRequest
+PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
+    const WorldState& env_state, PickAndPlaceState state, int num_via_points,
+    double duration, bool fall_back_to_joint_space_interpolation) {
+  PostureInterpolationRequest request;
+  request.q_initial = env_state.get_iiwa_q();
+  request.q_final = nominal_q_map_.at(state);
+  double dt{duration/static_cast<double>(num_via_points)};
+  request.times.resize(num_via_points + 1);
+  request.times.front() = 0.0;
+  for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
+    request.times[i] = i*dt;
+  }
+  request.times.back() = duration;
+  request.position_tolerance = tight_pos_tol_(0);
+  request.orientation_tolerance = tight_rot_tol_;
+  request.fall_back_to_joint_space_interpolation =
+      fall_back_to_joint_space_interpolation;
+  return request;
+}
+
+PickAndPlaceStateMachine::PickAndPlaceStateMachine(
+    const std::vector<Isometry3<double>>& place_locations, bool loop)
+    : place_locations_(place_locations),
+      next_place_location_(0),
+      loop_(loop),
+      state_(kOpenGripper),
+      // Position and rotation tolerances.  These were hand-tuned by
+      // adjusting to tighter bounds until IK stopped reliably giving
+      // results.
+      tight_pos_tol_(0.001, 0.001, 0.001),
+      tight_rot_tol_(0.05),
+      loose_pos_tol_(0.01, 0.01, 0.01),
+      loose_rot_tol_(0.1) {
+  DRAKE_THROW_UNLESS(!place_locations.empty());
+}
+
+PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
+
+void PickAndPlaceStateMachine::ComputeNominalConfigurations(
+    const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
+  ComputeDesiredPoses(env_state);
+  nominal_q_map_.clear();
   std::default_random_engine rand_generator{1234};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   int kNumJoints{robot->get_num_positions()};
@@ -307,15 +347,13 @@ void ComputeNominalConfigurations(
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   const double kEndEffectorToMidFingerDepth = 0.12;
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
-  // std::vector<PickAndPlaceState> pick_states{kApproachPickPregrasp,
-  // kApproachPick, kLiftFromPick};
-  // std::vector<PickAndPlaceState> place_states{kApproachPlacePregrasp,
-  // kApproachPlace, kLiftFromPlace};
+
   std::vector<PickAndPlaceState> pick_and_place_states{
       kPrep,         kApproachPickPregrasp,  kApproachPick,
       kLiftFromPick, kApproachPlacePregrasp, kApproachPlace,
       kLiftFromPlace};
-  VectorX<double> q_seed_local{q_seed};
+
+  VectorX<double> q_seed_local{env_state.get_iiwa_q()};
   // for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
   VectorX<double> t{7};
   t << 0, 1, 2, 3, 4, 5, 6;
@@ -338,7 +376,7 @@ void ComputeNominalConfigurations(
       // state
       Vector2<double> tspan{t(t_count), t(t_count)};
       PickAndPlaceState state{states[i]};
-      const Isometry3<double>& X_WE = X_WE_desired.at(state);
+      const Isometry3<double>& X_WE = X_WE_desired_.at(state);
       const Vector3<double>& r_WE = X_WE.translation();
       const Quaternion<double>& quat_WE{X_WE.rotation()};
 
@@ -348,13 +386,13 @@ void ComputeNominalConfigurations(
       // Construct position and orientation constraints
       position_constraints.emplace_back(new WorldPositionConstraint(
           robot.get(), end_effector_body_idx, end_effector_points,
-          r_WE - position_tolerance, r_WE + position_tolerance, tspan));
+          r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, tspan));
       constraint_array.push_back(position_constraints.back().get());
       if (state != kPrep) {
         orientation_constraints.emplace_back(new WorldQuatConstraint(
             robot.get(), end_effector_body_idx,
             Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-            orientation_tolerance, tspan));
+            tight_rot_tol_, tspan));
         constraint_array.push_back(orientation_constraints.back().get());
       }
       ++t_count;
@@ -403,51 +441,10 @@ void ComputeNominalConfigurations(
     for (int i = 0; i < kNumKnots; ++i) {
       drake::log()->debug("State {}: q = ({})", states[i],
                           ik_res.q_sol[i].transpose());
-      nominal_q_map->emplace(states[i], ik_res.q_sol[i]);
+      nominal_q_map_.emplace(states[i], ik_res.q_sol[i]);
     }
   }
 }
-
-}  // namespace
-
-PostureInterpolationRequest
-PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
-    const WorldState& env_state, PickAndPlaceState state, int num_via_points,
-    double duration, bool fall_back_to_joint_space_interpolation) {
-  PostureInterpolationRequest request;
-  request.q_initial = env_state.get_iiwa_q();
-  request.q_final = nominal_q_map_.at(state);
-  double dt{duration/static_cast<double>(num_via_points)};
-  request.times.resize(num_via_points + 1);
-  request.times.front() = 0.0;
-  for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
-    request.times[i] = i*dt;
-  }
-  request.times.back() = duration;
-  request.position_tolerance = tight_pos_tol_(0);
-  request.orientation_tolerance = tight_rot_tol_;
-  request.fall_back_to_joint_space_interpolation =
-      fall_back_to_joint_space_interpolation;
-  return request;
-}
-
-PickAndPlaceStateMachine::PickAndPlaceStateMachine(
-    const std::vector<Isometry3<double>>& place_locations, bool loop)
-    : place_locations_(place_locations),
-      next_place_location_(0),
-      loop_(loop),
-      state_(kOpenGripper),
-      // Position and rotation tolerances.  These were hand-tuned by
-      // adjusting to tighter bounds until IK stopped reliably giving
-      // results.
-      tight_pos_tol_(0.001, 0.001, 0.001),
-      tight_rot_tol_(0.05),
-      loose_pos_tol_(0.01, 0.01, 0.01),
-      loose_rot_tol_(0.1) {
-  DRAKE_THROW_UNLESS(!place_locations.empty());
-}
-
-PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
 
 void PickAndPlaceStateMachine::Update(
     const WorldState& env_state, const IiwaPublishCallback& iiwa_callback,
@@ -483,12 +480,8 @@ void PickAndPlaceStateMachine::Update(
 
     case kPrep: {
       if (!iiwa_move_.ActionStarted()) {
-        // Compute all the desired end-effector poses now
-        ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
-                            &X_WE_desired_);
-        ComputeNominalConfigurations(iiwa, env_state.get_iiwa_q(),
-                                     X_WE_desired_, tight_pos_tol_,
-                                     tight_rot_tol_, &nominal_q_map_);
+        // Compute all the desired configurations
+        ComputeNominalConfigurations(iiwa, env_state);
         bool skip_to_approach_pick =
             nominal_q_map_.at(kApproachPickPregrasp)
                 .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
@@ -509,7 +502,6 @@ void PickAndPlaceStateMachine::Update(
       }
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kApproachPickPregrasp;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -651,7 +643,7 @@ void PickAndPlaceStateMachine::Update(
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
-        next_place_location_++;
+        next_place_location_ ++;
         if (next_place_location_ == static_cast<int>(place_locations_.size()) &&
             !loop_) {
           state_ = kDone;
@@ -659,7 +651,6 @@ void PickAndPlaceStateMachine::Update(
           drake::log()->info("kDone at {}", env_state.get_iiwa_time());
         } else {
           next_place_location_ %= place_locations_.size();
-          X_WE_desired_.clear();
           state_ = kOpenGripper;
         }
         iiwa_move_.Reset();
