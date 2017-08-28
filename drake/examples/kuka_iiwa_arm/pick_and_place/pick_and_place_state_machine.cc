@@ -410,6 +410,7 @@ void ComputeNominalConfigurations(
 
 }  // namespace
 
+PostureInterpolationRequest
 PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
     const WorldState& env_state, PickAndPlaceState state, int num_via_points,
     double duration, bool fall_back_to_joint_space_interpolation) {
