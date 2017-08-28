@@ -39,6 +39,13 @@ struct Request {
   bool fall_back_to_joint_space_interpolation;
 };
 
+struct Result {
+  // Configuration trajectory
+  std::unique_ptr<PiecewisePolynomial<double>> q_traj;
+  // Success
+  bool success;
+};
+
 // Computes the desired end effector pose in the world frame given the object
 // pose in the world frame.
 // Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
@@ -56,13 +63,18 @@ struct Request {
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1.
-bool PlanStraightLineMotion(const Request& request,
-                            const RigidBodyTree<double>& original_robot,
-                            IKResults* ik_res) {
-  const VectorX<double> q_0{request.q_initial};
-  const VectorX<double> q_f{request.q_final};
+Result PlanStraightLineMotion(const Request& request,
+                            const RigidBodyTree<double>& original_robot) {
+  // Create local references to request members
+  const VectorX<double>& q_0{request.q_initial};
+  const VectorX<double>& q_f{request.q_final};
   const std::vector<double>& times{request.times};
-  const int kNumKnots = request.times.size();
+  const double& position_tolerance{request.position_tolerance};
+  const double& orientation_tolerance{request.orientation_tolerance};
+  const bool& fall_back_to_joint_space_interpolation{
+      request.fall_back_to_joint_space_interpolation};
+
+  const int kNumKnots = times.size();
 
   // Create a local copy of the robot
   std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
@@ -134,7 +146,7 @@ bool PlanStraightLineMotion(const Request& request,
   line_ends_W << r_WE.first, r_WE.second;
 
   double dist_lb{0.0};
-  double dist_ub{request.position_tolerance};
+  double dist_ub{position_tolerance};
   point_to_line_seg_constraints.emplace_back(new Point2LineSegDistConstraint(
       robot.get(), end_effector_idx, end_effector_points, world_idx,
       line_ends_W, dist_lb, dist_ub, intermediate_tspan));
@@ -151,17 +163,17 @@ bool PlanStraightLineMotion(const Request& request,
   // (to within the orientation tolerance), fix the orientation for all via
   // points. Otherwise, only allow the end-effector to rotate about the axis
   // defining the rotation between the initial and final orientations.
-  if (std::abs(aaxis.angle()) < request.orientation_tolerance) {
+  if (std::abs(aaxis.angle()) < orientation_tolerance) {
     orientation_constraints.emplace_back(new WorldQuatConstraint(
         robot.get(), end_effector_idx,
         Eigen::Vector4d(quat_WE.second.w(), quat_WE.second.x(),
                         quat_WE.second.y(), quat_WE.second.z()),
-        request.orientation_tolerance, intermediate_tspan));
+        orientation_tolerance, intermediate_tspan));
     constraint_array.push_back(orientation_constraints.back().get());
   } else {
     gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
         robot.get(), end_effector_idx, axis_E, dir_W,
-        request.orientation_tolerance, intermediate_tspan));
+        orientation_tolerance, intermediate_tspan));
     constraint_array.push_back(gaze_dir_constraints.back().get());
   }
 
@@ -194,32 +206,39 @@ bool PlanStraightLineMotion(const Request& request,
                                             robot->get_num_positions()));
   ikoptions.setMajorOptimalityTolerance(1e-6);
   const int kNumRestarts =
-      (request.fall_back_to_joint_space_interpolation) ? 5 : 50;
+      (fall_back_to_joint_space_interpolation) ? 5 : 50;
+  IKResults ik_res;
   for (int i = 0; i < kNumRestarts; ++i) {
-    *ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
+    ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
                                    constraint_array, ikoptions);
-    if (ik_res->info[0] == 1) {
+    if (ik_res.info[0] == 1) {
       break;
     } else {
       for (int j = 1; j < kNumKnots; ++j) {
         q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
       }
-      drake::log()->warn("Attempt {} failed with info {}", i, ik_res->info[0]);
     }
   }
-  bool planner_result{ik_res->info[0] == 1};
-  if (!planner_result && request.fall_back_to_joint_space_interpolation) {
-    planner_result = true;
-    PiecewisePolynomial<double> q_traj =
-        PiecewisePolynomial<double>::FirstOrderHold(
-            {times.front(), times.back()}, {q_0, q_f});
-    for (int j = 0; j < kNumKnots; ++j) {
-      ik_res->q_sol[j] = q_traj.value(t[j]);
+  Result result;
+  result.success = (ik_res.info[0] == 1);
+  VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
+  VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
+  std::vector<MatrixX<double>> q_sol(kNumKnots);
+  if (result.success) {
+    for (int i = 0; i < kNumKnots; ++i) {
+      q_sol[i] = ik_res.q_sol[i];
     }
+    result.q_traj = std::make_unique<PiecewisePolynomial<double>>(
+        PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf));
+  } else if (!result.success && fall_back_to_joint_space_interpolation) {
+    result.success = true;
+    result.q_traj = std::make_unique<PiecewisePolynomial<double>>(
+        PiecewisePolynomial<double>::Cubic(
+            {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf));
+  } else {
+    result.q_traj = nullptr;
   }
-  drake::log()->debug("result: {}", planner_result);
-  drake::log()->debug("t = ({})", t.transpose());
-  return planner_result;
+  return result;
 }
 
 void ExecuteSingleWaypointMove(
@@ -247,11 +266,11 @@ void ExecuteSingleWaypointMove(
   request.fall_back_to_joint_space_interpolation =
       waypoint->fall_back_to_joint_space_interpolation;
 
-  bool res = PlanStraightLineMotion(request, iiwa, &ik_res);
-  DRAKE_THROW_UNLESS(res);
+  Result result = PlanStraightLineMotion(request, iiwa);
+  DRAKE_THROW_UNLESS(result.success);
 
   robotlocomotion::robot_plan_t plan{};
-  iiwa_move->MoveJoints(env_state, iiwa, request.times, ik_res.q_sol, &plan);
+  iiwa_move->MoveJoints(env_state, iiwa, request.times, *result.q_traj, &plan);
   iiwa_callback(&plan);
 }
 

@@ -7,6 +7,7 @@
 #include "robotlocomotion/robot_plan_t.hpp"
 
 #include "drake/common/drake_copyable.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
 #include "drake/lcmt_schunk_wsg_command.hpp"
 
@@ -93,6 +94,15 @@ class IiwaMove : public Action {
                   const RigidBodyTree<double>& iiwa,
                   const std::vector<double>& time,
                   const std::vector<VectorX<double>>& q,
+                  robotlocomotion::robot_plan_t* plan);
+  /**
+   * Populates @p plan with a robot plan that moves the iiwa arm described by @p
+   * iiwa through the joint trajectory @p q_traj with the times in @p time.
+   */
+  void MoveJoints(const WorldState& est_state,
+                  const RigidBodyTree<double>& iiwa,
+                  const std::vector<double>& time,
+                  const PiecewisePolynomial<double>& q_traj,
                   robotlocomotion::robot_plan_t* plan);
 
   void Reset() override;

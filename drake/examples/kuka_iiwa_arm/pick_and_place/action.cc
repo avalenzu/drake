@@ -43,6 +43,19 @@ void IiwaMove::MoveJoints(const WorldState& est_state,
   duration_ = time.back();
 }
 
+void IiwaMove::MoveJoints(const WorldState& est_state,
+                  const RigidBodyTree<double>& iiwa,
+                  const std::vector<double>& time,
+                  const PiecewisePolynomial<double>& q_traj,
+                  robotlocomotion::robot_plan_t* plan) {
+  std::vector<VectorX<double>> q;
+  q.reserve(time.size());
+  for (double t : time) {
+    q.push_back(q_traj.value(t));
+  }
+  MoveJoints(est_state, iiwa, time, q, plan);
+}
+
 void IiwaMove::Reset() {
   Action::Reset();
   duration_ = std::numeric_limits<double>::infinity();
