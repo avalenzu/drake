@@ -176,31 +176,14 @@ bool PlanStraightLineMotion(const VectorX<double>& q_0,
     q_seed_local.col(i) = (1 - s) * q_0 + s * q_f;
   }
   MatrixX<double> q_nom{q_seed};
-  int kNumSamplesPerKnot{2};
-  Eigen::RowVectorXd t_samples{kNumSamplesPerKnot * (kNumKnots - 1)};
-  for (int i = 0; i < kNumKnots; ++i) {
-    if (i < kNumKnots - 1) {
-      for (int j = 0; j < kNumSamplesPerKnot; ++j) {
-        double s(static_cast<double>(j + 1) /
-                 static_cast<double>(kNumSamplesPerKnot + 1));
-        t_samples(kNumSamplesPerKnot * i + j) =
-            (1 - s) * times->at(i) + s * times->at(i + 1);
-      }
-    }
-  }
   const Eigen::Map<Eigen::VectorXd> t{times->data(), kNumKnots};
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
-  drake::log()->debug("t_samples = {}", t_samples);
-  // ikoptions.setAdditionaltSamples(t_samples);
-  // ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
-  // robot->get_num_positions()));
   ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
   ikoptions.setMajorOptimalityTolerance(1e-6);
-  // ikoptions.setIterationsLimit(2e4);
   const int kNumRestarts =
       (waypoint->fall_back_to_joint_space_interpolation) ? 5 : 50;
   for (int i = 0; i < kNumRestarts; ++i) {
@@ -209,10 +192,7 @@ bool PlanStraightLineMotion(const VectorX<double>& q_0,
     if (ik_res->info[0] == 1) {
       break;
     } else {
-      // VectorX<double> q_end{robot->getRandomConfiguration(rand_generator)};
       for (int j = 1; j < kNumKnots; ++j) {
-        // double s = j/(kNumKnots-1);
-        // q_seed_local.col(j) = (1-s)*q_0 + s*q_end;
         q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
       }
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res->info[0]);
