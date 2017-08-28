@@ -16,7 +16,7 @@ namespace {
 using manipulation::planner::ConstraintRelaxingIk;
 
 // Position the gripper 30cm above the object before grasp.
-const double kPreGraspHeightOffset = 0.3;
+const double kPreGraspHeightOffset = 0.2;
 
 // Position the gripper 15cm away from the object before grasp.
 // const double kPreGraspOffset = 0.15;
