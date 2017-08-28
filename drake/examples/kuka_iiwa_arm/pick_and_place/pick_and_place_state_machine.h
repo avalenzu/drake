@@ -34,37 +34,31 @@ enum PickAndPlaceState {
   kDone,
 };
 
-struct Waypoint {
-  // Desired end-effector pose in world frame
-  Isometry3<double> X_WE{Isometry3<double>::Identity()};
-
-  // Flag to turn off constraints during the segment from the previous waypoint
-  // to this one
-  bool constrain_intermediate_points{false};
-
-  // Number of knot points in segment from previous waypoint to this waypoint
-  int num_via_points{0};
-
-  // Bounding box for the end effector in the world frame.
-  Vector3<double> position_tolerance{Vector3<double>(0.005, 0.005, 0.005)};
-
-  // Max angle difference (in radians) between solved end effector's
-  // orientation and the desired.
-  double orientation_tolerance{0.05};
-
-  double via_points_position_tolerance{0.05};
-
-  double via_points_orientation_tolerance{0.5};
-
-  // Total duration of the segment from the previous waypoint to this one
-  double duration;
-
-  VectorX<double> q;
-
-  bool fall_back_to_joint_space_interpolation{false};
-
-  PickAndPlaceState state{kDone};
+struct PostureInterpolationRequest {
+  // Initial configuration
+  MatrixX<double> q_initial;
+  // Final configuration
+  MatrixX<double> q_final;
+  // Knots
+  std::vector<double> times;
+  // Maximum allowable deviation from straight line end-effector path at knot
+  // points
+  double position_tolerance;
+  // Maximum allowable angular deviation at knot points
+  double orientation_tolerance;
+  // If true, interpolate in joint space if the planner fails to find an
+  // interpolation that provides a
+  // straight-line end-effector path
+  bool fall_back_to_joint_space_interpolation;
 };
+
+struct PostureInterpolationResult {
+  // Configuration trajectory
+  std::unique_ptr<PiecewisePolynomial<double>> q_traj;
+  // Success
+  bool success;
+};
+
 
 
 /// A class which controls the pick and place actions for moving a
@@ -103,6 +97,9 @@ class PickAndPlaceStateMachine {
   PickAndPlaceState state() const { return state_; }
 
  private:
+  PostureInterpolationRequest CreatePostureInterpolationRequest(
+      const WorldState& env_state, PickAndPlaceState state, int num_via_points,
+      double duration, bool fall_back_to_joint_space_interpolation = false);
   std::vector<Isometry3<double>> place_locations_;
   int next_place_location_;
   bool loop_;
@@ -131,11 +128,9 @@ class PickAndPlaceStateMachine {
 
   // Desired end-effector end-pose for various states
   std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
-  std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
 
-  // Waypoints
-  std::vector<Waypoint> waypoints_;
-  std::vector<Waypoint>::iterator next_waypoint_;
+  // Desired joint configuration for various states
+  std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
 
   // Seed trajectory
   MatrixX<double> q_seed_;

@@ -21,31 +21,6 @@ const double kPreGraspHeightOffset = 0.2;
 // Position the gripper 15cm away from the object before grasp.
 // const double kPreGraspOffset = 0.15;
 
-struct Request {
-  // Initial configuration
-  MatrixX<double> q_initial;
-  // Final configuration
-  MatrixX<double> q_final;
-  // Knots
-  std::vector<double> times;
-  // Maximum allowable deviation from straight line end-effector path at knot
-  // points
-  double position_tolerance;
-  // Maximum allowable angular deviation at knot points
-  double orientation_tolerance;
-  // If true, interpolate in joint space if the planner fails to find an
-  // interpolation that provides a
-  // straight-line end-effector path
-  bool fall_back_to_joint_space_interpolation;
-};
-
-struct Result {
-  // Configuration trajectory
-  std::unique_ptr<PiecewisePolynomial<double>> q_traj;
-  // Success
-  bool success;
-};
-
 // Computes the desired end effector pose in the world frame given the object
 // pose in the world frame.
 // Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
@@ -63,8 +38,9 @@ struct Result {
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1.
-Result PlanStraightLineMotion(const Request& request,
-                            const RigidBodyTree<double>& original_robot) {
+PostureInterpolationResult PlanStraightLineMotion(
+    const PostureInterpolationRequest& request,
+    const RigidBodyTree<double>& original_robot) {
   // Create local references to request member variables
   const VectorX<double>& q_0{request.q_initial};
   const VectorX<double>& q_f{request.q_final};
@@ -231,7 +207,7 @@ Result PlanStraightLineMotion(const Request& request,
       }
     }
   }
-  Result result;
+  PostureInterpolationResult result;
   result.success = (ik_res.info[0] == 1);
   std::vector<MatrixX<double>> q_sol(kNumKnots);
   if (result.success) {
@@ -252,30 +228,11 @@ Result PlanStraightLineMotion(const Request& request,
 }
 
 void ExecuteSingleWaypointMove(
-    const WorldState& env_state, const RigidBodyTree<double>& iiwa,
-    const std::map<PickAndPlaceState, VectorX<double>>& nominal_q_map,
-    const std::vector<Waypoint>::const_iterator& waypoint,
+    const PostureInterpolationRequest& request,
+    const RigidBodyTree<double>& iiwa, const WorldState& env_state,
     const PickAndPlaceStateMachine::IiwaPublishCallback& iiwa_callback,
     IiwaMove* iiwa_move) {
-  VectorX<double> q_current{env_state.get_iiwa_q()};
-  std::vector<double> times;
-
-  Request request;
-  request.q_initial = q_current;
-  request.q_final = nominal_q_map.at(waypoint->state);
-  double dt{waypoint->duration/static_cast<double>(waypoint->num_via_points)};
-  request.times.resize(waypoint->num_via_points + 1);
-  request.times.front() = 0.0;
-  for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
-    request.times[i] = i*dt;
-  }
-  request.times.back() = waypoint->duration;
-  request.position_tolerance = waypoint->via_points_position_tolerance;
-  request.orientation_tolerance = waypoint->via_points_orientation_tolerance;
-  request.fall_back_to_joint_space_interpolation =
-      waypoint->fall_back_to_joint_space_interpolation;
-
-  Result result = PlanStraightLineMotion(request, iiwa);
+  PostureInterpolationResult result = PlanStraightLineMotion(request, iiwa);
   DRAKE_THROW_UNLESS(result.success);
 
   robotlocomotion::robot_plan_t plan{};
@@ -453,6 +410,26 @@ void ComputeNominalConfigurations(
 
 }  // namespace
 
+PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
+    const WorldState& env_state, PickAndPlaceState state, int num_via_points,
+    double duration, bool fall_back_to_joint_space_interpolation) {
+  PostureInterpolationRequest request;
+  request.q_initial = env_state.get_iiwa_q();
+  request.q_final = nominal_q_map_.at(state);
+  double dt{duration/static_cast<double>(num_via_points)};
+  request.times.resize(num_via_points + 1);
+  request.times.front() = 0.0;
+  for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
+    request.times[i] = i*dt;
+  }
+  request.times.back() = duration;
+  request.position_tolerance = tight_pos_tol_(0);
+  request.orientation_tolerance = tight_rot_tol_;
+  request.fall_back_to_joint_space_interpolation =
+      fall_back_to_joint_space_interpolation;
+  return request;
+}
+
 PickAndPlaceStateMachine::PickAndPlaceStateMachine(
     const std::vector<Isometry3<double>>& place_locations, bool loop)
     : place_locations_(place_locations),
@@ -475,6 +452,9 @@ void PickAndPlaceStateMachine::Update(
     const WorldState& env_state, const IiwaPublishCallback& iiwa_callback,
     const WsgPublishCallback& wsg_callback,
     manipulation::planner::ConstraintRelaxingIk* planner) {
+  const double kShortDuration = 1.0;
+  const double kLongDuration = 2.0;
+  const int kDefaultNumViaPoints = 3;
   IKResults ik_res;
   std::vector<double> times;
   robotlocomotion::robot_plan_t stopped_plan{};
@@ -501,87 +481,27 @@ void PickAndPlaceStateMachine::Update(
     }
 
     case kPrep: {
-      // Compute all the desired end-effector poses now
-      if (X_WE_desired_.empty()) {
+      if (!iiwa_move_.ActionStarted()) {
+        // Compute all the desired end-effector poses now
         ComputeDesiredPoses(env_state, place_locations_[next_place_location_],
                             &X_WE_desired_);
         ComputeNominalConfigurations(iiwa, env_state.get_iiwa_q(),
                                      X_WE_desired_, tight_pos_tol_,
                                      tight_rot_tol_, &nominal_q_map_);
-        waypoints_.clear();
-        waypoints_.emplace_back();
-        waypoints_.back().state = kPrep;
-        waypoints_.back().num_via_points = 1;
-        waypoints_.back().duration = 2;
-        waypoints_.back().constrain_intermediate_points = false;
-        waypoints_.back().fall_back_to_joint_space_interpolation = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPickPregrasp;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPickPregrasp);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
-        waypoints_.back().fall_back_to_joint_space_interpolation = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPick;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPick);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kLiftFromPick;
-        waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPick);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPlacePregrasp;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlacePregrasp);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 2;
-        waypoints_.back().constrain_intermediate_points = true;
-        waypoints_.back().fall_back_to_joint_space_interpolation = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kApproachPlace;
-        waypoints_.back().X_WE = X_WE_desired_.at(kApproachPlace);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
-
-        waypoints_.emplace_back();
-        waypoints_.back().state = kLiftFromPlace;
-        waypoints_.back().X_WE = X_WE_desired_.at(kLiftFromPlace);
-        waypoints_.back().num_via_points = 3;
-        waypoints_.back().duration = 1;
-        waypoints_.back().constrain_intermediate_points = true;
-
-        for (auto waypoint = waypoints_.begin(); waypoint != waypoints_.end();
-             ++waypoint) {
-          waypoint->position_tolerance = tight_pos_tol_;
-          waypoint->orientation_tolerance = tight_rot_tol_;
-          waypoint->via_points_position_tolerance = tight_pos_tol_(1);
-          waypoint->via_points_orientation_tolerance = tight_rot_tol_;
-          waypoint->q = nominal_q_map_.at(waypoint->state);
-        }
-      }
-
-      if (!iiwa_move_.ActionStarted()) {
         bool skip_to_approach_pick =
             nominal_q_map_.at(kApproachPickPregrasp)
                 .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
         if (skip_to_approach_pick) {
           state_ = kApproachPick;
-          next_waypoint_ = waypoints_.begin() + 2;
         } else {
-          next_waypoint_ = waypoints_.begin();
-          next_waypoint_->via_points_position_tolerance = 0.3;
-          ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                    next_waypoint_, iiwa_callback, &iiwa_move_);
+          PostureInterpolationRequest request =
+              CreatePostureInterpolationRequest(
+                  env_state, state_, 1 /*num_via_points*/,
+                  kLongDuration /*duration*/,
+                  true /*fall_back_to_joint_space_interpolation*/);
+          request.position_tolerance = 0.3;
+          ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                    &iiwa_move_);
 
           drake::log()->info("kPrep at {}", env_state.get_iiwa_time());
         }
@@ -596,14 +516,11 @@ void PickAndPlaceStateMachine::Update(
     case kApproachPickPregrasp: {
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
-        next_waypoint_ = waypoints_.begin();
-        next_waypoint_->via_points_position_tolerance = 0.3;
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
-        ++next_waypoint_;
-        next_waypoint_->via_points_position_tolerance = 0.3;
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+        request.position_tolerance = 0.3;
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kApproachPickPregrasp at {}",
                            env_state.get_iiwa_time());
@@ -611,7 +528,6 @@ void PickAndPlaceStateMachine::Update(
 
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kApproachPick;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -619,15 +535,16 @@ void PickAndPlaceStateMachine::Update(
 
     case kApproachPick: {
       if (!iiwa_move_.ActionStarted()) {
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kApproachPick at {}", env_state.get_iiwa_time());
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kGrasp;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -653,15 +570,16 @@ void PickAndPlaceStateMachine::Update(
     case kLiftFromPick: {
       // Lifts the object straight up.
       if (!iiwa_move_.ActionStarted()) {
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kLiftFromPick at {}", env_state.get_iiwa_time());
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kApproachPlacePregrasp;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -669,9 +587,11 @@ void PickAndPlaceStateMachine::Update(
 
     case kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
-        next_waypoint_->via_points_position_tolerance = 0.3;
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kLongDuration);
+        request.position_tolerance = 0.3;
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kApproachPlacePregrasp at {}",
                            env_state.get_iiwa_time());
@@ -679,7 +599,6 @@ void PickAndPlaceStateMachine::Update(
 
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kApproachPlace;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -687,15 +606,16 @@ void PickAndPlaceStateMachine::Update(
 
     case kApproachPlace: {
       if (!iiwa_move_.ActionStarted()) {
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kApproachPlace at {}", env_state.get_iiwa_time());
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = kPlace;
-        next_waypoint_ += 1;
         iiwa_move_.Reset();
       }
       break;
@@ -721,8 +641,10 @@ void PickAndPlaceStateMachine::Update(
     case kLiftFromPlace: {
       // Moves straight up.
       if (!iiwa_move_.ActionStarted()) {
-        ExecuteSingleWaypointMove(env_state, iiwa, nominal_q_map_,
-                                  next_waypoint_, iiwa_callback, &iiwa_move_);
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
 
         drake::log()->info("kLiftFromPlace at {}", env_state.get_iiwa_time());
       }
