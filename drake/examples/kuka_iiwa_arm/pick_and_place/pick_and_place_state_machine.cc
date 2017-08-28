@@ -65,7 +65,7 @@ struct Result {
 // @p X_WEndEffector1.
 Result PlanStraightLineMotion(const Request& request,
                             const RigidBodyTree<double>& original_robot) {
-  // Create local references to request members
+  // Create local references to request member variables
   const VectorX<double>& q_0{request.q_initial};
   const VectorX<double>& q_f{request.q_final};
   const std::vector<double>& times{request.times};
@@ -96,6 +96,7 @@ Result PlanStraightLineMotion(const Request& request,
       posture_change_constraints;
   std::vector<RigidBodyConstraint*> constraint_array;
 
+  // Compute the initial and final end-effector poses
   auto kinematics_cache = robot->CreateKinematicsCache();
   kinematics_cache.initialize(q_0);
   robot->doKinematics(kinematics_cache);
@@ -106,11 +107,13 @@ Result PlanStraightLineMotion(const Request& request,
       robot->relativeTransform(kinematics_cache, world_idx, end_effector_idx) *
       X_LE;
 
+
   kinematics_cache.initialize(q_f);
   robot->doKinematics(kinematics_cache);
   X_WE.second =
       robot->relativeTransform(kinematics_cache, world_idx, end_effector_idx) *
       X_LE;
+
   std::pair<Vector3<double>, Vector3<double>> r_WE{X_WE.first.translation(),
                                                    X_WE.second.translation()};
   std::pair<Quaternion<double>, Quaternion<double>> quat_WE{
@@ -123,17 +126,15 @@ Result PlanStraightLineMotion(const Request& request,
                       r_WE.second.transpose(),
                       math::rotmat2rpy(X_WE.second.rotation()).transpose());
 
-  // Define active times for initial, final, and intermediate constraints
-  const double segment_start_time = times.front();
-  const double segment_end_time = times.back();
-  const Vector2<double> intermediate_tspan{segment_start_time,
-                                           segment_end_time};
-  const Vector2<double> waypoint_tspan{segment_end_time - 0.1,
-                                       segment_end_time + 0.1};
+  // Define active times for intermediate and final constraints
+  const double& start_time = times.front();
+  const double& end_time = times.back();
+  const Vector2<double> intermediate_tspan{start_time, end_time};
+  const Vector2<double> final_tspan{end_time, end_time};
 
   // Constrain the configuration at the final knot point to match q_f.
   posture_constraints.emplace_back(
-      new PostureConstraint(robot.get(), waypoint_tspan));
+      new PostureConstraint(robot.get(), final_tspan));
   const VectorX<double> q_lb{q_f};
   const VectorX<double> q_ub{q_f};
   posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
@@ -177,12 +178,12 @@ Result PlanStraightLineMotion(const Request& request,
     constraint_array.push_back(gaze_dir_constraints.back().get());
   }
 
+  // Place limits on the change in joint angles between knots
   const VectorX<double> ub_change =
       5.0 / (kNumKnots - 1.0) * (q_f.array() - q_0.array()).abs().matrix();
   const VectorX<double> lb_change = -ub_change;
   for (int i = 0; i < kNumKnots - 1; ++i) {
-    Vector2<double> tspan{*(times.crbegin() + (i + 1)),
-                          *(times.crbegin() + i)};
+    Vector2<double> tspan{*(times.crbegin() + (i + 1)), *(times.crbegin() + i)};
     posture_change_constraints.emplace_back(new PostureChangeConstraint(
         robot.get(), joint_indices, lb_change, ub_change, tspan));
     constraint_array.push_back(posture_change_constraints.back().get());
@@ -201,8 +202,12 @@ Result PlanStraightLineMotion(const Request& request,
     q_seed_local.col(i) = q_seed_traj.value(times[i]);
   }
   MatrixX<double> q_nom{q_seed_local};
+
+  // Get the time values into the format required by inverseKinTrajSimple
   VectorX<double> t{kNumKnots};
   for (int i = 0; i < kNumKnots; ++i) t(i) = times[i];
+
+  // Configure ik input and output structs.
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
   ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
@@ -210,9 +215,13 @@ Result PlanStraightLineMotion(const Request& request,
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
   ikoptions.setMajorOptimalityTolerance(1e-6);
+  IKResults ik_res;
+
+  // Attempt to solve the ik traj problem multiple times. If falling back to
+  // joint-space interpolation is allowed, don't try as hard.
   const int kNumRestarts =
       (fall_back_to_joint_space_interpolation) ? 5 : 50;
-  IKResults ik_res;
+  std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
     ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
                                    constraint_array, ikoptions);
@@ -252,7 +261,6 @@ void ExecuteSingleWaypointMove(
     IiwaMove* iiwa_move) {
   VectorX<double> q_current{env_state.get_iiwa_q()};
   std::vector<double> times;
-  IKResults ik_res;
 
   Request request;
   request.q_initial = q_current;
