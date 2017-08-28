@@ -106,8 +106,6 @@ Result PlanStraightLineMotion(const Request& request,
   X_WE.first =
       robot->relativeTransform(kinematics_cache, world_idx, end_effector_idx) *
       X_LE;
-
-
   kinematics_cache.initialize(q_f);
   robot->doKinematics(kinematics_cache);
   X_WE.second =
@@ -394,12 +392,14 @@ void ComputeNominalConfigurations(
       position_constraints.emplace_back(new WorldPositionConstraint(
           robot.get(), end_effector_body_idx, end_effector_points,
           r_WE - position_tolerance, r_WE + position_tolerance, tspan));
-      orientation_constraints.emplace_back(new WorldQuatConstraint(
-          robot.get(), end_effector_body_idx,
-          Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-          orientation_tolerance, tspan));
       constraint_array.push_back(position_constraints.back().get());
-      constraint_array.push_back(orientation_constraints.back().get());
+      if (state != kPrep) {
+        orientation_constraints.emplace_back(new WorldQuatConstraint(
+            robot.get(), end_effector_body_idx,
+            Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
+            orientation_tolerance, tspan));
+        constraint_array.push_back(orientation_constraints.back().get());
+      }
       ++t_count;
     }
     const VectorX<int> joint_indices =
