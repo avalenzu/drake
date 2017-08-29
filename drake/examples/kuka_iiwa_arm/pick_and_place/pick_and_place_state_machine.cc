@@ -367,48 +367,50 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
       posture_change_constraints;
   std::vector<RigidBodyConstraint*> constraint_array;
   for (int i = 0; i < kNumKnots; ++i) {
+    const PickAndPlaceState state{states[i]};
+    const Vector2<double> knot_tspan{t(i), t(i)};
+
     // Extract desired position and orientation of end effector at the given
-    // state
-    Vector2<double> tspan{t(i), t(i)};
-    PickAndPlaceState state{states[i]};
+    // state.
     const Isometry3<double>& X_WE = X_WE_desired_.at(state);
     const Vector3<double>& r_WE = X_WE.translation();
     const Quaternion<double>& quat_WE{X_WE.rotation()};
 
     drake::log()->debug("State {}, r_WE = ({}), tspan = ({})", state,
-                        r_WE.transpose(), tspan.transpose());
+                        r_WE.transpose(), knot_tspan.transpose());
 
-    // Construct position and orientation constraints
+    // Constrain the end-effector position for all knots.
     position_constraints.emplace_back(new WorldPositionConstraint(
         robot.get(), end_effector_body_idx, end_effector_points,
-        r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, tspan));
+        r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
     constraint_array.push_back(position_constraints.back().get());
+
+    // Constrain the end-effector orientation for all knots except Prep.
     if (state != kPrep) {
       orientation_constraints.emplace_back(new WorldQuatConstraint(
           robot.get(), end_effector_body_idx,
           Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-          tight_rot_tol_, tspan));
+          tight_rot_tol_, knot_tspan));
       constraint_array.push_back(orientation_constraints.back().get());
     }
-  }
-  const VectorX<int> joint_indices =
-      VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
-  VectorX<double> ub_change = M_PI_4 * VectorX<double>::Ones(kNumJoints);
-  VectorX<double> lb_change = -ub_change;
 
-  for (int i : {0, 1, 2, 4, 5}) {
-    posture_change_constraints.emplace_back(new PostureChangeConstraint(
-        robot.get(), joint_indices, lb_change, ub_change,
-        Vector2<double>(t(i) - 0.1, t(i + 1) + 0.1)));
-    constraint_array.push_back(posture_change_constraints.back().get());
+    // For each pair of adjacent knots, add a constraint on the change in joint
+    // positions.
+    if (i > 0) {
+      const VectorX<int> joint_indices =
+          VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+      const Vector2<double> segment_tspan{t(i-1), t(i)};
+      // The move to ApproachPlacePregrasp can require large joint motions.
+      const double max_joint_position_change =
+          (state == kApproachPlacePregrasp) ? 0.75 * M_PI : M_PI_4;
+      const VectorX<double> ub_change{max_joint_position_change *
+                                      VectorX<double>::Ones(kNumJoints)};
+      const VectorX<double> lb_change{-ub_change};
+      posture_change_constraints.emplace_back(new PostureChangeConstraint(
+          robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
+      constraint_array.push_back(posture_change_constraints.back().get());
+    }
   }
-
-  ub_change = 0.75 * M_PI * VectorX<double>::Ones(kNumJoints);
-  lb_change = -ub_change;
-  posture_change_constraints.emplace_back(
-      new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
-                                  ub_change, Vector2<double>(t(3), t(4))));
-  constraint_array.push_back(posture_change_constraints.back().get());
 
   // Solve the IK problem. Re-seed with random values if the initial seed is
   // unsuccessful.
