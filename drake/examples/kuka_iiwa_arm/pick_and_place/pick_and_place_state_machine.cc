@@ -202,8 +202,12 @@ PostureInterpolationResult PlanStraightLineMotion(
     if (ik_res.info[0] == 1) {
       break;
     } else {
-      for (int j = 1; j < kNumKnots; ++j) {
-        q_knots_seed.col(j) = robot->getRandomConfiguration(rand_generator);
+      VectorX<double> q_mid = robot->getRandomConfiguration(rand_generator);
+      q_seed_traj = PiecewisePolynomial<double>::Cubic(
+          {times.front(), 0.5 * (times.front() + times.back()), times.back()},
+          {q_0, q_mid, q_f}, q_dot0, q_dotf);
+      for (int j = 0; j < kNumKnots; ++j) {
+        q_knots_seed.col(j) = q_seed_traj.value(times[j]);
       }
     }
   }
