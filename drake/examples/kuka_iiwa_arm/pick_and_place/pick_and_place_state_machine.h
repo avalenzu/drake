@@ -22,6 +22,7 @@ namespace pick_and_place {
 /// Different states for the pick and place task.
 enum PickAndPlaceState {
   kOpenGripper,
+  kPrep,
   kApproachPickPregrasp,
   kApproachPick,
   kGrasp,
@@ -32,6 +33,34 @@ enum PickAndPlaceState {
   kLiftFromPlace,
   kDone,
 };
+
+struct PostureInterpolationRequest {
+  // Initial configuration
+  MatrixX<double> q_initial;
+  // Final configuration
+  MatrixX<double> q_final;
+  // Knots
+  std::vector<double> times;
+  // Maximum allowable deviation from straight line end-effector path at knot
+  // points
+  double position_tolerance;
+  // Maximum allowable angular deviation at knot points
+  double orientation_tolerance;
+  // If true, interpolate in joint space if the planner fails to find an
+  // interpolation that provides a
+  // straight-line end-effector path
+  bool fall_back_to_joint_space_interpolation;
+  double max_joint_position_change;
+};
+
+struct PostureInterpolationResult {
+  // Configuration trajectory
+  std::unique_ptr<PiecewisePolynomial<double>> q_traj;
+  // Success
+  bool success;
+};
+
+
 
 /// A class which controls the pick and place actions for moving a
 /// single target in the environment.
@@ -69,6 +98,15 @@ class PickAndPlaceStateMachine {
   PickAndPlaceState state() const { return state_; }
 
  private:
+  void ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
+                                    const WorldState& env_state);
+
+  void ComputeDesiredPoses(const WorldState& env_state);
+
+  PostureInterpolationRequest CreatePostureInterpolationRequest(
+      const WorldState& env_state, PickAndPlaceState state, double duration,
+      bool fall_back_to_joint_space_interpolation = false);
+
   std::vector<Isometry3<double>> place_locations_;
   int next_place_location_;
   bool loop_;
@@ -94,6 +132,12 @@ class PickAndPlaceStateMachine {
 
   Vector3<double> loose_pos_tol_;
   double loose_rot_tol_;
+
+  // Desired end-effector end-pose for various states
+  std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
+
+  // Desired joint configuration for various states
+  std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
 };
 
 }  // namespace pick_and_place
