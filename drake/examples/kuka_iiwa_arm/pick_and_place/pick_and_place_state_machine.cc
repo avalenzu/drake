@@ -16,7 +16,7 @@ namespace {
 using manipulation::planner::ConstraintRelaxingIk;
 
 // Position the gripper 30cm above the object before grasp.
-const double kPreGraspHeightOffset = 0.2;
+const double kPreGraspHeightOffset = 0.3;
 
 // Position the gripper 15cm away from the object before grasp.
 // const double kPreGraspOffset = 0.15;
@@ -335,7 +335,6 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
     const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
   ComputeDesiredPoses(env_state);
   nominal_q_map_.clear();
-  std::default_random_engine rand_generator{1234};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   int kNumJoints{robot->get_num_positions()};
   IKoptions ikoptions(robot.get());
@@ -348,101 +347,97 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
   const double kEndEffectorToMidFingerDepth = 0.12;
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
 
-  std::vector<PickAndPlaceState> pick_and_place_states{
+  std::vector<PickAndPlaceState> states{
       kPrep,         kApproachPickPregrasp,  kApproachPick,
       kLiftFromPick, kApproachPlacePregrasp, kApproachPlace,
       kLiftFromPlace};
+  int kNumKnots = states.size();
 
   VectorX<double> q_seed_local{env_state.get_iiwa_q()};
-  // for (std::vector<PickAndPlaceState> states : {pick_states, place_states}) {
-  VectorX<double> t{7};
-  t << 0, 1, 2, 3, 4, 5, 6;
-  int t_count{0};
-  for (std::vector<PickAndPlaceState> states : {pick_and_place_states}) {
-    // Set up an inverse kinematics trajectory problem with one knot for each
+  VectorX<double> t{VectorX<double>::LinSpaced(kNumKnots, 0, kNumKnots - 1)};
+  // Set up an inverse kinematics trajectory problem with one knot for each
+  // state
+  MatrixX<double> q_nom =
+      MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
+
+  //  Create vectors to hold the constraint objects
+  std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
+  std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
+  std::vector<std::unique_ptr<PostureChangeConstraint>>
+      posture_change_constraints;
+  std::vector<RigidBodyConstraint*> constraint_array;
+  for (int i = 0; i < kNumKnots; ++i) {
+    // Extract desired position and orientation of end effector at the given
     // state
-    int kNumKnots = states.size();
-    MatrixX<double> q_nom =
-        MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
+    Vector2<double> tspan{t(i), t(i)};
+    PickAndPlaceState state{states[i]};
+    const Isometry3<double>& X_WE = X_WE_desired_.at(state);
+    const Vector3<double>& r_WE = X_WE.translation();
+    const Quaternion<double>& quat_WE{X_WE.rotation()};
 
-    //  Create vectors to hold the constraint objects
-    std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
-    std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
-    std::vector<std::unique_ptr<PostureChangeConstraint>>
-        posture_change_constraints;
-    std::vector<RigidBodyConstraint*> constraint_array;
-    for (int i = 0; i < kNumKnots; ++i) {
-      // Extract desired position and orientation of end effector at the given
-      // state
-      Vector2<double> tspan{t(t_count), t(t_count)};
-      PickAndPlaceState state{states[i]};
-      const Isometry3<double>& X_WE = X_WE_desired_.at(state);
-      const Vector3<double>& r_WE = X_WE.translation();
-      const Quaternion<double>& quat_WE{X_WE.rotation()};
+    drake::log()->debug("State {}, r_WE = ({}), tspan = ({})", state,
+                        r_WE.transpose(), tspan.transpose());
 
-      drake::log()->debug("State {}, r_WE = ({}), tspan = ({})", state,
-                          r_WE.transpose(), tspan.transpose());
-
-      // Construct position and orientation constraints
-      position_constraints.emplace_back(new WorldPositionConstraint(
-          robot.get(), end_effector_body_idx, end_effector_points,
-          r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, tspan));
-      constraint_array.push_back(position_constraints.back().get());
-      if (state != kPrep) {
-        orientation_constraints.emplace_back(new WorldQuatConstraint(
-            robot.get(), end_effector_body_idx,
-            Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-            tight_rot_tol_, tspan));
-        constraint_array.push_back(orientation_constraints.back().get());
-      }
-      ++t_count;
+    // Construct position and orientation constraints
+    position_constraints.emplace_back(new WorldPositionConstraint(
+        robot.get(), end_effector_body_idx, end_effector_points,
+        r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, tspan));
+    constraint_array.push_back(position_constraints.back().get());
+    if (state != kPrep) {
+      orientation_constraints.emplace_back(new WorldQuatConstraint(
+          robot.get(), end_effector_body_idx,
+          Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
+          tight_rot_tol_, tspan));
+      constraint_array.push_back(orientation_constraints.back().get());
     }
-    const VectorX<int> joint_indices =
-        VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
-    VectorX<double> ub_change = M_PI_4 * VectorX<double>::Ones(kNumJoints);
-    VectorX<double> lb_change = -ub_change;
+  }
+  const VectorX<int> joint_indices =
+      VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+  VectorX<double> ub_change = M_PI_4 * VectorX<double>::Ones(kNumJoints);
+  VectorX<double> lb_change = -ub_change;
 
-    for (int i : {0, 1, 2, 4, 5}) {
-      posture_change_constraints.emplace_back(new PostureChangeConstraint(
-          robot.get(), joint_indices, lb_change, ub_change,
-          Vector2<double>(t(i) - 0.1, t(i + 1) + 0.1)));
-      constraint_array.push_back(posture_change_constraints.back().get());
-    }
-
-    ub_change = 0.75 * M_PI * VectorX<double>::Ones(kNumJoints);
-    lb_change = -ub_change;
-    posture_change_constraints.emplace_back(
-        new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
-                                    ub_change, Vector2<double>(t(3), t(4))));
+  for (int i : {0, 1, 2, 4, 5}) {
+    posture_change_constraints.emplace_back(new PostureChangeConstraint(
+        robot.get(), joint_indices, lb_change, ub_change,
+        Vector2<double>(t(i) - 0.1, t(i + 1) + 0.1)));
     constraint_array.push_back(posture_change_constraints.back().get());
+  }
 
-    // Solve the IK problem
-    const int kNumRestarts = 50;
-    IKResults ik_res;
-    for (int i = 0; i < kNumRestarts; ++i) {
-      MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
-      for (int j = 0; j < kNumKnots; ++j) {
-        q_knots_seed.col(j) = q_seed_local;
-      }
-      drake::log()->debug("Attempt {}: t = ({})", i, t.transpose());
-      ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
-                                    constraint_array, ikoptions);
-      if (ik_res.info[0] == 1) {
-        q_seed_local = ik_res.q_sol.back();
-        break;
-      } else {
-        q_seed_local = robot->getRandomConfiguration(rand_generator);
-        drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
-      }
+  ub_change = 0.75 * M_PI * VectorX<double>::Ones(kNumJoints);
+  lb_change = -ub_change;
+  posture_change_constraints.emplace_back(
+      new PostureChangeConstraint(robot.get(), joint_indices, lb_change,
+                                  ub_change, Vector2<double>(t(3), t(4))));
+  constraint_array.push_back(posture_change_constraints.back().get());
+
+  // Solve the IK problem. Re-seed with random values if the initial seed is
+  // unsuccessful.
+  const int kNumRestarts = 50;
+  IKResults ik_res;
+  std::default_random_engine rand_generator{1234};
+  for (int i = 0; i < kNumRestarts; ++i) {
+    MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
+    for (int j = 0; j < kNumKnots; ++j) {
+      q_knots_seed.col(j) = q_seed_local;
     }
-    DRAKE_THROW_UNLESS(ik_res.info[0] == 1);
-    drake::log()->debug("Num knots in sol: {}", ik_res.q_sol.size());
-    // for (int i = 0; i < kNumKnots; i+=2) {
-    for (int i = 0; i < kNumKnots; ++i) {
-      drake::log()->debug("State {}: q = ({})", states[i],
-                          ik_res.q_sol[i].transpose());
-      nominal_q_map_.emplace(states[i], ik_res.q_sol[i]);
+    drake::log()->debug("Attempt {}: t = ({})", i, t.transpose());
+    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
+                                  constraint_array, ikoptions);
+    if (ik_res.info[0] == 1) {
+      q_seed_local = ik_res.q_sol.back();
+      break;
+    } else {
+      q_seed_local = robot->getRandomConfiguration(rand_generator);
+      drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
     }
+  }
+  DRAKE_THROW_UNLESS(ik_res.info[0] == 1);
+  drake::log()->debug("Num knots in sol: {}", ik_res.q_sol.size());
+  // for (int i = 0; i < kNumKnots; i+=2) {
+  for (int i = 0; i < kNumKnots; ++i) {
+    drake::log()->debug("State {}: q = ({})", states[i],
+                        ik_res.q_sol[i].transpose());
+    nominal_q_map_.emplace(states[i], ik_res.q_sol[i]);
   }
 }
 
