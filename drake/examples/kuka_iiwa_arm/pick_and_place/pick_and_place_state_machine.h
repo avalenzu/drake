@@ -50,6 +50,7 @@ struct PostureInterpolationRequest {
   // interpolation that provides a
   // straight-line end-effector path
   bool fall_back_to_joint_space_interpolation;
+  double max_joint_position_change;
 };
 
 struct PostureInterpolationResult {
