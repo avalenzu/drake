@@ -291,14 +291,18 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
                         X_WE_desired_.at(kApproachPlacePregrasp));
 }
 
-
 PostureInterpolationRequest
 PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
-    const WorldState& env_state, PickAndPlaceState state, int num_via_points,
-    double duration, bool fall_back_to_joint_space_interpolation) {
+    const WorldState& env_state, PickAndPlaceState state, double duration,
+    bool fall_back_to_joint_space_interpolation) {
   PostureInterpolationRequest request;
+  request.max_joint_position_change = 0.5*M_PI_4;
   request.q_initial = env_state.get_iiwa_q();
   request.q_final = nominal_q_map_.at(state);
+  double max_delta_q{
+      (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
+  int num_via_points =
+      std::ceil(2*max_delta_q / request.max_joint_position_change);
   double dt{duration/static_cast<double>(num_via_points)};
   request.times.resize(num_via_points + 1);
   request.times.front() = 0.0;
@@ -310,7 +314,8 @@ PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
   request.orientation_tolerance = tight_rot_tol_;
   request.fall_back_to_joint_space_interpolation =
       fall_back_to_joint_space_interpolation;
-  request.max_joint_position_change = M_PI_4;
+  drake::log()->debug("Interpolation request has {} knots.",
+                      request.times.size());
   return request;
 }
 
@@ -448,7 +453,6 @@ void PickAndPlaceStateMachine::Update(
     manipulation::planner::ConstraintRelaxingIk* planner) {
   const double kShortDuration = 1.0;
   const double kLongDuration = 2.0;
-  const int kDefaultNumViaPoints = 3;
   IKResults ik_res;
   std::vector<double> times;
   robotlocomotion::robot_plan_t stopped_plan{};
@@ -486,8 +490,7 @@ void PickAndPlaceStateMachine::Update(
         } else {
           PostureInterpolationRequest request =
               CreatePostureInterpolationRequest(
-                  env_state, state_, 1 /*num_via_points*/,
-                  kLongDuration /*duration*/,
+                  env_state, state_, kLongDuration,
                   true /*fall_back_to_joint_space_interpolation*/);
           ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                     &iiwa_move_);
@@ -505,7 +508,7 @@ void PickAndPlaceStateMachine::Update(
       // Approaches kPreGraspHeightOffset above the center of the object.
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+            env_state, state_, kShortDuration);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 
@@ -523,7 +526,7 @@ void PickAndPlaceStateMachine::Update(
     case kApproachPick: {
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+            env_state, state_, kShortDuration);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 
@@ -558,7 +561,7 @@ void PickAndPlaceStateMachine::Update(
       // Lifts the object straight up.
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+            env_state, state_, kShortDuration);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 
@@ -575,7 +578,7 @@ void PickAndPlaceStateMachine::Update(
     case kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, 2*kDefaultNumViaPoints, kLongDuration,
+            env_state, state_, kLongDuration,
             true /*fall_back_to_joint_space_interpolation*/);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
@@ -594,7 +597,7 @@ void PickAndPlaceStateMachine::Update(
     case kApproachPlace: {
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+            env_state, state_, kShortDuration);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 
@@ -629,7 +632,7 @@ void PickAndPlaceStateMachine::Update(
       // Moves straight up.
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kDefaultNumViaPoints, kShortDuration);
+            env_state, state_, kShortDuration);
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 

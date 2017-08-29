@@ -104,8 +104,8 @@ class PickAndPlaceStateMachine {
   void ComputeDesiredPoses(const WorldState& env_state);
 
   PostureInterpolationRequest CreatePostureInterpolationRequest(
-      const WorldState& env_state, PickAndPlaceState state, int num_via_points,
-      double duration, bool fall_back_to_joint_space_interpolation = false);
+      const WorldState& env_state, PickAndPlaceState state, double duration,
+      bool fall_back_to_joint_space_interpolation = false);
 
   std::vector<Isometry3<double>> place_locations_;
   int next_place_location_;
