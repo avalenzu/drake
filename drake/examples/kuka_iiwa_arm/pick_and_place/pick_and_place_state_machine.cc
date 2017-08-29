@@ -157,26 +157,25 @@ PostureInterpolationResult PlanStraightLineMotion(
   const VectorX<double> ub_change =
       max_joint_position_change * VectorX<double>::Ones(kNumJoints);
   const VectorX<double> lb_change = -ub_change;
-  for (int i = 0; i < kNumKnots - 1; ++i) {
-    Vector2<double> tspan{*(times.crbegin() + (i + 1)), *(times.crbegin() + i)};
+  for (int i = 1; i < kNumKnots; ++i) {
+    const Vector2<double> segment_tspan{times[i-1], times[i]};
     posture_change_constraints.emplace_back(new PostureChangeConstraint(
-        robot.get(), joint_indices, lb_change, ub_change, tspan));
+        robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
     constraint_array.push_back(posture_change_constraints.back().get());
   }
-  X_WE.first = X_WE.second;
 
   // Set the seed for the first attempt (and the nominal value for all attempts)
-  // to be the linear interpolation between the initial and final
+  // to be the cubic interpolation between the initial and final
   // configurations.
   VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
   VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
-  MatrixX<double> q_seed_local{kNumJoints, kNumKnots};
+  MatrixX<double> q_knots_seed{kNumJoints, kNumKnots};
   PiecewisePolynomial<double> q_seed_traj{PiecewisePolynomial<double>::Cubic(
       {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf)};
   for (int i = 0; i < kNumKnots; ++i) {
-    q_seed_local.col(i) = q_seed_traj.value(times[i]);
+    q_knots_seed.col(i) = q_seed_traj.value(times[i]);
   }
-  MatrixX<double> q_nom{q_seed_local};
+  MatrixX<double> q_knots_nom{q_knots_seed};
 
   // Get the time values into the format required by inverseKinTrajSimple
   VectorX<double> t{kNumKnots};
@@ -198,13 +197,13 @@ PostureInterpolationResult PlanStraightLineMotion(
       (fall_back_to_joint_space_interpolation) ? 5 : 50;
   std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
-    ik_res = inverseKinTrajSimple(robot.get(), t, q_seed_local, q_nom,
+    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_knots_nom,
                                    constraint_array, ikoptions);
     if (ik_res.info[0] == 1) {
       break;
     } else {
       for (int j = 1; j < kNumKnots; ++j) {
-        q_seed_local.col(j) = robot->getRandomConfiguration(rand_generator);
+        q_knots_seed.col(j) = robot->getRandomConfiguration(rand_generator);
       }
     }
   }
