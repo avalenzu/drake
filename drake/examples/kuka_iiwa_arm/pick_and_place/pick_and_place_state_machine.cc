@@ -638,7 +638,7 @@ void PickAndPlaceStateMachine::Update(
       }
 
       if (iiwa_move_.ActionFinished(env_state)) {
-        next_place_location_ ++;
+        next_place_location_ += rand_generator_();
         if (next_place_location_ == static_cast<int>(place_locations_.size()) &&
             !loop_) {
           state_ = kDone;

@@ -137,6 +137,9 @@ class PickAndPlaceStateMachine {
 
   // Desired joint configuration for various states
   std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
+
+  // Random generator
+  std::default_random_engine rand_generator_{1234};
 };
 
 }  // namespace pick_and_place
