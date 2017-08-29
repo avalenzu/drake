@@ -337,12 +337,6 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
   nominal_q_map_.clear();
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   int kNumJoints{robot->get_num_positions()};
-  IKoptions ikoptions(robot.get());
-  ikoptions.setFixInitialState(false);
-  ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
-                                       robot->get_num_positions()));
-  ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
-                                            robot->get_num_positions()));
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   const double kEndEffectorToMidFingerDepth = 0.12;
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
@@ -414,8 +408,14 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
 
   // Solve the IK problem. Re-seed with random values if the initial seed is
   // unsuccessful.
-  const int kNumRestarts = 50;
   IKResults ik_res;
+  IKoptions ikoptions(robot.get());
+  ikoptions.setFixInitialState(false);
+  ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
+                                       robot->get_num_positions()));
+  ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
+                                            robot->get_num_positions()));
+  const int kNumRestarts = 50;
   std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
     MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
