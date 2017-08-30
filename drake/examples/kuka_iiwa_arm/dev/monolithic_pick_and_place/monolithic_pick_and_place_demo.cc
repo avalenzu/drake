@@ -331,7 +331,7 @@ int DoMain(void) {
   while (state_machine->state(
              sys->GetSubsystemContext(*state_machine,
                                       simulator.get_context()))
-         != pick_and_place::kDone) {
+         != pick_and_place::PickAndPlaceState::kDone) {
     simulator.StepTo(simulator.get_context().get_time() + simulation_step);
     if (FLAGS_quick) {
       // We've run a single step, just get out now since we won't have
