@@ -204,7 +204,7 @@ int DoMain(void) {
     Eigen::Vector3d translator;
     translator = Eigen::Vector3d::Zero();
     // translator<< 0.0, 0.0, 0;
-    translator << -0.389, -0.017, 0.149;
+    translator << -0.342, -0.017, 0.152;
     X_WO.translate(translator);
 
     auto optitrack_pose_extractor =
