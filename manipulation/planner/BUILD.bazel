@@ -12,6 +12,16 @@ package(
 )
 
 drake_cc_library(
+    name = "kinematic_trajectory_optimization",
+    srcs = ["kinematic_trajectory_optimization.cc"],
+    hdrs = ["kinematic_trajectory_optimization.h"],
+    deps = [
+        "//drake/multibody/multibody_tree:multibody_tree",
+        "//drake/systems/trajectory_optimization:multiple_shooting",
+    ],
+)
+
+drake_cc_library(
     name = "constraint_relaxing_ik",
     srcs = ["constraint_relaxing_ik.cc"],
     hdrs = ["constraint_relaxing_ik.h"],
@@ -69,6 +79,13 @@ drake_cc_googletest(
         "//drake/systems/framework",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_googletest(
+    name = "kinematic_trajectory_optimization_test",
+    deps = [
+        ":kinematic_trajectory_optimization",
     ],
 )
 
