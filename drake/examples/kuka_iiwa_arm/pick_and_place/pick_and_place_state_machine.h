@@ -20,8 +20,9 @@ namespace pick_and_place {
 
 
 /// Different states for the pick and place task.
-enum PickAndPlaceState {
+enum class PickAndPlaceState {
   kOpenGripper,
+  kPlan,
   kPrep,
   kApproachPickPregrasp,
   kApproachPick,
@@ -31,6 +32,7 @@ enum PickAndPlaceState {
   kApproachPlace,
   kPlace,
   kLiftFromPlace,
+  kReset,
   kDone,
 };
 

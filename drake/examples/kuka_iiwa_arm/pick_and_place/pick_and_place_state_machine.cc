@@ -2,6 +2,8 @@
 
 #include <random>
 
+#include <spdlog/fmt/ostr.h>
+
 #include "drake/common/drake_assert.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
@@ -14,6 +16,7 @@ namespace pick_and_place {
 namespace {
 
 using manipulation::planner::ConstraintRelaxingIk;
+
 
 // Position the gripper 30cm above the object before grasp.
 const double kPreGraspHeightOffset = 0.3;
@@ -249,8 +252,48 @@ void ExecuteSingleWaypointMove(
   iiwa_callback(&plan);
 }
 
+void OpenGripper(const WorldState& env_state, WsgAction* wsg_act,
+                 lcmt_schunk_wsg_command* msg) {
+  wsg_act->OpenGripper(env_state, msg);
+};
+
+void CloseGripper(const WorldState& env_state, WsgAction* wsg_act,
+                 lcmt_schunk_wsg_command* msg) {
+  wsg_act->CloseGripper(env_state, msg);
+};
 
 }  // namespace
+
+std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
+  switch (value) {
+    case (PickAndPlaceState::kOpenGripper):
+      return os << "kOpenGripper";
+    case (PickAndPlaceState::kPlan):
+      return os << "kPlan";
+    case (PickAndPlaceState::kPrep):
+      return os << "kPrep";
+    case (PickAndPlaceState::kApproachPickPregrasp):
+      return os << "kApproachPickPregrasp";
+    case (PickAndPlaceState::kApproachPick):
+      return os << "kApproachPick";
+    case (PickAndPlaceState::kGrasp):
+      return os << "kGrasp";
+    case (PickAndPlaceState::kLiftFromPick):
+      return os << "kLiftFromPick";
+    case (PickAndPlaceState::kApproachPlacePregrasp):
+      return os << "kApproachPlacePregrasp";
+    case (PickAndPlaceState::kApproachPlace):
+      return os << "kApproachPlace";
+    case (PickAndPlaceState::kPlace):
+      return os << "kPlace";
+    case (PickAndPlaceState::kLiftFromPlace):
+      return os << "kLiftFromPlace";
+    case (PickAndPlaceState::kReset):
+      return os << "kReset";
+    case (PickAndPlaceState::kDone):
+      return os << "kDone";
+  }
+}
 
 void PickAndPlaceStateMachine::ComputeDesiredPoses(
     const WorldState& env_state) {
@@ -266,38 +309,38 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   //       + (ApproachPick)                         (ApproachPlace) +
   
   // Set ApproachPick pose
-  X_WE_desired_.emplace(kApproachPick, env_state.get_object_pose());
+  X_WE_desired_.emplace(PickAndPlaceState::kApproachPick, env_state.get_object_pose());
 
   // Set ApproachPickPregrasp pose
   Isometry3<double> X_OE{Isometry3<double>::Identity()};
   X_OE.translation()[2] = kPreGraspHeightOffset;
-  X_WE_desired_.emplace(kApproachPickPregrasp,
-                        X_WE_desired_.at(kApproachPick) * X_OE);
+  X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
+                        X_WE_desired_.at(PickAndPlaceState::kApproachPick) * X_OE);
 
   // Set Prep pose
   X_OE.setIdentity();
   X_OE.rotate(Eigen::AngleAxis<double>(-M_PI_4, Vector3<double>::UnitY()));
   X_OE.translation()[2] = 1.5 * kPreGraspHeightOffset;
   X_OE.translation()[0] = -1.5 * kPreGraspHeightOffset / 2;
-  X_WE_desired_.emplace(kPrep, X_WE_desired_.at(kApproachPickPregrasp) * X_OE);
+  X_WE_desired_.emplace(PickAndPlaceState::kPrep, X_WE_desired_.at(PickAndPlaceState::kApproachPickPregrasp) * X_OE);
 
   // Set LiftFromPick pose
-  X_WE_desired_.emplace(kLiftFromPick, X_WE_desired_.at(kApproachPick));
-  X_WE_desired_.at(kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
+  X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPick, X_WE_desired_.at(PickAndPlaceState::kApproachPick));
+  X_WE_desired_.at(PickAndPlaceState::kLiftFromPick).translation()[2] += kPreGraspHeightOffset;
 
   // Set ApproachPlace pose
-  X_WE_desired_.emplace(kApproachPlace,
+  X_WE_desired_.emplace(PickAndPlaceState::kApproachPlace,
                         env_state.get_iiwa_base() * place_locations_[next_place_location_]);
 
   // Set ApproachPlacePregrasp pose
-  X_WE_desired_.emplace(kApproachPlacePregrasp,
-                        X_WE_desired_.at(kApproachPlace));
-  X_WE_desired_.at(kApproachPlacePregrasp).translation()[2] +=
+  X_WE_desired_.emplace(PickAndPlaceState::kApproachPlacePregrasp,
+                        X_WE_desired_.at(PickAndPlaceState::kApproachPlace));
+  X_WE_desired_.at(PickAndPlaceState::kApproachPlacePregrasp).translation()[2] +=
       kPreGraspHeightOffset;
 
   // Set LiftFromPlace pose
-  X_WE_desired_.emplace(kLiftFromPlace,
-                        X_WE_desired_.at(kApproachPlacePregrasp));
+  X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
+                        X_WE_desired_.at(PickAndPlaceState::kApproachPlacePregrasp));
 }
 
 PostureInterpolationRequest
@@ -333,7 +376,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
     : place_locations_(place_locations),
       next_place_location_(0),
       loop_(loop),
-      state_(kOpenGripper),
+      state_(PickAndPlaceState::kOpenGripper),
       // Position and rotation tolerances.  These were hand-tuned by
       // adjusting to tighter bounds until IK stopped reliably giving
       // results.
@@ -342,6 +385,8 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       loose_pos_tol_(0.01, 0.01, 0.01),
       loose_rot_tol_(0.1) {
   DRAKE_THROW_UNLESS(!place_locations.empty());
+  std::cout << "Making sure operator<< for PickAndPlaceState is used: " << PickAndPlaceState::kPrep
+            << std::endl;
 }
 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
@@ -357,9 +402,9 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
 
   std::vector<PickAndPlaceState> states{
-      kPrep,         kApproachPickPregrasp,  kApproachPick,
-      kLiftFromPick, kApproachPlacePregrasp, kApproachPlace,
-      kLiftFromPlace};
+      PickAndPlaceState::kPrep,         PickAndPlaceState::kApproachPickPregrasp,  PickAndPlaceState::kApproachPick,
+      PickAndPlaceState::kLiftFromPick, PickAndPlaceState::kApproachPlacePregrasp, PickAndPlaceState::kApproachPlace,
+      PickAndPlaceState::kLiftFromPlace};
   int kNumKnots = states.size();
 
   VectorX<double> q_seed_local{env_state.get_iiwa_q()};
@@ -395,7 +440,7 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
     constraint_array.push_back(position_constraints.back().get());
 
     // Constrain the end-effector orientation for all knots except Prep.
-    if (state != kPrep) {
+    if (state != PickAndPlaceState::kPrep) {
       orientation_constraints.emplace_back(new WorldQuatConstraint(
           robot.get(), end_effector_body_idx,
           Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
@@ -411,7 +456,7 @@ void PickAndPlaceStateMachine::ComputeNominalConfigurations(
       const Vector2<double> segment_tspan{t(i-1), t(i)};
       // The move to ApproachPlacePregrasp can require large joint motions.
       const double max_joint_position_change =
-          (state == kApproachPlacePregrasp) ? 0.75 * M_PI : M_PI_4;
+          (state == PickAndPlaceState::kApproachPlacePregrasp) ? 0.75 * M_PI : M_PI_4;
       const VectorX<double> ub_change{max_joint_position_change *
                                       VectorX<double>::Ones(kNumJoints)};
       const VectorX<double> lb_change{-ub_change};
@@ -469,202 +514,133 @@ void PickAndPlaceStateMachine::Update(
 
   const RigidBodyTree<double>& iiwa = planner->get_robot();
 
+  double iiwa_move_duration{kShortDuration};
+  bool iiwa_move_fall_back{false};
+  PickAndPlaceState next_state{state_};
+  auto schunk_action = OpenGripper;
   switch (state_) {
-    // Opens the gripper.
-    case kOpenGripper: {
+    case PickAndPlaceState::kOpenGripper: {
+      next_state = PickAndPlaceState::kPlan;
+    } break;
+
+    case PickAndPlaceState::kPrep: {
+      iiwa_move_duration = kLongDuration;
+      iiwa_move_fall_back = true;
+      next_state = PickAndPlaceState::kApproachPickPregrasp;
+    } break;
+
+    case PickAndPlaceState::kApproachPickPregrasp: {
+      next_state = PickAndPlaceState::kApproachPick;
+    } break;
+
+    case PickAndPlaceState::kApproachPick: {
+      next_state = PickAndPlaceState::kGrasp;
+    } break;
+
+    case PickAndPlaceState::kGrasp: {
+      schunk_action = CloseGripper;
+      next_state = PickAndPlaceState::kLiftFromPick;
+    } break;
+
+    case PickAndPlaceState::kLiftFromPick: {
+      next_state = PickAndPlaceState::kApproachPlacePregrasp;
+    } break;
+
+    case PickAndPlaceState::kApproachPlacePregrasp: {
+      iiwa_move_duration = kLongDuration;
+      iiwa_move_fall_back = true;
+      next_state = PickAndPlaceState::kApproachPlace;
+    } break;
+
+    case PickAndPlaceState::kApproachPlace: {
+      next_state = PickAndPlaceState::kPlace;
+    } break;
+
+    case PickAndPlaceState::kPlace: {
+        next_state = PickAndPlaceState::kLiftFromPlace;
+    } break;
+
+    case PickAndPlaceState::kLiftFromPlace: {
+      next_state = PickAndPlaceState::kReset;
+    } break;
+
+    default: // No action needed for other cases
+      break;
+  }
+  switch (state_) {
+
+    // IIWA arm movements
+    case PickAndPlaceState::kPrep:
+    case PickAndPlaceState::kApproachPickPregrasp:
+    case PickAndPlaceState::kApproachPick:
+    case PickAndPlaceState::kLiftFromPick:
+    case PickAndPlaceState::kApproachPlacePregrasp:
+    case PickAndPlaceState::kApproachPlace:
+    case PickAndPlaceState::kLiftFromPlace: {
+      if (!iiwa_move_.ActionStarted()) {
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, iiwa_move_duration,
+            iiwa_move_fall_back /*fall_back_to_joint_space_interpolation*/);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
+
+        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+      }
+      if (iiwa_move_.ActionFinished(env_state)) {
+        state_ = next_state;
+        iiwa_move_.Reset();
+      }
+      break;
+    }
+
+    // Schunk gripper actions
+    case PickAndPlaceState::kOpenGripper:
+    case PickAndPlaceState::kGrasp:
+    case PickAndPlaceState::kPlace: {
       if (!wsg_act_.ActionStarted()) {
         lcmt_schunk_wsg_command msg;
-        wsg_act_.OpenGripper(env_state, &msg);
+        schunk_action(env_state, &wsg_act_, &msg);
         wsg_callback(&msg);
 
-        drake::log()->info("kOpenGripper at {}", env_state.get_iiwa_time());
+        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       }
 
       if (wsg_act_.ActionFinished(env_state)) {
-        state_ = kPrep;
+        state_ = next_state;
         wsg_act_.Reset();
       }
       break;
     }
 
-    case kPrep: {
-      if (!iiwa_move_.ActionStarted()) {
-        // Compute all the desired configurations
-        ComputeNominalConfigurations(iiwa, env_state);
-        bool skip_to_approach_pick =
-            nominal_q_map_.at(kApproachPickPregrasp)
-                .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
-        if (skip_to_approach_pick) {
-          state_ = kApproachPick;
-        } else {
-          PostureInterpolationRequest request =
-              CreatePostureInterpolationRequest(
-                  env_state, state_, kLongDuration,
-                  true /*fall_back_to_joint_space_interpolation*/);
-          ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                    &iiwa_move_);
-
-          drake::log()->info("kPrep at {}", env_state.get_iiwa_time());
-        }
-      }
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPickPregrasp;
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-    case kApproachPickPregrasp: {
-      // Approaches kPreGraspHeightOffset above the center of the object.
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kShortDuration);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kApproachPickPregrasp at {}",
-                           env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPick;
-        iiwa_move_.Reset();
+    case PickAndPlaceState::kPlan: {
+      // Compute all the desired configurations
+      ComputeNominalConfigurations(iiwa, env_state);
+      bool skip_to_approach_pick =
+          nominal_q_map_.at(PickAndPlaceState::kApproachPickPregrasp)
+              .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
+      if (skip_to_approach_pick) {
+        state_ = PickAndPlaceState::kApproachPick;
+      } else {
+        state_ = PickAndPlaceState::kPrep;
       }
       break;
     }
 
-    case kApproachPick: {
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kShortDuration);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kApproachPick at {}", env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kGrasp;
-        iiwa_move_.Reset();
+    case PickAndPlaceState::kReset: {
+      next_place_location_++;
+      if (next_place_location_ == static_cast<int>(place_locations_.size()) &&
+          !loop_) {
+        state_ = PickAndPlaceState::kDone;
+        iiwa_callback(&stopped_plan);
+        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+      } else {
+        next_place_location_ %= place_locations_.size();
+        state_ = PickAndPlaceState::kOpenGripper;
       }
       break;
     }
 
-    case kGrasp: {
-      // Grasps the object.
-      if (!wsg_act_.ActionStarted()) {
-        lcmt_schunk_wsg_command msg;
-        wsg_act_.CloseGripper(env_state, &msg);
-        wsg_callback(&msg);
-
-        drake::log()->info("kGrasp at {}", env_state.get_iiwa_time());
-      }
-
-      if (wsg_act_.ActionFinished(env_state)) {
-        state_ = kLiftFromPick;
-        wsg_act_.Reset();
-      }
-      break;
-    }
-
-    case kLiftFromPick: {
-      // Lifts the object straight up.
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kShortDuration);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kLiftFromPick at {}", env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPlacePregrasp;
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-
-    case kApproachPlacePregrasp: {
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kLongDuration,
-            true /*fall_back_to_joint_space_interpolation*/);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kApproachPlacePregrasp at {}",
-                           env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kApproachPlace;
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-
-    case kApproachPlace: {
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kShortDuration);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kApproachPlace at {}", env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = kPlace;
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-
-    case kPlace: {
-      // Releases the object.
-      if (!wsg_act_.ActionStarted()) {
-        lcmt_schunk_wsg_command msg;
-        wsg_act_.OpenGripper(env_state, &msg);
-        wsg_callback(&msg);
-
-        drake::log()->info("kPlace at {}", env_state.get_iiwa_time());
-      }
-
-      if (wsg_act_.ActionFinished(env_state)) {
-        state_ = kLiftFromPlace;
-        wsg_act_.Reset();
-      }
-      break;
-    }
-
-    case kLiftFromPlace: {
-      // Moves straight up.
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, kShortDuration);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("kLiftFromPlace at {}", env_state.get_iiwa_time());
-      }
-
-      if (iiwa_move_.ActionFinished(env_state)) {
-        next_place_location_++;
-        if (next_place_location_ == static_cast<int>(place_locations_.size()) &&
-            !loop_) {
-          state_ = kDone;
-          iiwa_callback(&stopped_plan);
-          drake::log()->info("kDone at {}", env_state.get_iiwa_time());
-        } else {
-          next_place_location_ %= place_locations_.size();
-          state_ = kOpenGripper;
-        }
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-
-    case kDone: {
+    case PickAndPlaceState::kDone: {
       break;
     }
   }
