@@ -100,10 +100,10 @@ class PickAndPlaceStateMachine {
   PickAndPlaceState state() const { return state_; }
 
  private:
-  void ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
+  bool ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
                                     const WorldState& env_state);
 
-  void ComputeDesiredPoses(const WorldState& env_state);
+  void ComputeDesiredPoses(const WorldState& env_state, double yaw_offset);
 
   PostureInterpolationRequest CreatePostureInterpolationRequest(
       const WorldState& env_state, PickAndPlaceState state, double duration,
