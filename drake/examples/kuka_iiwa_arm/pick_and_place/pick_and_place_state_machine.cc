@@ -21,23 +21,6 @@ using manipulation::planner::ConstraintRelaxingIk;
 // Position the gripper 30cm above the object before grasp.
 const double kPreGraspHeightOffset = 0.3;
 
-// Position the gripper 15cm away from the object before grasp.
-// const double kPreGraspOffset = 0.15;
-
-// Computes the desired end effector pose in the world frame given the object
-// pose in the world frame.
-// Isometry3<double> ComputeGraspPose(const Isometry3<double>& X_WObj) {
-// Sets desired end effector location to be 12cm behind the object,
-// with the same orientation relative to the object frame. This number
-// dependents on the length of the finger and how the gripper is attached.
-// const double kEndEffectorToMidFingerDepth = 0.12;
-// Isometry3<double> X_ObjEndEffector_desired;
-// X_ObjEndEffector_desired.translation() =
-// Vector3<double>(-kEndEffectorToMidFingerDepth, 0, 0);
-// X_ObjEndEffector_desired.linear().setIdentity();
-// return X_WObj * X_ObjEndEffector_desired;
-//}
-
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1.
