@@ -383,8 +383,8 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       // results.
       tight_pos_tol_(0.001, 0.001, 0.001),
       tight_rot_tol_(0.05),
-      loose_pos_tol_(0.01, 0.01, 0.01),
-      loose_rot_tol_(0.1) {
+      loose_pos_tol_(0.1, 0.1, 0.1),
+      loose_rot_tol_(30*M_PI/180) {
   DRAKE_THROW_UNLESS(!place_locations.empty());
   std::cout << "Making sure operator<< for PickAndPlaceState is used: " << PickAndPlaceState::kPrep
             << std::endl;
@@ -589,17 +589,35 @@ void PickAndPlaceStateMachine::Update(
   switch (state_) {
 
     // IIWA arm movements
-    case PickAndPlaceState::kPrep:
-    case PickAndPlaceState::kApproachPickPregrasp:
     case PickAndPlaceState::kApproachPick:
     case PickAndPlaceState::kLiftFromPick:
-    case PickAndPlaceState::kApproachPlacePregrasp:
     case PickAndPlaceState::kApproachPlace:
     case PickAndPlaceState::kLiftFromPlace: {
       if (!iiwa_move_.ActionStarted()) {
         PostureInterpolationRequest request = CreatePostureInterpolationRequest(
             env_state, state_, iiwa_move_duration,
             iiwa_move_fall_back /*fall_back_to_joint_space_interpolation*/);
+        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
+                                  &iiwa_move_);
+
+        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+      }
+      if (iiwa_move_.ActionFinished(env_state)) {
+        state_ = next_state;
+        iiwa_move_.Reset();
+      }
+      break;
+    }
+
+    case PickAndPlaceState::kApproachPickPregrasp:
+    case PickAndPlaceState::kPrep:
+    case PickAndPlaceState::kApproachPlacePregrasp: {
+      if (!iiwa_move_.ActionStarted()) {
+        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
+            env_state, state_, iiwa_move_duration,
+            iiwa_move_fall_back /*fall_back_to_joint_space_interpolation*/);
+        request.position_tolerance = loose_pos_tol_(0);
+        request.orientation_tolerance = loose_rot_tol_;
         ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
                                   &iiwa_move_);
 
