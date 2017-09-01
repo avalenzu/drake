@@ -206,35 +206,16 @@ PostureInterpolationResult PlanStraightLineMotion(
     for (int i = 0; i < kNumKnots; ++i) {
       q_sol[i] = ik_res.q_sol[i];
     }
-    result.q_traj = std::make_unique<PiecewisePolynomial<double>>(
-        PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf));
+    result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf);
   } else if (!result.success && fall_back_to_joint_space_interpolation) {
     result.success = true;
-    result.q_traj = std::make_unique<PiecewisePolynomial<double>>(
-        PiecewisePolynomial<double>::Cubic(
-            {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf));
+    result.q_traj = PiecewisePolynomial<double>::Cubic(
+            {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf);
   } else {
-    result.q_traj = nullptr;
+    result.q_traj = PiecewisePolynomial<double>::Cubic(
+            {times.front(), times.back()}, {q_0, q_0}, q_dot0, q_dotf);
   }
   return result;
-}
-
-void ExecuteSingleWaypointMove(
-    const PostureInterpolationRequest& request,
-    const RigidBodyTree<double>& iiwa, const WorldState& env_state,
-    const PickAndPlaceStateMachine::IiwaPublishCallback& iiwa_callback,
-    IiwaMove* iiwa_move) {
-  PostureInterpolationResult result = PlanStraightLineMotion(request, iiwa);
-  DRAKE_THROW_UNLESS(result.success);
-
-  robotlocomotion::robot_plan_t plan{};
-  std::vector<VectorX<double>> q;
-  q.reserve(request.times.size());
-  for (double t : request.times) {
-    q.push_back(result.q_traj->value(t));
-  }
-  iiwa_move->MoveJoints(env_state, iiwa, request.times, q, &plan);
-  iiwa_callback(&plan);
 }
 
 void OpenGripper(const WorldState& env_state, WsgAction* wsg_act,
@@ -517,21 +498,99 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   return success;
 }
 
+bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
+  ComputeNominalConfigurations(iiwa, env_state);
+  bool success{true};
+  std::vector<PickAndPlaceState> states{
+      PickAndPlaceState::kPrep,
+      PickAndPlaceState::kApproachPickPregrasp,
+      PickAndPlaceState::kApproachPick,
+      PickAndPlaceState::kLiftFromPick,
+      PickAndPlaceState::kApproachPlacePregrasp,
+      PickAndPlaceState::kApproachPlace,
+      PickAndPlaceState::kLiftFromPlace};
+  VectorX<double> q_0{iiwa.get_num_positions()};
+  if (interpolation_result_map_.empty()) {
+    q_0 << env_state.get_iiwa_q();
+    drake::log()->debug("Using current configuration as q_0.");
+  } else {
+    drake::log()->debug("Using end of the last plan as q_0.");
+    const PiecewisePolynomial<double>& q_traj_last =
+        interpolation_result_map_.at(states.back()).q_traj;
+    q_0 << q_traj_last.value(q_traj_last.getEndTime());
+  }
+  drake::log()->debug("\tq_0 = [{}]", q_0.transpose());
+  drake::log()->debug("Clearing interpolation_result_map_.");
+  interpolation_result_map_.clear();
+  const double kShortDuration = 2;
+  const double kLongDuration = 3;
+  const double kExtraLongDuration = 5;
+  for (PickAndPlaceState state : states) {
+    drake::log()->info("Planning trajectory for {}.", state);
+    const VectorX<double> q_f = nominal_q_map_.at(state);
+    double duration{kShortDuration};
+    double position_tolerance{tight_pos_tol_(0)};
+    double orientation_tolerance{tight_rot_tol_};
+    bool fall_back_to_joint_space_interpolation{false};
+    switch (state) {
+      case PickAndPlaceState::kPrep:
+      case PickAndPlaceState::kApproachPlacePregrasp: {
+        position_tolerance = loose_pos_tol_(0);
+        orientation_tolerance = loose_rot_tol_;
+        fall_back_to_joint_space_interpolation = true;
+        duration = kLongDuration;
+      } break;
+
+      case PickAndPlaceState::kLiftFromPlace: {
+        position_tolerance = loose_pos_tol_(0);
+        orientation_tolerance = loose_rot_tol_;
+        fall_back_to_joint_space_interpolation = true;
+        duration = kExtraLongDuration;
+      } break;
+
+      default:  // No action needed for other cases
+        break;
+    }
+    PostureInterpolationRequest request;
+
+    request.max_joint_position_change = 0.5*M_PI_4;
+    request.q_initial = q_0;
+    request.q_final = q_f;
+    double max_delta_q{
+      (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
+    int num_via_points =
+      std::ceil(2*max_delta_q / request.max_joint_position_change);
+    double dt{duration/static_cast<double>(num_via_points)};
+    request.times.resize(num_via_points + 1);
+    request.times.front() = 0.0;
+    for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
+      request.times[i] = i*dt;
+    }
+    request.times.back() = duration;
+    request.position_tolerance = position_tolerance;
+    request.orientation_tolerance = orientation_tolerance;
+    request.fall_back_to_joint_space_interpolation =
+        fall_back_to_joint_space_interpolation;
+
+    PostureInterpolationResult result = PlanStraightLineMotion(request, iiwa);
+
+    interpolation_result_map_.emplace(state, result);
+    success = success && result.success;
+    q_0 = q_f;
+  }
+  return success;
+}
+
 void PickAndPlaceStateMachine::Update(
     const WorldState& env_state, const IiwaPublishCallback& iiwa_callback,
     const WsgPublishCallback& wsg_callback,
     manipulation::planner::ConstraintRelaxingIk* planner) {
-  const double kShortDuration = 2.0;
-  const double kLongDuration = 3.0;
   IKResults ik_res;
-  std::vector<double> times;
   robotlocomotion::robot_plan_t stopped_plan{};
   stopped_plan.num_states = 0;
 
   const RigidBodyTree<double>& iiwa = planner->get_robot();
 
-  double iiwa_move_duration{kShortDuration};
-  bool iiwa_move_fall_back{false};
   PickAndPlaceState next_state{state_};
   auto schunk_action = OpenGripper;
   switch (state_) {
@@ -540,8 +599,6 @@ void PickAndPlaceStateMachine::Update(
     } break;
 
     case PickAndPlaceState::kPrep: {
-      iiwa_move_duration = kLongDuration;
-      iiwa_move_fall_back = true;
       next_state = PickAndPlaceState::kApproachPickPregrasp;
     } break;
 
@@ -563,8 +620,6 @@ void PickAndPlaceStateMachine::Update(
     } break;
 
     case PickAndPlaceState::kApproachPlacePregrasp: {
-      iiwa_move_duration = kLongDuration;
-      iiwa_move_fall_back = true;
       next_state = PickAndPlaceState::kApproachPlace;
     } break;
 
@@ -577,7 +632,6 @@ void PickAndPlaceStateMachine::Update(
     } break;
 
     case PickAndPlaceState::kLiftFromPlace: {
-      iiwa_move_duration = 5;
       next_state = PickAndPlaceState::kReset;
     } break;
 
@@ -590,36 +644,26 @@ void PickAndPlaceStateMachine::Update(
     case PickAndPlaceState::kApproachPick:
     case PickAndPlaceState::kLiftFromPick:
     case PickAndPlaceState::kApproachPlace:
-    case PickAndPlaceState::kLiftFromPlace: {
-      if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, iiwa_move_duration,
-            iiwa_move_fall_back /*fall_back_to_joint_space_interpolation*/);
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
-
-        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
-      }
-      if (iiwa_move_.ActionFinished(env_state)) {
-        state_ = next_state;
-        iiwa_move_.Reset();
-      }
-      break;
-    }
-
+    case PickAndPlaceState::kLiftFromPlace:
     case PickAndPlaceState::kApproachPickPregrasp:
     case PickAndPlaceState::kPrep:
     case PickAndPlaceState::kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
-        PostureInterpolationRequest request = CreatePostureInterpolationRequest(
-            env_state, state_, iiwa_move_duration,
-            iiwa_move_fall_back /*fall_back_to_joint_space_interpolation*/);
-        request.position_tolerance = loose_pos_tol_(0);
-        request.orientation_tolerance = loose_rot_tol_;
-        ExecuteSingleWaypointMove(request, iiwa, env_state, iiwa_callback,
-                                  &iiwa_move_);
+        robotlocomotion::robot_plan_t plan{};
+        std::vector<VectorX<double>> q;
+        PostureInterpolationResult& result = interpolation_result_map_.at(state_); 
+        DRAKE_THROW_UNLESS(result.success);
+        const std::vector<double>& times{result.q_traj.getSegmentTimes()};
+        q.reserve(times.size());
+        for (double t : times) {
+          q.push_back(result.q_traj.value(t));
+        }
+        iiwa_move_.MoveJoints(env_state, iiwa, times, q, &plan);
+        iiwa_callback(&plan);
 
         drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+        drake::log()->debug("\tq_0 = [{}]", q.front().transpose());
+        drake::log()->debug("\tq_f = [{}]", q.back().transpose());
       }
       if (iiwa_move_.ActionFinished(env_state)) {
         state_ = next_state;
@@ -655,12 +699,20 @@ void PickAndPlaceStateMachine::Update(
 
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
-      DRAKE_THROW_UNLESS(ComputeNominalConfigurations(iiwa, env_state));
+      DRAKE_THROW_UNLESS(ComputeTrajectories(iiwa, env_state));
+      VectorX<double> q_approach_pick_pregrasp{
+          nominal_q_map_.at(PickAndPlaceState::kApproachPickPregrasp)};
+      const PiecewisePolynomial<double>& q_traj_prep{
+          interpolation_result_map_.at(PickAndPlaceState::kPrep).q_traj};
+      const VectorX<double> q_0{q_traj_prep.value(q_traj_prep.getStartTime())};
       bool skip_to_approach_pick =
-          nominal_q_map_.at(PickAndPlaceState::kApproachPickPregrasp)
-              .isApprox(env_state.get_iiwa_q(), 10 * M_PI / 180);
+          q_approach_pick_pregrasp.isApprox(q_0, 10 * M_PI / 180);
       if (skip_to_approach_pick) {
-        state_ = PickAndPlaceState::kApproachPick;
+        VectorX<double> q_dot{VectorX<double>::Zero(q_0.size())};
+        interpolation_result_map_.at(PickAndPlaceState::kApproachPickPregrasp)
+            .q_traj = PiecewisePolynomial<double>::Cubic(
+            {0, 1}, {q_0, q_approach_pick_pregrasp}, q_dot, q_dot);
+        state_ = PickAndPlaceState::kApproachPickPregrasp;
       } else {
         state_ = PickAndPlaceState::kPrep;
       }

@@ -57,7 +57,7 @@ struct PostureInterpolationRequest {
 
 struct PostureInterpolationResult {
   // Configuration trajectory
-  std::unique_ptr<PiecewisePolynomial<double>> q_traj;
+  PiecewisePolynomial<double> q_traj;
   // Success
   bool success;
 };
@@ -105,6 +105,9 @@ class PickAndPlaceStateMachine {
 
   void ComputeDesiredPoses(const WorldState& env_state, double yaw_offset);
 
+  bool ComputeTrajectories(const RigidBodyTree<double>& iiwa,
+                           const WorldState& env_state);
+
   PostureInterpolationRequest CreatePostureInterpolationRequest(
       const WorldState& env_state, PickAndPlaceState state, double duration,
       bool fall_back_to_joint_space_interpolation = false);
@@ -140,6 +143,9 @@ class PickAndPlaceStateMachine {
 
   // Desired joint configuration for various states
   std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
+
+  // Desired interpolation results for various states
+  std::map<PickAndPlaceState,PostureInterpolationResult> interpolation_result_map_;
 };
 
 }  // namespace pick_and_place
