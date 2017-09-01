@@ -113,9 +113,6 @@ void RobotPlanInterpolator::OutputState(const systems::Context<double>& context,
       plan.pp.value(current_plan_time);
   output_vec.tail(tree_.get_num_velocities()) =
       plan.pp_deriv.value(current_plan_time);
-
-  drake::log()->info("OutputState: t = {}, q[0] = {}", current_plan_time,
-                     output_vec(0));
 }
 
 void RobotPlanInterpolator::OutputAccel(
@@ -213,8 +210,6 @@ void RobotPlanInterpolator::DoCalcUnrestrictedUpdate(
       std::vector<double> input_time;
       for (int k = 0; k < static_cast<int>(plan_input.plan.size()); ++k) {
         input_time.push_back(plan_input.plan[k].utime / 1e6);
-        drake::log()->info("Knot {}: t = {}, q[0] = {}", k, input_time.back(),
-                           knots[k](0, 0));
       }
 
       const Eigen::MatrixXd knot_dot =
