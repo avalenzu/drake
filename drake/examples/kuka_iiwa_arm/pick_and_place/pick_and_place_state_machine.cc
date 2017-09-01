@@ -42,6 +42,13 @@ PostureInterpolationResult PlanStraightLineMotion(
 
   const int kNumKnots = times.size();
 
+  drake::log()->debug("Processing interpolation request:");
+  drake::log()->debug("\tNumber of knots: {}", kNumKnots);
+  drake::log()->debug("\tPosition tolerance: {}", position_tolerance);
+  drake::log()->debug("\tOrientation tolerance: {}", orientation_tolerance);
+  drake::log()->debug("\tFall back to joint space: {}",
+                      fall_back_to_joint_space_interpolation);
+
   // Create a local copy of the robot
   std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
   int kNumJoints{robot->get_num_positions()};
