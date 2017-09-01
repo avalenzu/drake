@@ -62,6 +62,10 @@ bool IiwaMove::ActionFinished(const WorldState& est_state) const {
   const double max_finished_velocity = 1e-2;
   if (get_time_since_action_start(est_state.get_iiwa_time()) > duration_ &&
       est_state.get_iiwa_v().norm() < max_finished_velocity) {
+    drake::log()->debug("Action finished {} > {} and {} < {}",
+                        get_time_since_action_start(est_state.get_iiwa_time()),
+                        duration_, est_state.get_iiwa_v().norm(),
+                        max_finished_velocity);
     return true;
   } else {
     return false;
