@@ -441,8 +441,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
       const Vector3<double>& r_WE = X_WE.translation();
       const Quaternion<double>& quat_WE{X_WE.rotation()};
 
-      drake::log()->debug("State {}, r_WE = ({}), tspan = ({})", state,
-                          r_WE.transpose(), knot_tspan.transpose());
 
       // Constrain the end-effector position for all knots.
       position_constraints.emplace_back(new WorldPositionConstraint(
@@ -497,7 +495,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
     for (int j = 0; j < kNumKnots; ++j) {
       q_knots_seed.col(j) = q_seed_local;
     }
-    drake::log()->debug("Attempt {}: t = ({})", i, t.transpose());
     ik_res =
         inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
                              constraint_array[i % kNumYawOffsets], ikoptions);
