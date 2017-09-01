@@ -525,7 +525,7 @@ void PickAndPlaceStateMachine::Update(
     const WsgPublishCallback& wsg_callback,
     manipulation::planner::ConstraintRelaxingIk* planner) {
   const double kShortDuration = 2.0;
-  const double kLongDuration = 2.0;
+  const double kLongDuration = 3.0;
   IKResults ik_res;
   std::vector<double> times;
   robotlocomotion::robot_plan_t stopped_plan{};
@@ -580,6 +580,7 @@ void PickAndPlaceStateMachine::Update(
     } break;
 
     case PickAndPlaceState::kLiftFromPlace: {
+      iiwa_move_duration = 5;
       next_state = PickAndPlaceState::kReset;
     } break;
 
