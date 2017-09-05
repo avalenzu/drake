@@ -3,6 +3,7 @@
 
 load(
     "//tools:drake.bzl",
+    "drake_cc_binary",
     "drake_cc_library",
     "drake_cc_googletest",
 )
@@ -20,6 +21,7 @@ drake_cc_library(
         "//drake/multibody:rigid_body_tree",
         "//drake/systems/primitives:linear_system",
         "//drake/systems/trajectory_optimization:multiple_shooting",
+        "//drake/systems/trajectory_optimization:direct_transcription",
     ],
 )
 
@@ -46,6 +48,28 @@ drake_cc_library(
         "//drake/systems/framework:leaf_system",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_binary(
+    name = "iiwa_scratch",
+    srcs = ["iiwa_scratch.cc"],
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
+        "//drake/common:text_logging_gflags",
+        "//drake/lcm",
+        "//drake/multibody/parsers",
+        "//drake/multibody/rigid_body_plant:drake_visualizer",
+        "//drake/systems/analysis:simulator",
+        "//drake/systems/framework:diagram_builder",
+        "//drake/systems/primitives:linear_system",
+        "//drake/systems/primitives:signal_logger",
+        "//drake/systems/primitives:trajectory_source",
+        "@com_github_gflags_gflags//:gflags",
     ],
 )
 
@@ -86,8 +110,13 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "kinematic_trajectory_optimization_test",
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
     deps = [
         ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
+        "//drake/multibody/parsers",
     ],
 )
 
