@@ -285,10 +285,10 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   Isometry3<double> X_GE{Isometry3<double>::Identity()};
   X_GE.rotate(Eigen::AngleAxisd(0.39269908, Eigen::Vector3d::UnitX()));
 
-  Isometry3<double> X_WO_initial{env_state.get_object_pose()};
+  Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
+  Isometry3<double> X_WO_initial{X_WS*env_state.get_object_pose()};
   X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
-  Isometry3<double> X_WO_final{env_state.get_iiwa_base() *
-                               place_locations_[next_place_location_]};
+  Isometry3<double> X_WO_final{place_locations_[next_place_location_]};
 
   // Set Prep pose
   Isometry3<double> X_OG{Isometry3<double>::Identity()};

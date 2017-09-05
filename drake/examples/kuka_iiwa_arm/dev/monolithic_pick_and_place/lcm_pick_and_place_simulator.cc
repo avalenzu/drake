@@ -10,11 +10,13 @@
 #include "drake/common/text_logging_gflags.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/state_machine_system.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
+#include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_world/iiwa_wsg_diagram_factory.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/lcmt_contact_results_for_viz.hpp"
 #include "drake/lcmt_schunk_wsg_status.hpp"
 #include "drake/lcmtypes/drake/lcmt_schunk_wsg_command.hpp"
+#include "drake/lcmtypes/drake/lcmt_iiwa_command.hpp"
 #include "drake/manipulation/planner/robot_plan_interpolator.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
@@ -29,8 +31,11 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/lcm/lcm_publisher_system.h"
+#include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/primitives/constant_vector_source.h"
 
+DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
+              "Number of seconds to simulate.");
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_double(orientation, 2 * M_PI, "Yaw angle of the box.");
 DEFINE_int32(start_position, 1, "Position index to start from");
@@ -60,7 +65,6 @@ using manipulation::util::WorldSimTreeBuilder;
 const char kIiwaUrdf[] =
     "drake/manipulation/models/iiwa_description/urdf/"
     "iiwa14_polytope_collision.urdf";
-const char kIiwaEndEffectorName[] = "iiwa_link_ee";
 
 // The `z` coordinate of the top of the table in the world frame.
 // The quantity 0.736 is the `z` coordinate of the frame associated with the
@@ -163,11 +167,11 @@ int DoMain(void) {
   // the iiwa+WSG.
   std::vector<Eigen::Vector3d> post_locations;
   // TODO(sam.creasey) this should be 1.10 in the Y direction.
-  post_locations.push_back(Eigen::Vector3d(0.00, 1.00, 0));  // position A
-  post_locations.push_back(Eigen::Vector3d(0.80, 0.36, 0));  // position B
-  post_locations.push_back(Eigen::Vector3d(0.30, -0.9, 0));  // position D
-  post_locations.push_back(Eigen::Vector3d(-0.1, -1.0, 0));  // position E
-  post_locations.push_back(Eigen::Vector3d(-0.47, -0.8, 0));  // position F
+  post_locations.push_back(Eigen::Vector3d(0.00, 0.9, 0.05));  // position A
+  post_locations.push_back(Eigen::Vector3d(0.80, 0.36, 0.05));  // position B
+  post_locations.push_back(Eigen::Vector3d(0.30, -0.9, 0.012));  // position D
+  post_locations.push_back(Eigen::Vector3d(-0.1, -1.0, 0.012));  // position E
+  post_locations.push_back(Eigen::Vector3d(-0.47, -0.8, -0.0));  // position F
 
   // Position of the pick and place location on the table, relative to
   // the base of the arm.  In the original test, the position was
@@ -176,11 +180,12 @@ int DoMain(void) {
   // fingers in the middle while this test places the fingertip
   // further forward.  The position is right at the edge of what we
   // can plan to, so this 4cm change does matter.
-  const Eigen::Vector3d table_position(0.86, -0.36, -0.07);  // position C
+  //const Eigen::Vector3d table_position(0.86, -0.36, -0.07);  // position C
+  const Eigen::Vector3d table_position(0.80, -0.36, 0.25);  // position C
 
   // The offset from the top of the table to the top of the post, used for
   // calculating the place locations in iiwa relative coordinates.
-  const Eigen::Vector3d post_height_offset(0, 0, 0.26);
+  const Eigen::Vector3d post_height_offset(0, 0, 0.27);
 
   // TODO(sam.creasey) select only one of these
   std::vector<Isometry3<double>> place_locations;
@@ -211,7 +216,7 @@ int DoMain(void) {
   place_location.translation() = post_locations[4] + post_height_offset;
   place_location.linear() = Matrix3<double>(
       AngleAxis<double>(-M_PI / 2., Vector3<double>::UnitZ()));
-  place_locations.push_back(place_location);
+  //  place_locations.push_back(place_location);
 
   Target target = GetTarget();
   Eigen::Vector3d box_origin(0, 0, kTableTopZInWorld);
@@ -251,23 +256,46 @@ int DoMain(void) {
                   contact_viz->get_input_port(0));
   builder.Connect(contact_viz->get_output_port(0),
                   contact_results_publisher->get_input_port(0));
+  contact_results_publisher->set_publish_period(kIiwaLcmStatusPeriod);
 
   auto drake_visualizer = builder.AddSystem<systems::DrakeVisualizer>(
       plant->get_plant().get_rigid_body_tree(), &lcm);
+  drake_visualizer->set_publish_period(kIiwaLcmStatusPeriod);
 
   builder.Connect(plant->get_output_port_plant_state(),
                   drake_visualizer->get_input_port(0));
 
-  auto iiwa_trajectory_generator = builder.AddSystem<RobotPlanInterpolator>(
-      FindResourceOrThrow(kIiwaUrdf));
+  //auto iiwa_trajectory_generator = builder.AddSystem<RobotPlanInterpolator>(
+      //FindResourceOrThrow(kIiwaUrdf));
+  //builder.Connect(plant->get_output_port_iiwa_state(),
+                  //iiwa_trajectory_generator->get_state_input_port());
+  auto iiwa_command_sub = builder.AddSystem(
+      systems::lcm::LcmSubscriberSystem::Make<lcmt_iiwa_command>("IIWA_COMMAND",
+                                                                 &lcm));
+  iiwa_command_sub->set_name("iiwa_command_subscriber");
+  auto iiwa_command_receiver =
+      builder.AddSystem<IiwaCommandReceiver>(7);
+  iiwa_command_receiver->set_name("iiwa_command_receiver");
+
+  builder.Connect(iiwa_command_sub->get_output_port(0),
+                        iiwa_command_receiver->get_input_port(0));
+  builder.Connect(iiwa_command_receiver->get_output_port(0),
+                        plant->get_input_port_iiwa_state_command());
+
+  auto iiwa_status_pub = builder.AddSystem(
+      systems::lcm::LcmPublisherSystem::Make<lcmt_iiwa_status>("IIWA_STATUS",
+                                                               &lcm));
+  iiwa_status_pub->set_name("iiwa_status_publisher");
+  iiwa_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
+  auto iiwa_status_sender = builder.AddSystem<IiwaStatusSender>(7);
+  iiwa_status_sender->set_name("iiwa_status_sender");
+
   builder.Connect(plant->get_output_port_iiwa_state(),
-                  iiwa_trajectory_generator->get_state_input_port());
-  builder.Connect(
-      iiwa_trajectory_generator->get_state_output_port(),
-      plant->get_input_port_iiwa_state_command());
-  builder.Connect(
-      iiwa_trajectory_generator->get_acceleration_output_port(),
-      plant->get_input_port_iiwa_acceleration_command());
+                        iiwa_status_sender->get_state_input_port());
+  builder.Connect(iiwa_command_receiver->get_output_port(0),
+                        iiwa_status_sender->get_command_input_port());
+  builder.Connect(iiwa_status_sender->get_output_port(0),
+                        iiwa_status_pub->get_input_port(0));
 
   auto wsg_controller = builder.AddSystem<SchunkWsgController>();
   builder.Connect(plant->get_output_port_wsg_state(),
@@ -293,98 +321,60 @@ int DoMain(void) {
     place_locations.swap(new_place_locations);
   }
 
-  auto state_machine =
-      builder.template AddSystem<PickAndPlaceStateMachineSystem>(
-          FindResourceOrThrow(kIiwaUrdf), kIiwaEndEffectorName,
-          iiwa_base, place_locations);
+  //auto state_machine =
+      //builder.template AddSystem<PickAndPlaceStateMachineSystem>(
+          //FindResourceOrThrow(kIiwaUrdf), kIiwaEndEffectorName,
+          //iiwa_base, place_locations);
 
+  auto object_state_pub = builder.AddSystem(
+      systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
+        "OBJECT_STATE_EST", &lcm));
   builder.Connect(plant->get_output_port_box_robot_state_msg(),
-                  state_machine->get_input_port_box_state());
+                  object_state_pub->get_input_port(0));
+  object_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
+
+  auto wsg_status_pub = builder.AddSystem(
+      systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(
+          "SCHUNK_WSG_STATUS", &lcm));
   builder.Connect(wsg_status_sender->get_output_port(0),
-                  state_machine->get_input_port_wsg_status());
+                  wsg_status_pub->get_input_port(0));
+  wsg_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
+
+  auto iiwa_robot_state_pub = builder.AddSystem(
+      systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
+          "EST_ROBOT_STATE", &lcm));
   builder.Connect(plant->get_output_port_iiwa_robot_state_msg(),
-                  state_machine->get_input_port_iiwa_state());
-  builder.Connect(state_machine->get_output_port_wsg_command(),
+                  iiwa_robot_state_pub->get_input_port(0));
+  iiwa_robot_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
+
+  auto wsg_command_sub = builder.AddSystem(
+    systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_command>(
+        "SCHUNK_WSG_COMMAND", &lcm));
+  builder.Connect(wsg_command_sub->get_output_port(0),
                   wsg_controller->get_command_input_port());
-  builder.Connect(state_machine->get_output_port_iiwa_plan(),
-                  iiwa_trajectory_generator->get_plan_input_port());
 
   auto sys = builder.Build();
   Simulator<double> simulator(*sys);
-  simulator.Initialize();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
   simulator.reset_integrator<RungeKutta2Integrator<double>>(*sys,
       FLAGS_dt, simulator.get_mutable_context());
   simulator.get_mutable_integrator()->set_maximum_step_size(FLAGS_dt);
   simulator.get_mutable_integrator()->set_fixed_step_mode(true);
 
-  auto& plan_source_context = sys->GetMutableSubsystemContext(
-      *iiwa_trajectory_generator, simulator.get_mutable_context());
-  iiwa_trajectory_generator->Initialize(
-      plan_source_context.get_time(),
-      Eigen::VectorXd::Zero(7),
-      plan_source_context.get_mutable_state());
+  lcm.StartReceiveThread();
+  simulator.set_publish_every_time_step(false);
+  simulator.Initialize();
+
+  iiwa_command_receiver->set_initial_position(
+      &sys->GetMutableSubsystemContext(*iiwa_command_receiver,
+                                       simulator.get_mutable_context()),
+      VectorX<double>::Zero(7));
+
 
   // Step the simulator in some small increment.  Between steps, check
   // to see if the state machine thinks we're done, and if so that the
   // object is near the target.
-  const double simulation_step = 0.1;
-  while (state_machine->state(
-             sys->GetSubsystemContext(*state_machine,
-                                      simulator.get_context()))
-         != pick_and_place::PickAndPlaceState::kDone) {
-    simulator.StepTo(simulator.get_context().get_time() + simulation_step);
-    if (FLAGS_quick) {
-      // We've run a single step, just get out now since we won't have
-      // reached our destination.
-      return 0;
-    }
-  }
-
-  const pick_and_place::WorldState& world_state =
-      state_machine->world_state(
-          sys->GetSubsystemContext(*state_machine,
-                                   simulator.get_context()));
-  const Isometry3<double>& object_pose = world_state.get_object_pose();
-  const Vector6<double>& object_velocity = world_state.get_object_velocity();
-  Isometry3<double> goal = place_locations.back();
-  goal.translation()(2) += kTableTopZInWorld;
-  Eigen::Vector3d object_rpy = math::rotmat2rpy(object_pose.rotation());
-  Eigen::Vector3d goal_rpy = math::rotmat2rpy(goal.rotation());
-
-  drake::log()->info("Pose: {} {}",
-                     object_pose.translation().transpose(),
-                     object_rpy.transpose());
-  drake::log()->info("Velocity: {}", object_velocity.transpose());
-  drake::log()->info("Goal: {} {}",
-                     goal.translation().transpose(),
-                     goal_rpy.transpose());
-
-  const double position_tolerance = 0.02;
-  Eigen::Vector3d position_error =
-      object_pose.translation() - goal.translation();
-  drake::log()->info("Position error: {}", position_error.transpose());
-  DRAKE_DEMAND(std::abs(position_error(0)) < position_tolerance);
-  DRAKE_DEMAND(std::abs(position_error(1)) < position_tolerance);
-  DRAKE_DEMAND(std::abs(position_error(2)) < position_tolerance);
-
-  const double angle_tolerance = 0.0873;  // 5 degrees
-  Eigen::Vector3d rpy_error = object_rpy - goal_rpy;
-  drake::log()->info("RPY error: {}", rpy_error.transpose());
-  DRAKE_DEMAND(std::abs(rpy_error(0)) < angle_tolerance);
-  DRAKE_DEMAND(std::abs(rpy_error(1)) < angle_tolerance);
-  DRAKE_DEMAND(std::abs(rpy_error(2)) < angle_tolerance);
-
-
-  const double linear_velocity_tolerance = 0.1;
-  DRAKE_DEMAND(std::abs(object_velocity(0)) < linear_velocity_tolerance);
-  DRAKE_DEMAND(std::abs(object_velocity(1)) < linear_velocity_tolerance);
-  DRAKE_DEMAND(std::abs(object_velocity(2)) < linear_velocity_tolerance);
-
-  const double angular_velocity_tolerance = 0.1;
-  DRAKE_DEMAND(std::abs(object_velocity(3)) < angular_velocity_tolerance);
-  DRAKE_DEMAND(std::abs(object_velocity(4)) < angular_velocity_tolerance);
-  DRAKE_DEMAND(std::abs(object_velocity(5)) < angular_velocity_tolerance);
+  simulator.StepTo(FLAGS_simulation_sec);
 
   return 0;
 }
