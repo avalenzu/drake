@@ -80,6 +80,33 @@ drake_cc_binary(
     ],
 )
 
+drake_cc_binary(
+    name = "lcm_pick_and_place_simulator",
+    srcs = ["lcm_pick_and_place_simulator.cc"],
+    data = [
+        "//drake/examples/kuka_iiwa_arm:models",
+        "//drake/manipulation/models/iiwa_description:models",
+        "//drake/manipulation/models/wsg_50_description:models",
+    ],
+    deps = [
+        ":kuka_pick_and_place_monolithic",
+        "//drake/common:find_resource",
+        "//drake/common:text_logging_gflags",
+        "//drake/examples/kuka_iiwa_arm:iiwa_common",
+        "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
+        "//drake/examples/kuka_iiwa_arm/iiwa_world:iiwa_wsg_diagram_factory",
+        "//drake/lcm",
+        "//drake/lcmtypes:iiwa",
+        "//drake/manipulation/planner:robot_plan_interpolator",
+        "//drake/manipulation/schunk_wsg:schunk_wsg_controller",
+        "//drake/manipulation/util:world_sim_tree_builder",
+        "//drake/multibody/rigid_body_plant:contact_results_to_lcm",
+        "//drake/systems/analysis:simulator",
+        "@com_github_gflags_gflags//:gflags",
+        "@lcmtypes_bot2_core",
+    ],
+)
+
 pick_and_place_test(
     name = "pick_and_place_scenario_1",
     # TODO(sam.creasey) This should be target 1, but that requries

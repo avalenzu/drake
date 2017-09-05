@@ -63,7 +63,7 @@ IiwaAndWsgPlantWithStateEstimator<T>::IiwaAndWsgPlantWithStateEstimator(
   iiwa_controller_ = builder.template AddController<
       systems::controllers::InverseDynamicsController<T>>(
       iiwa_info.instance_id, std::move(single_arm), iiwa_kp, iiwa_ki, iiwa_kd,
-      true /* with feedforward acceleration */);
+      false /* without feedforward acceleration */);
   iiwa_controller_->set_name("IIWAInverseDynamicsController");
 
   // Updates the controller's model's end effector's inertia to include
@@ -80,8 +80,6 @@ IiwaAndWsgPlantWithStateEstimator<T>::IiwaAndWsgPlantWithStateEstimator(
   // Export iiwa's desired state input, and state output.
   input_port_iiwa_state_command_ = base_builder->ExportInput(
       iiwa_controller_->get_input_port_desired_state());
-  input_port_iiwa_acceleration_command_ = base_builder->ExportInput(
-      iiwa_controller_->get_input_port_desired_acceleration());
   output_port_iiwa_state_ = base_builder->ExportOutput(iiwa_output_port);
 
   // Sets up the WSG gripper part.
