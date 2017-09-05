@@ -16,7 +16,8 @@ drake_cc_library(
     srcs = ["kinematic_trajectory_optimization.cc"],
     hdrs = ["kinematic_trajectory_optimization.h"],
     deps = [
-        "//drake/multibody/multibody_tree:multibody_tree",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/systems/primitives:linear_system",
         "//drake/systems/trajectory_optimization:multiple_shooting",
     ],
 )
