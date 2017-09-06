@@ -76,6 +76,15 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
   }
 
   /**
+   * Getter for the input port corresponding to the abstract input with environment
+   * state message (LCM `lcmt_viewer_load_robot_t` message).
+   * @return The corresponding `sytems::InputPortDescriptor`.
+   */
+  const systems::InputPortDescriptor<double>& get_input_port_env_state() const {
+    return this->get_input_port(input_port_env_state_);
+  }
+
+  /**
    * Getter for the input port corresponding to the abstract input with the wsg
    * status message (LCM `lcmt_schunk_wsg_status` message).
    * @return The corresponding `sytems::InputPortDescriptor`.
@@ -119,6 +128,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
   // Input ports.
   int input_port_iiwa_state_{-1};
   int input_port_box_state_{-1};
+  int input_port_env_state_{-1};
   int input_port_wsg_status_{-1};
   // Output ports.
   int output_port_iiwa_plan_{-1};

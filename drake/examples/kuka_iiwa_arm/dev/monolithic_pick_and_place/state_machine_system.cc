@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "bot_core/robot_state_t.hpp"
+#include "drake/lcmtypes/drake/lcmt_viewer_link_data.hpp"
 #include "robotlocomotion/robot_plan_t.hpp"
 
 using bot_core::robot_state_t;
@@ -29,6 +30,7 @@ lcmt_schunk_wsg_command MakeDefaultWsgCommand() {
   default_command.force = 0;
   return default_command;
 }
+
 }  // namespace
 
 using manipulation::planner::ConstraintRelaxingIk;
@@ -67,6 +69,7 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
       place_locations_(place_locations) {
   input_port_iiwa_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_box_state_ = this->DeclareAbstractInputPort().get_index();
+  input_port_env_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_wsg_status_ = this->DeclareAbstractInputPort().get_index();
 
   output_port_iiwa_plan_ =
@@ -137,6 +140,9 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
   const robot_state_t& box_state =
       this->EvalAbstractInput(context, input_port_box_state_)
           ->GetValue<robot_state_t>();
+  const lcmt_viewer_link_data& env_state =
+      this->EvalAbstractInput(context, input_port_box_state_)
+          ->GetValue<lcmt_viewer_link_data>();
   const lcmt_schunk_wsg_status& wsg_status =
       this->EvalAbstractInput(context, input_port_wsg_status_)
           ->GetValue<lcmt_schunk_wsg_status>();
@@ -144,6 +150,7 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
   internal_state.world_state.HandleIiwaStatus(iiwa_state);
   internal_state.world_state.HandleWsgStatus(wsg_status);
   internal_state.world_state.HandleObjectStatus(box_state);
+  internal_state.world_state.HandleEnvStatus(env_state);
 
   PickAndPlaceStateMachine::IiwaPublishCallback iiwa_callback =
       ([&](const robotlocomotion::robot_plan_t* plan) {

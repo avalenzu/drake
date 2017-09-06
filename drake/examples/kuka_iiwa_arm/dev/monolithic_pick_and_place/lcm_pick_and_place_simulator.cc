@@ -4,6 +4,7 @@
 
 #include <gflags/gflags.h>
 #include "bot_core/robot_state_t.hpp"
+#include "optitrack/optitrack_frame_t.hpp"
 #include "robotlocomotion/robot_plan_t.hpp"
 
 #include "drake/common/find_resource.h"
@@ -24,6 +25,7 @@
 #include "drake/math/rotation_matrix.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_plant/contact_results_to_lcm.h"
+#include "drake/multibody/rigid_body_plant/create_load_robot_message.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_plant/rigid_body_plant.h"
 #include "drake/systems/analysis/runge_kutta2_integrator.h"
@@ -61,6 +63,8 @@ using systems::Simulator;
 using manipulation::util::ModelInstanceInfo;
 using manipulation::planner::RobotPlanInterpolator;
 using manipulation::util::WorldSimTreeBuilder;
+using multibody::CreateLoadRobotMessage;
+using optitrack::optitrack_frame_t;
 
 const char kIiwaUrdf[] =
     "drake/manipulation/models/iiwa_description/urdf/"
@@ -107,7 +111,8 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
     const Eigen::Vector3d& box_orientation,
     ModelInstanceInfo<double>* iiwa_instance,
     ModelInstanceInfo<double>* wsg_instance,
-    ModelInstanceInfo<double>* box_instance) {
+    ModelInstanceInfo<double>* box_instance,
+    std::vector<ModelInstanceInfo<double>>* env_instance_info) {
   auto tree_builder = std::make_unique<WorldSimTreeBuilder<double>>();
 
   // Adds models to the simulation builder. Instances of these models can be
@@ -127,16 +132,23 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
       "/sdf/schunk_wsg_50_ball_contact.sdf");
 
   // The main table which the arm sits on.
-  tree_builder->AddFixedModelInstance("table",
+  int table_id = tree_builder->AddFixedModelInstance("table",
                                       kTableBase,
                                       Eigen::Vector3d::Zero());
-  tree_builder->AddFixedModelInstance("table",
+  env_instance_info->push_back(
+      tree_builder->get_model_info_for_instance(table_id));
+
+  table_id = tree_builder->AddFixedModelInstance("table",
                                       kTableBase + table_position,
                                       Eigen::Vector3d::Zero());
+  env_instance_info->push_back(
+      tree_builder->get_model_info_for_instance(table_id));
+
   for (const Eigen::Vector3d& post_location : post_positions) {
-    tree_builder->AddFixedModelInstance("yellow_post",
-                                        post_location,
-                                        Eigen::Vector3d::Zero());
+    int post_id = tree_builder->AddFixedModelInstance(
+        "yellow_post", post_location, Eigen::Vector3d::Zero());
+    env_instance_info->push_back(
+        tree_builder->get_model_info_for_instance(post_id));
   }
   tree_builder->AddGround();
   // Chooses an appropriate box.
@@ -161,6 +173,48 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
       tree_builder->Build());
 }
 
+class MockOptitrackSystem : public systems::LeafSystem<double> {
+ public:
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MockOptitrackSystem);
+
+  MockOptitrackSystem(
+      const RigidBodyTree<double>& tree,
+      const std::vector<ModelInstanceInfo<double>> env_instance_info)
+      : tree_(tree), env_instance_info_(env_instance_info), load_msg_(CreateLoadRobotMessage<double>(tree_)) {
+    DeclareAbstractInputPort(
+        systems::Value<VectorX<double>>(tree_.getZeroConfiguration()));
+    DeclareAbstractOutputPort(optitrack_frame_t(),
+                                    &MockOptitrackSystem::OutputOptitrackFrame);
+    DeclareAbstractState(systems::AbstractValue::Make<VectorX<double>>(
+        tree_.getZeroConfiguration()));
+  }
+
+ private:
+  void DoCalcUnrestrictedUpdate(
+      const systems::Context<double>& context,
+      const std::vector<const systems::UnrestrictedUpdateEvent<double>*>& event,
+      systems::State<double>* state) const {
+    // Extract internal state
+    auto internal_state = state->get_mutable_abstract_state<VectorX<double>>(0);
+    // Update world state from inputs.
+    const systems::AbstractValue* input = this->EvalAbstractInput(context, 0);
+    DRAKE_ASSERT(input != nullptr);
+    internal_state = input->GetValue<VectorX<double>>();
+  }
+
+  void OutputOptitrackFrame(const systems::Context<double>& context,
+                            optitrack_frame_t* output) const {
+    const auto state_value = context.get_abstract_state<VectorX<double>>(0);
+    std::vector<const RigidBody<double>*> bodies = tree_.FindModelInstanceBodies(env_instance_info_.back().instance_id);
+    for (lcmt_viewer_link_data link : load_msg_.link) {
+    }
+  }
+
+  const RigidBodyTree<double>& tree_;
+  const std::vector<ModelInstanceInfo<double>> env_instance_info_;
+  const lcmt_viewer_load_robot load_msg_;
+
+};
 
 int DoMain(void) {
   // Locations for the posts from physical pick and place tests with
@@ -231,15 +285,16 @@ int DoMain(void) {
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;
   ModelInstanceInfo<double> iiwa_instance, wsg_instance, box_instance;
+  std::vector<ModelInstanceInfo<double>> env_instance_info;
 
   // Offset from the center of the second table to the pick/place
   // location on the table.
   const Eigen::Vector3d table_offset(0.30, 0, 0);
   std::unique_ptr<systems::RigidBodyPlant<double>> model_ptr =
-      BuildCombinedPlant(post_locations, table_position + table_offset,
-                         target.model_name,
-                         box_origin, Vector3<double>(0, 0, FLAGS_orientation),
-                         &iiwa_instance, &wsg_instance, &box_instance);
+      BuildCombinedPlant(
+          post_locations, table_position + table_offset, target.model_name,
+          box_origin, Vector3<double>(0, 0, FLAGS_orientation), &iiwa_instance,
+          &wsg_instance, &box_instance, &env_instance_info);
 
   auto plant = builder.AddSystem<IiwaAndWsgPlantWithStateEstimator<double>>(
       std::move(model_ptr), iiwa_instance, wsg_instance, box_instance);
