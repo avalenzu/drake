@@ -386,6 +386,16 @@ class RigidBodyTree {
   /// @param cache Reference to the KinematicsCache.
   /// @param body Reference to the RigidBody.
   /// @retval `V_WB`
+  template <typename CacheT>
+  drake::Vector6<CacheT> CalcBodySpatialVelocityInWorldFrame(
+      const KinematicsCache<CacheT>& cache, const RigidBody<T>& body) const;
+
+  /// Computes the spatial velocity `V_WB` of @p body's frame B measured and
+  /// expressed in the world frame W.
+  /// @param cache Reference to the KinematicsCache.
+  /// @param body Reference to the RigidBody.
+  /// @retval `V_WB`
+  
   drake::Vector6<T> CalcBodySpatialVelocityInWorldFrame(
       const KinematicsCache<T>& cache, const RigidBody<T>& body) const;
 
