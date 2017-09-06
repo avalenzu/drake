@@ -29,6 +29,8 @@ class KinematicTrajectoryOptimization {
 
   int num_positions() const { return tree_->get_num_positions(); };
 
+  int num_velocities() const { return tree_->get_num_velocities(); };
+
   systems::trajectory_optimization::MultipleShooting* mutable_prog() const {
     return prog_.get();
   };
@@ -55,6 +57,8 @@ class KinematicTrajectoryOptimization {
     prog_->AddRunningCost(g(0, 0));
   }
 
+  void AddSpatialVelocityCost(const std::string& body_name, double weight);
+
   solvers::SolutionResult Solve();
 
  private:
@@ -62,6 +66,7 @@ class KinematicTrajectoryOptimization {
   std::unique_ptr<const RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
   std::unique_ptr<systems::LinearSystem<double>> system_;
+  double dt_{0.1};
 };
 
 }  // namespace planner

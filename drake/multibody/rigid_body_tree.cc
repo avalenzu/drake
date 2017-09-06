@@ -3088,8 +3088,9 @@ Isometry3<T> RigidBodyTree<T>::CalcFramePoseInWorldFrame(
 }
 
 template <typename T>
-Vector6<T> RigidBodyTree<T>::CalcBodySpatialVelocityInWorldFrame(
-    const KinematicsCache<T>& cache, const RigidBody<T>& body) const {
+template <typename CacheT>
+Vector6<CacheT> RigidBodyTree<T>::CalcBodySpatialVelocityInWorldFrame(
+    const KinematicsCache<CacheT>& cache, const RigidBody<T>& body) const {
   cache.checkCachedKinematicsSettings(
       true, false, "CalcBodySpatialVelocityInWorldFrame");
 
@@ -3101,9 +3102,9 @@ Vector6<T> RigidBodyTree<T>::CalcBodySpatialVelocityInWorldFrame(
   // body_element.twist_in_world is the spatial velocity of frame Bwo measured
   // and expressed in the world frame, where Bwo is rigidly attached to B and
   // instantaneously coincides with the world frame.
-  const Vector6<T>& V_WBwo = body_element.twist_in_world;
+  const Vector6<CacheT>& V_WBwo = body_element.twist_in_world;
 
-  Vector6<T> V_WB = V_WBwo;
+  Vector6<CacheT> V_WB = V_WBwo;
 
   // Computes V_WB from V_WBwo.
   const auto& w_WB = V_WBwo.template topRows<3>();
@@ -3713,6 +3714,12 @@ RigidBodyTree<double>::CreateKinematicsCacheWithType<AutoDiffXd>() const;
 template
 KinematicsCache<AutoDiffUpTo73d>
 RigidBodyTree<double>::CreateKinematicsCacheWithType<AutoDiffUpTo73d>() const;
+
+// Explicit template instantiations for CalcBodySpatialVelocityInWorldFrame
+template drake::Vector6<AutoDiffXd>
+RigidBodyTree<double>::CalcBodySpatialVelocityInWorldFrame(
+    const KinematicsCache<AutoDiffXd>& cache,
+    const RigidBody<double>& body) const;
 
 // Explicitly instantiates on the most common scalar types.
 template class RigidBodyTree<double>;

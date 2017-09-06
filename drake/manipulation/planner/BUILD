@@ -62,6 +62,7 @@ drake_cc_binary(
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/lcm",
+        "//drake/multibody:inverse_kinematics",
         "//drake/multibody/parsers",
         "//drake/multibody/rigid_body_plant:drake_visualizer",
         "//drake/systems/analysis:simulator",
@@ -110,13 +111,8 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "kinematic_trajectory_optimization_test",
-    data = [
-        "//drake/manipulation/models/iiwa_description:models",
-    ],
     deps = [
         ":kinematic_trajectory_optimization",
-        "//drake/common:find_resource",
-        "//drake/multibody/parsers",
     ],
 )
 
