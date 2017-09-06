@@ -97,13 +97,16 @@ drake_cc_binary(
         "//drake/examples/kuka_iiwa_arm/iiwa_world:iiwa_wsg_diagram_factory",
         "//drake/lcm",
         "//drake/lcmtypes:iiwa",
+        "//drake/lcmtypes:viewer",
         "//drake/manipulation/planner:robot_plan_interpolator",
         "//drake/manipulation/schunk_wsg:schunk_wsg_controller",
         "//drake/manipulation/util:world_sim_tree_builder",
         "//drake/multibody/rigid_body_plant:contact_results_to_lcm",
+        "//drake/multibody/rigid_body_plant:create_load_robot_message",
         "//drake/systems/analysis:simulator",
         "@com_github_gflags_gflags//:gflags",
         "@lcmtypes_bot2_core",
+        "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
     ],
 )
 

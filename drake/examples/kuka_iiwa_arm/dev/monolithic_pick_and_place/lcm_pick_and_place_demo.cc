@@ -15,7 +15,10 @@
 #include "drake/lcmt_schunk_wsg_command.hpp"
 #include "drake/lcmt_schunk_wsg_status.hpp"
 #include "drake/lcmtypes/drake/lcmt_schunk_wsg_command.hpp"
+#include "drake/lcmtypes/drake/lcmt_viewer_geometry_data.hpp"
+#include "drake/lcmtypes/drake/lcmt_viewer_link_data.hpp"
 #include "drake/manipulation/perception/optitrack_pose_extractor.h"
+#include "drake/multibody/shapes/geometry.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/lcm/lcm_driven_loop.h"
@@ -29,6 +32,7 @@ DEFINE_int32(object_id, 100000, "Optitrack id of item to pick");
 DEFINE_bool(use_optitrack, false, "Use object positions from optitrack data");
 
 using robotlocomotion::robot_plan_t;
+using DrakeShapes::Geometry;
 
 namespace drake {
 namespace examples {
@@ -40,14 +44,47 @@ class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(OptitrackTranslatorSystem);
 
-  OptitrackTranslatorSystem() {
-    this->DeclareAbstractInputPort(
-        systems::Value<Isometry3<double>>(Isometry3<double>::Identity()));
-    this->DeclareAbstractOutputPort(bot_core::robot_state_t(),
-                                    &OptitrackTranslatorSystem::OutputPose);
+  OptitrackTranslatorSystem(
+      const std::vector<lcmt_viewer_geometry_data> known_objects)
+      : known_objects_(known_objects) {
+    input_port_pose_.resize(known_objects.size());
+    output_port_pose_.resize(known_objects.size());
+    for (int i = 0; i < num_known_objects(); ++i) {
+      input_port_pose_[i] =
+          this->DeclareAbstractInputPort(systems::Value<Isometry3<double>>(
+                                             Isometry3<double>::Identity()))
+              .get_index();
+      output_port_pose_[i] = this->DeclareAbstractOutputPort(
+                                     bot_core::robot_state_t(),
+                                     &OptitrackTranslatorSystem::OutputPose)
+                                 .get_index();
+    }
+    output_port_world_state_ =
+        this->DeclareAbstractOutputPort(lcmt_viewer_link_data(),
+                                        &OptitrackTranslatorSystem::OutputWorld)
+            .get_index();
+  }
+
+  int num_known_objects() const { return known_objects_.size(); }
+
+  const systems::InputPortDescriptor<double>& get_input_port_pose(
+      int index) const {
+    DRAKE_DEMAND(index < static_cast<int>(input_port_pose_.size()));
+    return get_input_port(input_port_pose_[index]);
+  }
+
+  const systems::OutputPort<double>& get_output_port_pose(
+      int index) const {
+    DRAKE_DEMAND(index < static_cast<int>(output_port_pose_.size()));
+    return get_output_port(output_port_pose_[index]);
+  }
+
+  const systems::OutputPort<double>& get_output_port_world() const {
+    return get_output_port(output_port_world_state_);
   }
 
  private:
+
   void OutputPose(const systems::Context<double>& context,
                   bot_core::robot_state_t* out) const {
     const Isometry3<double>& in = this->EvalAbstractInput(
@@ -56,6 +93,29 @@ class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
     out->utime = 0;
     EncodePose(in, out->pose);
   }
+
+  void OutputWorld(const systems::Context<double>& context,
+                  lcmt_viewer_link_data* out) const {
+    out->geom = known_objects_;
+    for (int i = 0; i < num_known_objects(); ++i) {
+      const Isometry3<double>& in = this->EvalAbstractInput(
+          context, i)->template GetValue<Isometry3<double>>();
+      Quaternion<double> quat{in.rotation()};
+      Vector3<double> pos{in.translation()};
+      out->geom[i].position[0] = pos.x();
+      out->geom[i].position[1] = pos.y();
+      out->geom[i].position[2] = pos.z();
+      out->geom[i].quaternion[0] = quat.w();
+      out->geom[i].quaternion[1] = quat.x();
+      out->geom[i].quaternion[2] = quat.y();
+      out->geom[i].quaternion[3] = quat.z();
+    }
+  }
+
+  std::vector<int> input_port_pose_;
+  int output_port_world_state_;
+  std::vector<int> output_port_pose_;
+  const std::vector<lcmt_viewer_geometry_data> known_objects_;
 };
 
 const char kIiwaUrdf[] =
@@ -213,10 +273,18 @@ int DoMain(void) {
     builder.Connect(optitrack_sub->get_output_port(0),
                     optitrack_pose_extractor->get_input_port(0));
 
-    auto optitrack_translator = builder.AddSystem<OptitrackTranslatorSystem>();
+    std::vector<lcmt_viewer_geometry_data> known_geometry;
+    known_geometry.emplace_back();
+    known_geometry.back().type = lcmt_viewer_geometry_data::BOX;
+    known_geometry.back().num_float_data = 3;
+    known_geometry.back().float_data.push_back(target.dimensions.x());
+    known_geometry.back().float_data.push_back(target.dimensions.y());
+    known_geometry.back().float_data.push_back(target.dimensions.z());
+
+    auto optitrack_translator = builder.AddSystem<OptitrackTranslatorSystem>(known_geometry);
     builder.Connect(optitrack_pose_extractor->get_measured_pose_output_port(),
-                    optitrack_translator->get_input_port(0));
-    builder.Connect(optitrack_translator->get_output_port(0),
+                    optitrack_translator->get_input_port_pose(0));
+    builder.Connect(optitrack_translator->get_output_port_pose(0),
                     state_machine->get_input_port_box_state());
   }
 

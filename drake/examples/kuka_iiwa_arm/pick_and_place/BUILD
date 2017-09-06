@@ -30,6 +30,7 @@ drake_cc_library(
         "//drake/common/trajectories:piecewise_quaternion",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/lcmtypes:schunk",
+        "//drake/lcmtypes:viewer",
         "//drake/manipulation/planner:constraint_relaxing_ik",
         "//drake/multibody:rigid_body_tree",
         "//drake/multibody/parsers",
