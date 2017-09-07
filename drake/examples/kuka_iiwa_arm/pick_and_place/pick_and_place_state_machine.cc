@@ -24,6 +24,148 @@ const double kPreGraspHeightOffset = 0.3;
 // Finger is 19 cm from end-effector frame.
 const double kEndEffectorToMidFingerDepth = 0.19;
 
+PostureInterpolationResult PlanMotionAboveEndPoints(
+    const PostureInterpolationRequest& request,
+    const RigidBodyTree<double>& original_robot) {
+  // Create local references to request member variables
+  const VectorX<double>& q_0{request.q_initial};
+  const VectorX<double>& q_f{request.q_final};
+  const std::vector<double>& times{request.times};
+  const double& position_tolerance{request.position_tolerance};
+
+  // Create a local copy of the robot
+  std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
+  int kNumJoints{robot->get_num_positions()};
+  const VectorX<int> joint_indices =
+      VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+  int end_effector_idx = robot->FindBodyIndex("iiwa_link_ee");
+  int world_idx = robot->FindBodyIndex("world");
+  Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
+
+  // Create vectors to hold the constraint objects
+  std::vector<std::unique_ptr<PostureConstraint>> posture_constraints;
+  std::vector<std::unique_ptr<WorldPositionInFrameConstraint>> position_in_frame_constraints;
+  std::vector<RigidBodyConstraint*> constraint_array;
+
+  const int kNumKnots = times.size();
+
+  // Compute the initial and final end-effector poses
+  auto kinematics_cache = robot->CreateKinematicsCache();
+  kinematics_cache.initialize(q_0);
+  robot->doKinematics(kinematics_cache);
+  std::pair<Isometry3<double>, Isometry3<double>> X_WE;
+  Isometry3<double> X_LE{Isometry3<double>::Identity()};
+  X_LE.translation()[0] = kEndEffectorToMidFingerDepth;
+  X_WE.first =
+      robot->relativeTransform(kinematics_cache, world_idx, end_effector_idx) *
+      X_LE;
+  kinematics_cache.initialize(q_f);
+  robot->doKinematics(kinematics_cache);
+  X_WE.second =
+      robot->relativeTransform(kinematics_cache, world_idx, end_effector_idx) *
+      X_LE;
+
+  std::pair<Vector3<double>, Vector3<double>> r_WE{X_WE.first.translation(),
+                                                   X_WE.second.translation()};
+
+  // Define active times for intermediate and final constraints
+  const double& start_time = times.front();
+  const double& end_time = times.back();
+  const Vector2<double> intermediate_tspan{start_time, end_time};
+  const Vector2<double> final_tspan{end_time, end_time};
+
+  // Constrain the configuration at the final knot point to match q_f.
+  posture_constraints.emplace_back(
+      new PostureConstraint(robot.get(), final_tspan));
+  const VectorX<double> q_lb{q_f};
+  const VectorX<double> q_ub{q_f};
+  posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
+  constraint_array.push_back(posture_constraints.back().get());
+
+  // Construct intermediate constraints for via points
+  // We will constrain the z-component of the end-effector position to be above
+  // the lower of the two end points at all via points.
+  Isometry3<double> X_WL{Isometry3<double>::Identity()}; // World to fLoor
+  X_WL.translation() =
+      (r_WE.first.z() < r_WE.second.z()) ? r_WE.first : r_WE.second;
+
+  drake::log()->debug("Planning motion from {} to {}, above z = {}",
+                      r_WE.first.transpose(), r_WE.second.transpose(),
+                      X_WL.translation().z());
+
+  Vector3<double> lb{-std::numeric_limits<double>::infinity(),
+                     -std::numeric_limits<double>::infinity(),
+                     -position_tolerance};
+  Vector3<double> ub{std::numeric_limits<double>::infinity(),
+                     std::numeric_limits<double>::infinity(),
+                     std::numeric_limits<double>::infinity()};
+
+  position_in_frame_constraints.emplace_back(new WorldPositionInFrameConstraint(
+      robot.get(), end_effector_idx, end_effector_points, X_WL.matrix(), lb, ub,
+      intermediate_tspan));
+  constraint_array.push_back(position_in_frame_constraints.back().get());
+
+  // Set the seed for the first attempt (and the nominal value for all attempts)
+  // to be the cubic interpolation between the initial and final
+  // configurations.
+  VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
+  VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
+  MatrixX<double> q_knots_seed{kNumJoints, kNumKnots};
+  PiecewisePolynomial<double> q_seed_traj{PiecewisePolynomial<double>::Cubic(
+      {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf)};
+  for (int i = 0; i < kNumKnots; ++i) {
+    q_knots_seed.col(i) = q_seed_traj.value(times[i]);
+  }
+  MatrixX<double> q_knots_nom{q_knots_seed};
+
+  // Get the time values into the format required by inverseKinTrajSimple
+  VectorX<double> t{kNumKnots};
+  for (int i = 0; i < kNumKnots; ++i) t(i) = times[i];
+
+  // Configure ik input and output structs.
+  IKoptions ikoptions(robot.get());
+  ikoptions.setFixInitialState(true);
+  ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
+                                            robot->get_num_positions()));
+  ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
+                                            robot->get_num_positions()));
+  ikoptions.setMajorOptimalityTolerance(1e-4);
+  IKResults ik_res;
+
+  // Attempt to solve the ik traj problem multiple times. If falling back to
+  // joint-space interpolation is allowed, don't try as hard.
+  const int kNumRestarts = 50;
+  std::default_random_engine rand_generator{1234};
+  for (int i = 0; i < kNumRestarts; ++i) {
+    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_knots_nom,
+                                   constraint_array, ikoptions);
+    if (ik_res.info[0] == 1) {
+      break;
+    } else {
+      VectorX<double> q_mid = robot->getRandomConfiguration(rand_generator);
+      q_seed_traj = PiecewisePolynomial<double>::Cubic(
+          {times.front(), 0.5 * (times.front() + times.back()), times.back()},
+          {q_0, q_mid, q_f}, q_dot0, q_dotf);
+      for (int j = 0; j < kNumKnots; ++j) {
+        q_knots_seed.col(j) = q_seed_traj.value(times[j]);
+      }
+    }
+  }
+  PostureInterpolationResult result;
+  result.success = (ik_res.info[0] == 1);
+  std::vector<MatrixX<double>> q_sol(kNumKnots);
+  if (result.success) {
+    for (int i = 0; i < kNumKnots; ++i) {
+      q_sol[i] = ik_res.q_sol[i];
+    }
+    result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf);
+  } else {
+    result.q_traj = PiecewisePolynomial<double>::Cubic(
+            {times.front(), times.back()}, {q_0, q_0}, q_dot0, q_dotf);
+  }
+  return result;
+}
+
 // Generates a sequence (@p num_via_points + 1) of key frames s.t. the end
 // effector moves in a straight line between @pX_WEndEffector0 and
 // @p X_WEndEffector1.
@@ -214,10 +356,8 @@ PostureInterpolationResult PlanStraightLineMotion(
       q_sol[i] = ik_res.q_sol[i];
     }
     result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf);
-  } else if (!result.success && fall_back_to_joint_space_interpolation) {
-    result.success = true;
-    result.q_traj = PiecewisePolynomial<double>::Cubic(
-            {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf);
+  } else if (fall_back_to_joint_space_interpolation) {
+    result = PlanMotionAboveEndPoints(request, original_robot);
   } else {
     result.q_traj = PiecewisePolynomial<double>::Cubic(
             {times.front(), times.back()}, {q_0, q_0}, q_dot0, q_dotf);
@@ -573,8 +713,8 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
     request.q_final = q_f;
     double max_delta_q{
       (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
-    int num_via_points =
-      std::ceil(2*max_delta_q / request.max_joint_position_change);
+    int num_via_points = std::min<int>(
+        3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
     double dt{duration/static_cast<double>(num_via_points)};
     request.times.resize(num_via_points + 1);
     request.times.front() = 0.0;
@@ -717,7 +857,12 @@ void PickAndPlaceStateMachine::Update(
 
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
-      DRAKE_THROW_UNLESS(ComputeTrajectories(iiwa, env_state));
+      bool success{false};
+      for (int i = 0; i < 5; ++i) {
+        success = ComputeTrajectories(iiwa, env_state);
+        if (success) break;
+      }
+      DRAKE_THROW_UNLESS(success);
       VectorX<double> q_approach_pick_pregrasp{
           nominal_q_map_.at(PickAndPlaceState::kApproachPickPregrasp)};
       const PiecewisePolynomial<double>& q_traj_prep{
