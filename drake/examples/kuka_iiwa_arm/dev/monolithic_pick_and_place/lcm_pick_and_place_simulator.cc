@@ -86,14 +86,17 @@ const Eigen::Vector3d kTableBase(0.243716, 0.625087, 0.);
 struct Target {
   std::string model_name;
   Eigen::Vector3d dimensions;
+  int object_id;
 };
 
 Target GetTarget() {
   Target targets[] = {
-    {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2)},
-    {"black_box.urdf", Eigen::Vector3d(0.055, 0.165, 0.18)},
-    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06)},
-    {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13)}
+    {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2), 1},
+    {"black_box.urdf", Eigen::Vector3d(0.055, 0.165, 0.18), 2},
+    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06), 3},
+    {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13), 4},
+    // These are hacky dimensions for the big robot toy.
+    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.18), 5}
   };
 
   const int num_targets = 4;
@@ -173,20 +176,25 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
       tree_builder->Build());
 }
 
+typedef std::tuple<const RigidBody<double>*, Isometry3<double>, int> OptitrackBodyInfo;
+
 class MockOptitrackSystem : public systems::LeafSystem<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MockOptitrackSystem);
 
   MockOptitrackSystem(
+      const Isometry3<double>& X_WO,
       const RigidBodyTree<double>& tree,
-      const std::vector<ModelInstanceInfo<double>> env_instance_info)
-      : tree_(tree), env_instance_info_(env_instance_info), load_msg_(CreateLoadRobotMessage<double>(tree_)) {
-    DeclareAbstractInputPort(
-        systems::Value<VectorX<double>>(tree_.getZeroConfiguration()));
+      const std::vector<OptitrackBodyInfo> body_info_vector)
+      : X_OW_(X_WO.inverse()), tree_(tree), body_info_vector_(body_info_vector) {
+    this->DeclareInputPort(
+        systems::kVectorValued,
+        tree_.get_num_positions() + tree_.get_num_velocities());
     DeclareAbstractOutputPort(optitrack_frame_t(),
                                     &MockOptitrackSystem::OutputOptitrackFrame);
-    DeclareAbstractState(systems::AbstractValue::Make<VectorX<double>>(
-        tree_.getZeroConfiguration()));
+    DeclareAbstractState(
+        systems::AbstractValue::Make<VectorX<double>>(VectorX<double>::Zero(
+            tree_.get_num_positions() + tree_.get_num_velocities())));
   }
 
  private:
@@ -205,15 +213,35 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
   void OutputOptitrackFrame(const systems::Context<double>& context,
                             optitrack_frame_t* output) const {
     const auto state_value = context.get_abstract_state<VectorX<double>>(0);
-    std::vector<const RigidBody<double>*> bodies = tree_.FindModelInstanceBodies(env_instance_info_.back().instance_id);
-    for (lcmt_viewer_link_data link : load_msg_.link) {
+    VectorX<double> q = state_value.head(tree_.get_num_positions());
+    KinematicsCache<double> cache = tree_.doKinematics(q);
+
+    output->rigid_bodies.clear();
+    output->rigid_bodies.reserve(body_info_vector_.size());
+    for (const OptitrackBodyInfo& body_info : body_info_vector_) {
+      output->rigid_bodies.emplace_back();
+      output->rigid_bodies.back().id = std::get<2>(body_info);
+      const RigidBody<double>& body = *std::get<0>(body_info);
+      const Isometry3<double>& X_BF = std::get<1>(body_info);
+      const Isometry3<double> X_WF = tree_.CalcFramePoseInWorldFrame(cache, body, X_BF);
+      const Isometry3<double> X_OF{X_OW_*X_WF};
+      const Vector3<double>& r_OF = X_OF.translation();
+      const Quaternion<double> quat_OF{X_OF.rotation()};
+      for (int i : {0, 1, 2}) {
+        output->rigid_bodies.back().xyz[i] = r_OF(i);
+      }
+      // Convert to optitracks X-Y-Z-W order
+      output->rigid_bodies.back().quat[0] = quat_OF.x();
+      output->rigid_bodies.back().quat[1] = quat_OF.y();
+      output->rigid_bodies.back().quat[2] = quat_OF.z();
+      output->rigid_bodies.back().quat[3] = quat_OF.w();
     }
+    output->num_rigid_bodies = output->rigid_bodies.size();
   }
 
+  const Isometry3<double> X_OW_;
   const RigidBodyTree<double>& tree_;
-  const std::vector<ModelInstanceInfo<double>> env_instance_info_;
-  const lcmt_viewer_load_robot load_msg_;
-
+  const std::vector<OptitrackBodyInfo> body_info_vector_;
 };
 
 int DoMain(void) {
@@ -319,6 +347,40 @@ int DoMain(void) {
 
   builder.Connect(plant->get_output_port_plant_state(),
                   drake_visualizer->get_input_port(0));
+
+  // Connect to "simulated" optitrack
+  std::vector<OptitrackBodyInfo> mocap_info;
+  mocap_info.push_back(
+      std::make_tuple(plant->get_tree()
+                          .FindModelInstanceBodies(iiwa_instance.instance_id)
+                          .front(),
+                      Isometry3<double>::Identity(), 0));
+  mocap_info.push_back(
+      std::make_tuple(plant->get_tree()
+                          .FindModelInstanceBodies(box_instance.instance_id)
+                          .front(),
+                      Isometry3<double>::Identity(), target.object_id));
+
+  Eigen::Isometry3d X_WO = Eigen::Isometry3d::Identity();
+  Eigen::Matrix3d rot_mat;
+  rot_mat.col(0) = Eigen::Vector3d::UnitY();
+  rot_mat.col(1) = Eigen::Vector3d::UnitZ();
+  rot_mat.col(2) = Eigen::Vector3d::UnitX();
+  X_WO.linear() = rot_mat;
+  Eigen::Vector3d translator;
+  translator = Eigen::Vector3d::Zero();
+  // translator<< 0.0, 0.0, 0;
+  translator << -0.342, -0.017, 0.152;
+  X_WO.translate(translator);
+  auto optitrack = builder.AddSystem<MockOptitrackSystem>(X_WO, plant->get_tree(), mocap_info);
+  auto optitrack_pub = builder.AddSystem(
+      systems::lcm::LcmPublisherSystem::Make<optitrack_frame_t>(
+          "OPTITRACK_FRAMES", &lcm));
+  optitrack_pub->set_publish_period(kIiwaLcmStatusPeriod);
+  builder.Connect(plant->get_output_port_plant_state(),
+                  optitrack->get_input_port(0));
+  builder.Connect(optitrack->get_output_port(0),
+                  optitrack_pub->get_input_port(0));
 
   //auto iiwa_trajectory_generator = builder.AddSystem<RobotPlanInterpolator>(
       //FindResourceOrThrow(kIiwaUrdf));

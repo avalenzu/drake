@@ -682,9 +682,12 @@ void PickAndPlaceStateMachine::Update(
     // Schunk gripper actions
     case PickAndPlaceState::kOpenGripper: {
       if (!wsg_act_.ActionStarted()) {
-        const Isometry3<double>& pose = env_state.get_object_pose();
-        drake::log()->info("Object at: {} {}", pose.translation().transpose(),
-                           math::rotmat2rpy(pose.rotation()).transpose());
+        const Isometry3<double>& obj_pose = env_state.get_object_pose();
+        drake::log()->info("Object at: {} {}", obj_pose.translation().transpose(),
+                           math::rotmat2rpy(obj_pose.rotation()).transpose());
+        const Isometry3<double>& iiwa_pose = env_state.get_iiwa_base();
+        drake::log()->info("Base at: {} {}", iiwa_pose.translation().transpose(),
+                           math::rotmat2rpy(iiwa_pose.rotation()).transpose());
       }
     } // Intentionally fall through
     case PickAndPlaceState::kGrasp:

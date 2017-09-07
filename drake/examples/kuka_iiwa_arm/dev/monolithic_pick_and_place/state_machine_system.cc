@@ -141,7 +141,7 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
       this->EvalAbstractInput(context, input_port_box_state_)
           ->GetValue<robot_state_t>();
   const lcmt_viewer_link_data& env_state =
-      this->EvalAbstractInput(context, input_port_box_state_)
+      this->EvalAbstractInput(context, input_port_env_state_)
           ->GetValue<lcmt_viewer_link_data>();
   const lcmt_schunk_wsg_status& wsg_status =
       this->EvalAbstractInput(context, input_port_wsg_status_)
