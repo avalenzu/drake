@@ -28,7 +28,6 @@
 
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(end_position, 2, "Position index to end at");
-DEFINE_int32(object_id, 100000, "Optitrack id of item to pick");
 DEFINE_bool(use_optitrack, false, "Use object positions from optitrack data");
 
 using robotlocomotion::robot_plan_t;
@@ -118,6 +117,49 @@ class OptitrackTranslatorSystem : public systems::LeafSystem<double> {
   const std::vector<lcmt_viewer_geometry_data> known_objects_;
 };
 
+class RobotStateSplicer : public systems::LeafSystem<double> {
+ public:
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RobotStateSplicer);
+
+  RobotStateSplicer() {
+    input_port_joint_state_ =
+        DeclareAbstractInputPort(
+            systems::Value<bot_core::robot_state_t>(bot_core::robot_state_t()))
+            .get_index();
+    input_port_base_state_ =
+        DeclareAbstractInputPort(
+            systems::Value<bot_core::robot_state_t>(bot_core::robot_state_t()))
+            .get_index();
+    DeclareAbstractOutputPort(bot_core::robot_state_t(),
+                              &RobotStateSplicer::SpliceStates)
+        .get_index();
+  }
+
+  const systems::InputPortDescriptor<double>& get_input_port_joint_state() const {
+    return get_input_port(input_port_joint_state_);
+  }
+
+  const systems::InputPortDescriptor<double>& get_input_port_base_state() const {
+    return get_input_port(input_port_base_state_);
+  }
+ private:
+  void SpliceStates(const systems::Context<double>& context,
+                    bot_core::robot_state_t* out) const {
+    const bot_core::robot_state_t& joint_state =
+        this->EvalAbstractInput(context, input_port_joint_state_)
+            ->GetValue<bot_core::robot_state_t>();
+    const bot_core::robot_state_t& base_state =
+        this->EvalAbstractInput(context, input_port_base_state_)
+            ->GetValue<bot_core::robot_state_t>();
+    *out = joint_state;
+    out->pose = base_state.pose;
+    out->twist = base_state.twist;
+  }
+
+  int input_port_joint_state_{-1};
+  int input_port_base_state_{-1};
+};
+
 const char kIiwaUrdf[] =
     "drake/manipulation/models/iiwa_description/urdf/"
     "iiwa14_polytope_collision.urdf";
@@ -126,16 +168,17 @@ const char kIiwaEndEffectorName[] = "iiwa_link_ee";
 struct Target {
   std::string model_name;
   Eigen::Vector3d dimensions;
+  int object_id;
 };
 
 Target GetTarget() {
   Target targets[] = {
-    {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2)},
-    {"black_box.urdf", Eigen::Vector3d(0.055, 0.165, 0.18)},
-    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06)},
-    {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13)},
+    {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2), 1},
+    {"black_box.urdf", Eigen::Vector3d(0.055, 0.165, 0.18), 2},
+    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06), 3},
+    {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13), 4},
     // These are hacky dimensions for the big robot toy.
-    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.18)}
+    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.18), 5}
   };
 
   const int num_targets = 5;
@@ -145,6 +188,7 @@ Target GetTarget() {
   return targets[FLAGS_target];
 }
 
+int kIiwaBaseOptitrackId = 0;
 
 int DoMain(void) {
   // Locations for the posts from physical pick and place tests with
@@ -233,8 +277,6 @@ int DoMain(void) {
   auto iiwa_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(
           "EST_ROBOT_STATE", &lcm));
-  builder.Connect(iiwa_status_sub->get_output_port(0),
-                  state_machine->get_input_port_iiwa_state());
 
   auto wsg_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_status>(
@@ -250,6 +292,8 @@ int DoMain(void) {
             "OBJECT_STATE_EST", &lcm));
     builder.Connect(object_state_sub->get_output_port(0),
                     state_machine->get_input_port_box_state());
+    builder.Connect(iiwa_status_sub->get_output_port(0),
+        state_machine->get_input_port_iiwa_state());
   } else {
     optitrack_sub = builder.AddSystem(
         systems::lcm::LcmSubscriberSystem::Make<optitrack::optitrack_frame_t>(
@@ -267,13 +311,31 @@ int DoMain(void) {
     translator << -0.342, -0.017, 0.152;
     X_WO.translate(translator);
 
-    auto optitrack_pose_extractor =
+    auto optitrack_obj_pose_extractor =
         builder.AddSystem<manipulation::perception::OptitrackPoseExtractor>(
-            FLAGS_object_id, X_WO, 1./120.);
+            target.object_id, X_WO, 1./120.);
+    optitrack_obj_pose_extractor->set_name("Optitrack object pose extractor");
     builder.Connect(optitrack_sub->get_output_port(0),
-                    optitrack_pose_extractor->get_input_port(0));
+                    optitrack_obj_pose_extractor->get_input_port(0));
+
+    auto optitrack_iiwa_pose_extractor =
+        builder.AddSystem<manipulation::perception::OptitrackPoseExtractor>(
+            kIiwaBaseOptitrackId, X_WO, 1./120.);
+    optitrack_iiwa_pose_extractor->set_name(
+        "Optitrack IIWA base pose extractor");
+    builder.Connect(optitrack_sub->get_output_port(0),
+                    optitrack_iiwa_pose_extractor->get_input_port(0));
+
 
     std::vector<lcmt_viewer_geometry_data> known_geometry;
+    known_geometry.emplace_back();
+    // Placeholder for iiwa base This should be changed.
+    known_geometry.back().type = lcmt_viewer_geometry_data::BOX;
+    known_geometry.back().num_float_data = 3;
+    known_geometry.back().float_data.push_back(target.dimensions.x());
+    known_geometry.back().float_data.push_back(target.dimensions.y());
+    known_geometry.back().float_data.push_back(target.dimensions.z());
+
     known_geometry.emplace_back();
     known_geometry.back().type = lcmt_viewer_geometry_data::BOX;
     known_geometry.back().num_float_data = 3;
@@ -282,10 +344,25 @@ int DoMain(void) {
     known_geometry.back().float_data.push_back(target.dimensions.z());
 
     auto optitrack_translator = builder.AddSystem<OptitrackTranslatorSystem>(known_geometry);
-    builder.Connect(optitrack_pose_extractor->get_measured_pose_output_port(),
+    builder.Connect(optitrack_iiwa_pose_extractor->get_measured_pose_output_port(),
                     optitrack_translator->get_input_port_pose(0));
-    builder.Connect(optitrack_translator->get_output_port_pose(0),
+
+    builder.Connect(optitrack_obj_pose_extractor->get_measured_pose_output_port(),
+                    optitrack_translator->get_input_port_pose(1));
+
+    builder.Connect(optitrack_translator->get_output_port_pose(1),
                     state_machine->get_input_port_box_state());
+
+    builder.Connect(optitrack_translator->get_output_port_world(),
+                    state_machine->get_input_port_env_state());
+
+    auto iiwa_state_splicer = builder.AddSystem<RobotStateSplicer>();
+    builder.Connect(iiwa_status_sub->get_output_port(0),
+        iiwa_state_splicer->get_input_port_joint_state());
+    builder.Connect(optitrack_translator->get_output_port_pose(0),
+        iiwa_state_splicer->get_input_port_base_state());
+    builder.Connect(iiwa_state_splicer->get_output_port(0),
+        state_machine->get_input_port_iiwa_state());
   }
 
   auto iiwa_plan_sender = builder.AddSystem(
