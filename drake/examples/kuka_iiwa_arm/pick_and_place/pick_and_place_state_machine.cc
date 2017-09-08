@@ -422,6 +422,10 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   Isometry3<double> X_GE{Isometry3<double>::Identity()};
   X_GE.rotate(Eigen::AngleAxisd(0.39269908, Eigen::Vector3d::UnitX()));
 
+  // W -- planning World frame, coincides with kuka base frame.
+  // S -- Sensor world frame
+  // O -- Object frame
+  // T -- Table frame
   Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
   Isometry3<double> X_WO_initial{X_WS*env_state.get_object_pose()};
   drake::log()->debug("r_WO_initial = [{}]",
@@ -429,7 +433,24 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   drake::log()->debug("R_WO_initial = \n{}",
                       X_WO_initial.linear());
   X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
-  Isometry3<double> X_WO_final{place_locations_[next_place_location_]};
+
+  // Pose of place table in world
+  const Isometry3<double>& X_WT =
+      X_WS*env_state.get_table_poses().at(next_place_location_);
+  const Vector3<double> r_WT = X_WT.translation();
+  Vector3<double> dir_TO_final = -X_WT.linear().inverse()*r_WT;
+  dir_TO_final.z() = 0;
+  dir_TO_final.normalize();
+  // TODO(avalenzu): Account for object height
+  const Vector3<double> r_TO_final =
+      0.5*env_state.get_table_radii().at(next_place_location_)*dir_TO_final;
+  Matrix3<double> R_TO_final{Matrix3<double>::Identity()};
+  R_TO_final.col(0) = dir_TO_final;
+  R_TO_final.col(2) = VectorX<double>::UnitZ();
+  R_TO_final.col(1) = R_TO_final.col(2).cross(R_TO_final.col(0));
+  Isometry3<double> X_TO_final{r_TO_final};
+  X_TO_final.linear() = R_TO_final;
+  Isometry3<double> X_WO_final{X_WT*X_TO_final};
   drake::log()->debug("r_WO_final = [{}]",
                       X_WO_final.translation().transpose());
   drake::log()->debug("R_WO_final = \n{}",
@@ -498,10 +519,8 @@ PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
   return request;
 }
 
-PickAndPlaceStateMachine::PickAndPlaceStateMachine(
-    const std::vector<Isometry3<double>>& place_locations, bool loop)
-    : place_locations_(place_locations),
-      next_place_location_(0),
+PickAndPlaceStateMachine::PickAndPlaceStateMachine(bool loop)
+    : next_place_location_(0),
       loop_(loop),
       state_(PickAndPlaceState::kOpenGripper),
       // Position and rotation tolerances.  These were hand-tuned by
@@ -511,7 +530,6 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.1, 0.1, 0.1),
       loose_rot_tol_(30*M_PI/180) {
-  DRAKE_THROW_UNLESS(!place_locations.empty());
 }
 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
@@ -549,7 +567,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   // state
   MatrixX<double> q_nom =
       MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
-  q_nom.row(2).fill(M_PI_2);
+  q_nom.row(3).fill(M_PI_2);
 
   for (double yaw_offset : yaw_offsets) {
     ComputeDesiredPoses(env_state, yaw_offset);
@@ -847,13 +865,14 @@ void PickAndPlaceStateMachine::Update(
 
     case PickAndPlaceState::kReset: {
       next_place_location_++;
-      if (next_place_location_ == static_cast<int>(place_locations_.size()) &&
+      if (next_place_location_ ==
+              static_cast<int>(env_state.get_table_poses().size()) &&
           !loop_) {
         state_ = PickAndPlaceState::kDone;
         iiwa_callback(&stopped_plan);
         drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       } else {
-        next_place_location_ %= place_locations_.size();
+        next_place_location_ %= env_state.get_table_poses().size();
         state_ = PickAndPlaceState::kOpenGripper;
       }
       break;

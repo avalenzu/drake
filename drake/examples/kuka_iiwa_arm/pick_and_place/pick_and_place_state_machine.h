@@ -81,8 +81,7 @@ class PickAndPlaceStateMachine {
   /// is true, the state machine will loop through the pick and place
   /// locations, otherwise it will remain in the kDone state once
   /// complete.
-  PickAndPlaceStateMachine(
-      const std::vector<Isometry3<double>>& place_locations, bool loop);
+  PickAndPlaceStateMachine(bool loop);
   ~PickAndPlaceStateMachine();
 
   /// Update the state machine based on the state of the world in @p
@@ -111,7 +110,6 @@ class PickAndPlaceStateMachine {
       const WorldState& env_state, PickAndPlaceState state, double duration,
       bool fall_back_to_joint_space_interpolation = false);
 
-  std::vector<Isometry3<double>> place_locations_;
   int next_place_location_;
   bool loop_;
 
