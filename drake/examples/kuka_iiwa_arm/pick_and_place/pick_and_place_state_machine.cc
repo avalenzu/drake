@@ -465,14 +465,14 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   // Set ApproachPick pose
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
   X_OG.translation()[0] =
-      std::min<double>(-env_state.get_object_dimensions().x() + 0.07, 0);
+      std::min<double>(-0.5*env_state.get_object_dimensions().x() + 0.07, 0);
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPick,
                         X_WO_initial * X_OG * X_GE);
 
   // Set ApproachPickPregrasp pose
   X_OG.setIdentity();
   X_OG.translation()[0] =
-      std::min<double>(-env_state.get_object_dimensions().x() + 0.07, 0);
+      std::min<double>(-0.5*env_state.get_object_dimensions().x() + 0.07, 0);
   X_OG.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
                         X_WO_initial * X_OG * X_GE);
@@ -666,8 +666,8 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
 }
 
 bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
-  ComputeNominalConfigurations(iiwa, env_state);
-  bool success{true};
+  bool success = ComputeNominalConfigurations(iiwa, env_state);
+  if (!success) return false;
   std::vector<PickAndPlaceState> states{
       PickAndPlaceState::kApproachPickPregrasp,
       PickAndPlaceState::kApproachPick,
@@ -688,9 +688,9 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
   drake::log()->debug("\tq_0 = [{}]", q_0.transpose());
   drake::log()->debug("Clearing interpolation_result_map_.");
   interpolation_result_map_.clear();
-  const double kShortDuration = 2;
-  const double kLongDuration = 3;
-  const double kExtraLongDuration = 5;
+  const double kShortDuration = 1;
+  const double kLongDuration = 1.5;
+  const double kExtraLongDuration = 1.5;
   for (PickAndPlaceState state : states) {
     drake::log()->info("Planning trajectory for {}.", state);
     const VectorX<double> q_f = nominal_q_map_.at(state);
@@ -800,6 +800,7 @@ void PickAndPlaceStateMachine::Update(
     default: // No action needed for other cases
       break;
   }
+
   switch (state_) {
 
     // IIWA arm movements
@@ -827,7 +828,20 @@ void PickAndPlaceStateMachine::Update(
         drake::log()->debug("\tq_f = [{}]", q.back().transpose());
       }
       if (iiwa_move_.ActionFinished(env_state)) {
+        // If the object has moved since kPlan, we need to replan.
         state_ = next_state;
+        switch (state_) {
+          case PickAndPlaceState::kApproachPick:
+          case PickAndPlaceState::kApproachPickPregrasp: {
+            if (!env_state.get_object_pose().translation().isApprox(expected_object_pose_.translation(), 0.05)) {
+              drake::log()->info("Target moved! Re-planning ...");
+              state_ = PickAndPlaceState::kPlan;
+            }
+          }
+
+          default: // No action needed for other cases
+            break;
+        }
         iiwa_move_.Reset();
       }
       break;
@@ -864,10 +878,15 @@ void PickAndPlaceStateMachine::Update(
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
       bool success{false};
-      for (int i = 0; i < 1; ++i) {
-        success = ComputeTrajectories(iiwa, env_state);
-        if (success) break;
-      }
+      expected_object_pose_ = env_state.get_object_pose();
+      success = ComputeTrajectories(iiwa, env_state);
+      //for (int i = 0; i < static_cast<int>(env_state.get_table_poses().size()); ++i) {
+      //  expected_object_pose_ = env_state.get_object_pose();
+      //  success = ComputeTrajectories(iiwa, env_state);
+      //  if (success) break;
+      //  next_place_location_++;
+      //  next_place_location_ %= env_state.get_table_poses().size();
+      //}
       DRAKE_THROW_UNLESS(success);
       state_ = PickAndPlaceState::kApproachPickPregrasp;
       break;
