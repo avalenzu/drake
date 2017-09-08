@@ -383,8 +383,6 @@ std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
       return os << "kOpenGripper";
     case (PickAndPlaceState::kPlan):
       return os << "kPlan";
-    case (PickAndPlaceState::kPrep):
-      return os << "kPrep";
     case (PickAndPlaceState::kApproachPickPregrasp):
       return os << "kApproachPickPregrasp";
     case (PickAndPlaceState::kApproachPick):
@@ -412,10 +410,9 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
     const WorldState& env_state, double yaw_offset) {
   X_WE_desired_.clear();
 
-  //   + (Prep)
-  //    \
-  //     \ (ApproachPickPregrasp,                         (ApproachPlacePregrasp
-  //      \ LiftFromPick ),                                LiftFromPlace)
+  //     
+  //       (ApproachPickPregrasp,                         (ApproachPlacePregrasp
+  //        LiftFromPick ),                                LiftFromPlace)
   //       +--------------------------------------------------------+
   //       |                                                        |
   //       |                                                        |
@@ -438,15 +435,8 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   drake::log()->debug("R_WO_final = \n{}",
                       X_WO_final.linear());
 
-  // Set Prep pose
-  Isometry3<double> X_OG{Isometry3<double>::Identity()};
-  X_OG.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
-  X_OG.translation()[2] = 2.0 * kPreGraspHeightOffset;
-  X_OG.translation()[0] = -1.5 * kPreGraspHeightOffset / 2;
-  X_WE_desired_.emplace(PickAndPlaceState::kPrep, X_WO_initial * X_OG * X_GE);
-
   // Set ApproachPick pose
-  X_OG.setIdentity();
+  Isometry3<double> X_OG{Isometry3<double>::Identity()};
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPick,
                         X_WO_initial * X_OG * X_GE);
 
@@ -522,8 +512,6 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       loose_pos_tol_(0.1, 0.1, 0.1),
       loose_rot_tol_(30*M_PI/180) {
   DRAKE_THROW_UNLESS(!place_locations.empty());
-  std::cout << "Making sure operator<< for PickAndPlaceState is used: " << PickAndPlaceState::kPrep
-            << std::endl;
 }
 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
@@ -547,7 +535,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
 
   std::vector<PickAndPlaceState> states{
-      PickAndPlaceState::kPrep,
       PickAndPlaceState::kApproachPickPregrasp,
       PickAndPlaceState::kApproachPick,
       PickAndPlaceState::kLiftFromPick,
@@ -584,14 +571,12 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
           r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
       constraint_array.back().push_back(position_constraints.back().get());
 
-      // Constrain the end-effector orientation for all knots except Prep.
-      if (state != PickAndPlaceState::kPrep) {
-        orientation_constraints.emplace_back(new WorldQuatConstraint(
-            robot.get(), end_effector_body_idx,
-            Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-            tight_rot_tol_, knot_tspan));
-        constraint_array.back().push_back(orientation_constraints.back().get());
-      }
+      // Constrain the end-effector orientation for all knots
+      orientation_constraints.emplace_back(new WorldQuatConstraint(
+          robot.get(), end_effector_body_idx,
+          Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
+          tight_rot_tol_, knot_tspan));
+      constraint_array.back().push_back(orientation_constraints.back().get());
 
       // For each pair of adjacent knots, add a constraint on the change in
       // joint
@@ -657,7 +642,6 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
   ComputeNominalConfigurations(iiwa, env_state);
   bool success{true};
   std::vector<PickAndPlaceState> states{
-      PickAndPlaceState::kPrep,
       PickAndPlaceState::kApproachPickPregrasp,
       PickAndPlaceState::kApproachPick,
       PickAndPlaceState::kLiftFromPick,
@@ -688,7 +672,7 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
     double orientation_tolerance{tight_rot_tol_};
     bool fall_back_to_joint_space_interpolation{false};
     switch (state) {
-      case PickAndPlaceState::kPrep:
+      case PickAndPlaceState::kApproachPickPregrasp:
       case PickAndPlaceState::kApproachPlacePregrasp: {
         position_tolerance = loose_pos_tol_(0);
         orientation_tolerance = loose_rot_tol_;
@@ -753,10 +737,6 @@ void PickAndPlaceStateMachine::Update(
       next_state = PickAndPlaceState::kPlan;
     } break;
 
-    case PickAndPlaceState::kPrep: {
-      next_state = PickAndPlaceState::kApproachPickPregrasp;
-    } break;
-
     case PickAndPlaceState::kApproachPickPregrasp: {
       next_state = PickAndPlaceState::kApproachPick;
     } break;
@@ -801,7 +781,6 @@ void PickAndPlaceStateMachine::Update(
     case PickAndPlaceState::kApproachPlace:
     case PickAndPlaceState::kLiftFromPlace:
     case PickAndPlaceState::kApproachPickPregrasp:
-    case PickAndPlaceState::kPrep:
     case PickAndPlaceState::kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
         robotlocomotion::robot_plan_t plan{};
@@ -858,27 +837,12 @@ void PickAndPlaceStateMachine::Update(
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
       bool success{false};
-      for (int i = 0; i < 5; ++i) {
+      for (int i = 0; i < 1; ++i) {
         success = ComputeTrajectories(iiwa, env_state);
         if (success) break;
       }
       DRAKE_THROW_UNLESS(success);
-      VectorX<double> q_approach_pick_pregrasp{
-          nominal_q_map_.at(PickAndPlaceState::kApproachPickPregrasp)};
-      const PiecewisePolynomial<double>& q_traj_prep{
-          interpolation_result_map_.at(PickAndPlaceState::kPrep).q_traj};
-      const VectorX<double> q_0{q_traj_prep.value(q_traj_prep.getStartTime())};
-      bool skip_to_approach_pick =
-          q_approach_pick_pregrasp.isApprox(q_0, 10 * M_PI / 180);
-      if (skip_to_approach_pick) {
-        VectorX<double> q_dot{VectorX<double>::Zero(q_0.size())};
-        interpolation_result_map_.at(PickAndPlaceState::kApproachPickPregrasp)
-            .q_traj = PiecewisePolynomial<double>::Cubic(
-            {0, 1}, {q_0, q_approach_pick_pregrasp}, q_dot, q_dot);
-        state_ = PickAndPlaceState::kApproachPickPregrasp;
-      } else {
-        state_ = PickAndPlaceState::kPrep;
-      }
+      state_ = PickAndPlaceState::kApproachPickPregrasp;
       break;
     }
 
