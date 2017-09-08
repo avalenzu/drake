@@ -192,9 +192,6 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
         tree_.get_num_positions() + tree_.get_num_velocities());
     DeclareAbstractOutputPort(optitrack_frame_t(),
                                     &MockOptitrackSystem::OutputOptitrackFrame);
-    DeclareAbstractState(
-        systems::AbstractValue::Make<VectorX<double>>(VectorX<double>::Zero(
-            tree_.get_num_positions() + tree_.get_num_velocities())));
   }
 
  private:
@@ -212,8 +209,8 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 
   void OutputOptitrackFrame(const systems::Context<double>& context,
                             optitrack_frame_t* output) const {
-    const auto state_value = context.get_abstract_state<VectorX<double>>(0);
-    VectorX<double> q = state_value.head(tree_.get_num_positions());
+    const VectorX<double> input = this->EvalEigenVectorInput(context, 0);
+    VectorX<double> q = input.head(tree_.get_num_positions());
     KinematicsCache<double> cache = tree_.doKinematics(q);
 
     output->rigid_bodies.clear();

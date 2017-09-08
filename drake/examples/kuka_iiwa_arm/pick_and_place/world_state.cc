@@ -96,10 +96,6 @@ void WorldState::HandleObjectStatus(const bot_core::robot_state_t& obj_msg) {
   obj_vel_ = DecodeTwist(obj_msg.twist);
 }
 
-void WorldState::HandleEnvStatus(const lcmt_viewer_link_data& env_msg) {
-  env_state_ = env_msg;
-}
-
 }  // namespace pick_and_place
 }  // namespace kuka_iiwa_arm
 }  // namespace examples

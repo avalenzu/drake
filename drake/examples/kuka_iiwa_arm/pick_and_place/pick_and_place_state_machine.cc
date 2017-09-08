@@ -287,8 +287,16 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
 
   Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
   Isometry3<double> X_WO_initial{X_WS*env_state.get_object_pose()};
+  drake::log()->debug("r_WO_initial = [{}]",
+                      X_WO_initial.translation().transpose());
+  drake::log()->debug("R_WO_initial = \n{}",
+                      X_WO_initial.linear());
   X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
   Isometry3<double> X_WO_final{place_locations_[next_place_location_]};
+  drake::log()->debug("r_WO_final = [{}]",
+                      X_WO_final.translation().transpose());
+  drake::log()->debug("R_WO_final = \n{}",
+                      X_WO_final.linear());
 
   // Set Prep pose
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
