@@ -37,7 +37,8 @@ class WorldState {
    * received status.
    */
   WorldState(const std::string& iiwa_model_path,
-             const std::string& end_effector_name, int num_tables);
+             const std::string& end_effector_name, int num_tables,
+             const Vector3<double>& object_dimensions);
 
   // TODO(sam.creasey) We should consider adding an alternate
   // constructor which takes an existing RigidBodyTree (which would
@@ -57,7 +58,7 @@ class WorldState {
   void HandleObjectStatus(const bot_core::robot_state_t& obj_msg);
 
   /// Update the stored object status from @p obj_msg.
-  void HandleTableStatus(int index, const bot_core::robot_state_t& table_msg);
+  void HandleTableStatus(int index, const Isometry3<double>& pose);
 
   double get_iiwa_time() const { return iiwa_time_; }
   double get_wsg_time() const { return wsg_time_; }
@@ -71,6 +72,7 @@ class WorldState {
 
   const Isometry3<double>& get_object_pose() const { return obj_pose_; }
   const Vector6<double>& get_object_velocity() const { return obj_vel_; }
+  const Vector3<double>& get_object_dimensions() const { return object_dimensions_; }
   const Isometry3<double>& get_iiwa_base() const { return iiwa_base_; }
   const Isometry3<double>& get_iiwa_end_effector_pose() const {
     return iiwa_end_effector_pose_;
@@ -116,6 +118,7 @@ class WorldState {
   double obj_time_{};
   Isometry3<double> obj_pose_;
   Vector6<double> obj_vel_;
+  Vector3<double> object_dimensions_;
 
   // Table status
   std::vector<Isometry3<double>> table_poses_;

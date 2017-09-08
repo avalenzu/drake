@@ -38,6 +38,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
       const std::string& end_effector_name,
       const Isometry3<double>& iiwa_base,
       int num_tables,
+      const Vector3<double>& box_dimensions,
       const double period_sec = 0.01);
 
   std::unique_ptr<systems::AbstractValues> AllocateAbstractState()
@@ -142,6 +143,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
     manipulation::planner::ConstraintRelaxingIk> planner_{nullptr};
 
   const int num_tables_;
+  const Vector3<double> box_dimensions_;
 };
 
 }  // namespace monolithic_pick_and_place
