@@ -10,6 +10,13 @@ load("//tools:lint.bzl", "add_lint_tests")
 load(":pick_and_place_test.bzl", "pick_and_place_test")
 
 drake_cc_library(
+    name = "optitrack_configuration",
+    hdrs = [
+        "optitrack_configuration.h"
+    ],
+)
+
+drake_cc_library(
     name = "kuka_pick_and_place_monolithic",
     srcs = [
         "state_machine_system.cc",
@@ -35,6 +42,7 @@ drake_cc_binary(
     ],
     deps = [
         ":kuka_pick_and_place_monolithic",
+        ":optitrack_configuration",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
@@ -90,6 +98,7 @@ drake_cc_binary(
     ],
     deps = [
         ":kuka_pick_and_place_monolithic",
+        ":optitrack_configuration",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",

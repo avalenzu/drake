@@ -438,31 +438,41 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   const Isometry3<double>& X_WT =
       X_WS*env_state.get_table_poses().at(next_place_location_);
   const Vector3<double> r_WT = X_WT.translation();
+  drake::log()->debug("r_WT = [{}]",
+                      X_WT.translation().transpose());
+  drake::log()->debug("R_WT = \n{}",
+                      X_WT.linear());
   Vector3<double> dir_TO_final = -X_WT.linear().inverse()*r_WT;
   dir_TO_final.z() = 0;
   dir_TO_final.normalize();
-  // TODO(avalenzu): Account for object height
-  const Vector3<double> r_TO_final =
+  Vector3<double> r_TO_final =
       0.5*env_state.get_table_radii().at(next_place_location_)*dir_TO_final;
+  r_TO_final.z() += 0.5*env_state.get_object_dimensions().z();
   Matrix3<double> R_TO_final{Matrix3<double>::Identity()};
-  R_TO_final.col(0) = dir_TO_final;
-  R_TO_final.col(2) = VectorX<double>::UnitZ();
+  R_TO_final.col(0) = -dir_TO_final;
+  R_TO_final.col(2) = Vector3<double>::UnitZ();
   R_TO_final.col(1) = R_TO_final.col(2).cross(R_TO_final.col(0));
-  Isometry3<double> X_TO_final{r_TO_final};
+  Isometry3<double> X_TO_final;
+  X_TO_final.translation() = r_TO_final;
   X_TO_final.linear() = R_TO_final;
   Isometry3<double> X_WO_final{X_WT*X_TO_final};
-  drake::log()->debug("r_WO_final = [{}]",
+  drake::log()->debug("dir_TO_final = [{}]", dir_TO_final.transpose());
+  drake::log()->debug("r_TO_final = [{}]",
                       X_WO_final.translation().transpose());
   drake::log()->debug("R_WO_final = \n{}",
                       X_WO_final.linear());
 
   // Set ApproachPick pose
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
+  X_OG.translation()[0] =
+      std::min<double>(-env_state.get_object_dimensions().x() + 0.07, 0);
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPick,
                         X_WO_initial * X_OG * X_GE);
 
   // Set ApproachPickPregrasp pose
   X_OG.setIdentity();
+  X_OG.translation()[0] =
+      std::min<double>(-env_state.get_object_dimensions().x() + 0.07, 0);
   X_OG.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
                         X_WO_initial * X_OG * X_GE);
