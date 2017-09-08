@@ -8,7 +8,6 @@
 
 #include "drake/common/drake_copyable.h"
 #include "drake/lcmt_schunk_wsg_status.hpp"
-#include "drake/lcmt_viewer_link_data.hpp"
 #include "drake/multibody/rigid_body_tree.h"
 
 namespace drake {
@@ -56,9 +55,6 @@ class WorldState {
 
   /// Update the stored object status from @p obj_msg.
   void HandleObjectStatus(const bot_core::robot_state_t& obj_msg);
-
-  /// Update the stored environment status from @p env_msg.
-  void HandleEnvStatus(const lcmt_viewer_link_data& env_msg);
 
   double get_iiwa_time() const { return iiwa_time_; }
   double get_wsg_time() const { return wsg_time_; }
@@ -110,9 +106,6 @@ class WorldState {
   double obj_time_{};
   Isometry3<double> obj_pose_;
   Vector6<double> obj_vel_;
-
-  // Environment status
-  lcmt_viewer_link_data env_state_;
 };
 
 }  // namespace pick_and_place
