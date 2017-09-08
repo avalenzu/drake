@@ -39,15 +39,14 @@ class OptitrackConfiguration {
 
  private:
   const std::vector<Target> targets_{
-      {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2), 6},
-      {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06), 8},
-      {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13), 9},
-      // These are hacky dimensions for the big robot toy.
-      {"big_robot_toy.urdf", Eigen::Vector3d(0.1, 0.035, 0.18), 10}};
-  const std::vector<Table> tables_{{2}, {3}, {4}, {5}};
-  const std::vector<IiwaBase> iiwa_bases_{{0}, {1}};
-  const Isometry3<double> X_WO_{
-      AngleAxis<double>(M_PI_2, Vector3<double>::UnitX())};
+      {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06), 3},
+      // Big Yellow Robot
+      {"big_robot_toy.urdf", Eigen::Vector3d(0.1, 0.035, 0.18), 7},
+      // Big (Blue) Robot
+      {"big_robot_toy.urdf", Eigen::Vector3d(0.1, 0.035, 0.18), 5}};
+  const std::vector<Table> tables_{{8}, {9}, {10}, {11}};
+  const std::vector<IiwaBase> iiwa_bases_{{1}, {6}};
+  const Isometry3<double> X_WO_{Isometry3<double>::Identity()};
 };
 
 }  // namespace monolithic_pick_and_place
