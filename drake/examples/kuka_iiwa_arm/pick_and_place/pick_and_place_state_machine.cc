@@ -605,8 +605,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   IKResults ik_res;
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(false);
-  ikoptions.setQ(MatrixX<double>::Zero(robot->get_num_positions(),
-                                       robot->get_num_positions()));
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
   const int kNumRestarts = 50;
