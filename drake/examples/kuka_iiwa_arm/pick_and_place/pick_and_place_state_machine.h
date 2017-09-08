@@ -143,6 +143,9 @@ class PickAndPlaceStateMachine {
 
   // Desired interpolation results for various states
   std::map<PickAndPlaceState,PostureInterpolationResult> interpolation_result_map_;
+
+  // Measured location of object at planning time
+  Isometry3<double> expected_object_pose_;
 };
 
 }  // namespace pick_and_place
