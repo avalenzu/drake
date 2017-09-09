@@ -636,7 +636,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   ikoptions.setFixInitialState(false);
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
-  const int kNumRestarts = 50;
+  const int kNumRestarts = 20;
   std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
     MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
@@ -878,15 +878,15 @@ void PickAndPlaceStateMachine::Update(
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
       bool success{false};
-      expected_object_pose_ = env_state.get_object_pose();
-      success = ComputeTrajectories(iiwa, env_state);
-      //for (int i = 0; i < static_cast<int>(env_state.get_table_poses().size()); ++i) {
-      //  expected_object_pose_ = env_state.get_object_pose();
-      //  success = ComputeTrajectories(iiwa, env_state);
-      //  if (success) break;
-      //  next_place_location_++;
-      //  next_place_location_ %= env_state.get_table_poses().size();
-      //}
+      //expected_object_pose_ = env_state.get_object_pose();
+      //success = ComputeTrajectories(iiwa, env_state);
+      for (int i = 0; i < static_cast<int>(env_state.get_table_poses().size()); ++i) {
+        expected_object_pose_ = env_state.get_object_pose();
+        success = ComputeTrajectories(iiwa, env_state);
+        if (success) break;
+        next_place_location_++;
+        next_place_location_ %= env_state.get_table_poses().size();
+      }
       DRAKE_THROW_UNLESS(success);
       state_ = PickAndPlaceState::kApproachPickPregrasp;
       break;

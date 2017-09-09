@@ -27,6 +27,7 @@
 using robotlocomotion::robot_plan_t;
 
 DEFINE_string(urdf, "", "Name of urdf to load");
+DEFINE_string(suffix, "", "Suffix to append to lcm channel names");
 
 namespace drake {
 namespace examples {
@@ -34,19 +35,22 @@ namespace kuka_iiwa_arm {
 namespace {
 using manipulation::planner::RobotPlanInterpolator;
 
-const char* const kIiwaUrdf =
+const std::string kIiwaUrdf =
     "drake/manipulation/models/iiwa_description/urdf/"
     "iiwa14_polytope_collision.urdf";
-const char* const kLcmStatusChannel = "IIWA_STATUS";
-const char* const kLcmCommandChannel = "IIWA_COMMAND";
-const char* const kLcmPlanChannel = "COMMITTED_ROBOT_PLAN";
 
 // Create a system which has an integrator on the interpolated
 // reference position for received plans.
 int DoMain() {
+  const std::string kLcmStatusChannel = "IIWA_STATUS" + FLAGS_suffix;
+  const std::string kLcmCommandChannel = "IIWA_COMMAND" + FLAGS_suffix;
+  const std::string kLcmPlanChannel = "COMMITTED_ROBOT_PLAN" + FLAGS_suffix;
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;
 
+  drake::log()->debug("Status channel: {}", kLcmStatusChannel);
+  drake::log()->debug("Command channel: {}", kLcmCommandChannel);
+  drake::log()->debug("Plan channel: {}", kLcmPlanChannel);
   auto plan_sub =
       builder.AddSystem(systems::lcm::LcmSubscriberSystem::Make<robot_plan_t>(
           kLcmPlanChannel, &lcm));
@@ -132,5 +136,6 @@ int DoMain() {
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  drake::logging::HandleSpdlogGflags();
   return drake::examples::kuka_iiwa_arm::DoMain();
 }

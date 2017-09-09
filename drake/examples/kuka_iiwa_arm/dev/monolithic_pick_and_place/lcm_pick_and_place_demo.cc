@@ -30,6 +30,8 @@
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(iiwa_index, 0, "ID of the iiwa to use.");
 DEFINE_int32(end_position, 2, "Position index to end at");
+DEFINE_bool(use_channel_suffix, true,
+            "If true, append a suffix to channel names");
 
 using robotlocomotion::robot_plan_t;
 using DrakeShapes::Geometry;
@@ -115,6 +117,8 @@ const char kIiwaEndEffectorName[] = "iiwa_link_ee";
 const OptitrackConfiguration kOptitrackConfiguration;
 
 int DoMain(void) {
+  std::string suffix =
+      (FLAGS_use_channel_suffix) ? "_" + std::to_string(FLAGS_iiwa_index) : "";
   OptitrackConfiguration::Target target =
       kOptitrackConfiguration.target(FLAGS_target);
 
@@ -132,11 +136,11 @@ int DoMain(void) {
 
   auto iiwa_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(
-          "EST_ROBOT_STATE", &lcm));
+          "EST_ROBOT_STATE" + suffix, &lcm));
 
   auto wsg_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_status>(
-          "SCHUNK_WSG_STATUS", &lcm));
+          "SCHUNK_WSG_STATUS" + suffix, &lcm));
   builder.Connect(wsg_status_sub->get_output_port(0),
                   state_machine->get_input_port_wsg_status());
 
@@ -199,10 +203,10 @@ int DoMain(void) {
 
   auto iiwa_plan_sender = builder.AddSystem(
       systems::lcm::LcmPublisherSystem::Make<robot_plan_t>(
-          "COMMITTED_ROBOT_PLAN", &lcm));
+          "COMMITTED_ROBOT_PLAN" + suffix, &lcm));
   auto wsg_command_sender = builder.AddSystem(
     systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_command>(
-        "SCHUNK_WSG_COMMAND", &lcm));
+        "SCHUNK_WSG_COMMAND" + suffix, &lcm));
 
   builder.Connect(state_machine->get_output_port_iiwa_plan(),
                   iiwa_plan_sender->get_input_port(0));

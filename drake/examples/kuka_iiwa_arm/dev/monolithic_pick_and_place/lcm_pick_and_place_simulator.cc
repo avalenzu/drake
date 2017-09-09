@@ -239,8 +239,8 @@ int DoMain(void) {
   std::vector<Eigen::Vector3d> round_table_locations;
   round_table_locations.push_back(Eigen::Vector3d(0.00, 0.9, 0.32));  // position A
   round_table_locations.push_back(Eigen::Vector3d(0.80, 0.36, 0.32));  // position B
-  round_table_locations.push_back(Eigen::Vector3d(0.30, -0.9, 0.15));  // position D
-  round_table_locations.push_back(Eigen::Vector3d(-0.1, -1.0, 0.04));  // position E
+  round_table_locations.push_back(Eigen::Vector3d(0.80, -2.35, 0.04));  // position E
+  round_table_locations.push_back(Eigen::Vector3d(0.00, -2.9, 0.15));  // position D
 
   // Poses for the arms
   std::vector<Isometry3<double>> iiwa_poses;
