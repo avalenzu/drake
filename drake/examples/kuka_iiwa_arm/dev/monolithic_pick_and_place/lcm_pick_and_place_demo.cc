@@ -29,7 +29,7 @@
 
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(iiwa_index, 0, "ID of the iiwa to use.");
-DEFINE_int32(end_position, 2, "Position index to end at");
+DEFINE_int32(end_position, -1, "Position index to end at");
 DEFINE_bool(use_channel_suffix, true,
             "If true, append a suffix to channel names");
 
@@ -219,11 +219,15 @@ int DoMain(void) {
       *sys, *iiwa_status_sub, nullptr, &lcm,
       std::make_unique<systems::lcm::UtimeMessageToSeconds<
       bot_core::robot_state_t>>());
+  drake::log()->debug("Waiting for optitrack message ...");
   // Wait for the first optitrack message before doing anything else. 
   optitrack_sub->WaitForMessage(0);
+  drake::log()->debug("Optitrack message received.");
 
   // Waits for the first message.
+  drake::log()->debug("Waiting for IIWA status message ...");
   const systems::AbstractValue& first_msg = loop.WaitForMessage();
+  drake::log()->debug("IIWA status message received.");
   double msg_time =
       loop.get_message_to_time_converter().GetTimeInSeconds(first_msg);
   systems::Context<double>* diagram_context = loop.get_mutable_context();

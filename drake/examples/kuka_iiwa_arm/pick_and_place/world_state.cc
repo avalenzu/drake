@@ -20,7 +20,7 @@ WorldState::WorldState(const std::string& iiwa_model_path,
   iiwa_v_ = VectorX<double>::Zero(kIiwaArmNumJoints);
   iiwa_end_effector_vel_.setZero();
   table_poses_.resize(num_tables, Isometry3<double>::Identity());
-  table_radii_.resize(num_tables, 0.3);
+  table_radii_.resize(num_tables, 0.18);
 
   wsg_time_ = -1;
   wsg_q_ = 0;
