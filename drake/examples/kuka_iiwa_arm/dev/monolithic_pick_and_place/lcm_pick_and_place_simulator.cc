@@ -39,15 +39,15 @@
 
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
               "Number of seconds to simulate.");
-DEFINE_int32(num_iiwas, 1, "Number of IIWA robots to place in the scene.");
+DEFINE_int32(num_iiwas, 2, "Number of IIWA robots to place in the scene.");
 DEFINE_int32(target_1, 1, "ID of the target for arm 1.");
 DEFINE_int32(target_2, 2, "ID of the target for arm 2.");
-DEFINE_double(orientation_1, 2 * M_PI, "Yaw angle of the first target.");
-DEFINE_double(orientation_2, 2 * M_PI, "Yaw angle of the second target.");
+DEFINE_double(orientation_1, 0, "Yaw angle of the first target.");
+DEFINE_double(orientation_2, M_PI_2, "Yaw angle of the second target.");
 DEFINE_int32(start_position_1, 1, "Position index to start from");
-DEFINE_int32(start_position_2, 2, "Position index to start from");
+DEFINE_int32(start_position_2, 3, "Position index to start from");
 DEFINE_double(dt, 1e-3, "Integration step size");
-DEFINE_double(realtime_rate, 0.0, "Rate at which to run the simulation, "
+DEFINE_double(realtime_rate, 1.0, "Rate at which to run the simulation, "
     "relative to realtime");
 DEFINE_bool(quick, false, "Run only a brief simulation and return success "
     "without executing the entire task");

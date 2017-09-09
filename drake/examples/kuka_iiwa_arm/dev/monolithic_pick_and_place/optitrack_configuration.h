@@ -44,7 +44,8 @@ class OptitrackConfiguration {
       {"big_robot_toy.urdf", Eigen::Vector3d(0.1, 0.035, 0.18), 7},
       // Big (Blue) Robot
       {"big_robot_toy.urdf", Eigen::Vector3d(0.1, 0.035, 0.18), 5}};
-  const std::vector<Table> tables_{{8}, {9}, {10}, {11}};
+  const std::vector<Table> tables_{{8},  {9},  {10}, {11},
+                                   {12}, {13}, {14}, {15}};
   const std::vector<IiwaBase> iiwa_bases_{{1}, {6}};
   const Isometry3<double> X_WO_{Isometry3<double>::Identity()};
 };
