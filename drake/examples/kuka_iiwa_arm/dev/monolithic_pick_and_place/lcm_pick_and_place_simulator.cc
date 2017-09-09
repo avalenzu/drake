@@ -39,10 +39,13 @@
 
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
               "Number of seconds to simulate.");
-DEFINE_int32(target, 0, "ID of the target to pick.");
-DEFINE_int32(iiwa_index, 0, "ID of the iiwa to use.");
-DEFINE_double(orientation, 2 * M_PI, "Yaw angle of the box.");
-DEFINE_int32(start_position, 1, "Position index to start from");
+DEFINE_int32(num_iiwas, 1, "Number of IIWA robots to place in the scene.");
+DEFINE_int32(target_1, 1, "ID of the target for arm 1.");
+DEFINE_int32(target_2, 2, "ID of the target for arm 2.");
+DEFINE_double(orientation_1, 2 * M_PI, "Yaw angle of the first target.");
+DEFINE_double(orientation_2, 2 * M_PI, "Yaw angle of the second target.");
+DEFINE_int32(start_position_1, 1, "Position index to start from");
+DEFINE_int32(start_position_2, 2, "Position index to start from");
 DEFINE_double(dt, 1e-3, "Integration step size");
 DEFINE_double(realtime_rate, 0.0, "Rate at which to run the simulation, "
     "relative to realtime");
@@ -93,13 +96,13 @@ struct Target {
 const OptitrackConfiguration kOptitrackConfiguration;
 
 std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
+    const std::vector<Isometry3<double>>& iiwa_poses,
     const std::vector<Vector3<double>>& round_table_positions,
-    const std::string& target_model,
-    const Eigen::Vector3d& box_position,
-    const Eigen::Vector3d& box_orientation,
-    ModelInstanceInfo<double>* iiwa_instance,
-    ModelInstanceInfo<double>* wsg_instance,
-    ModelInstanceInfo<double>* box_instance,
+    const std::vector<std::string>& target_models,
+    const std::vector<Isometry3<double>>& box_poses,
+    std::vector<ModelInstanceInfo<double>>* iiwa_instances,
+    std::vector<ModelInstanceInfo<double>>* wsg_instances,
+    std::vector<ModelInstanceInfo<double>>* box_instances,
     std::vector<ModelInstanceInfo<double>>* table_instances) {
   auto tree_builder = std::make_unique<WorldSimTreeBuilder<double>>();
 
@@ -109,8 +112,11 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
   tree_builder->StoreModel("table",
                            "drake/examples/kuka_iiwa_arm/models/table/"
                            "extra_heavy_duty_table_surface_only_collision.sdf");
-  tree_builder->StoreModel(
-      "target", "drake/examples/kuka_iiwa_arm/models/objects/" + target_model);
+  for (int i = 0; i < static_cast<int>(target_models.size()); ++i) {
+    tree_builder->StoreModel(
+        "target_" + std::to_string(i),
+        "drake/examples/kuka_iiwa_arm/models/objects/" + target_models[i]);
+  }
   tree_builder->StoreModel("round_table",
                            "drake/examples/kuka_iiwa_arm/models/objects/"
                            "round_table.urdf");
@@ -118,10 +124,6 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
       "wsg",
       "drake/manipulation/models/wsg_50_description"
       "/sdf/schunk_wsg_50_ball_contact.sdf");
-
-  // The main table which the arm sits on.
-  tree_builder->AddFixedModelInstance("table", kTableBase,
-                                                     Eigen::Vector3d::Zero());
 
   // The round tables that the objects sit on.
   for (const Vector3<double>& round_table_position : round_table_positions) {
@@ -132,23 +134,36 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
         tree_builder->get_model_info_for_instance(round_table_id));
   }
   tree_builder->AddGround();
-  // Chooses an appropriate box.
-  int box_id = 0;
-  int iiwa_id = tree_builder->AddFixedModelInstance("iiwa", kRobotBase);
-  *iiwa_instance = tree_builder->get_model_info_for_instance(iiwa_id);
 
-  box_id = tree_builder->AddFloatingModelInstance("target", box_position,
-                                                  box_orientation);
-  *box_instance = tree_builder->get_model_info_for_instance(box_id);
+  for (const Isometry3<double>& iiwa_pose : iiwa_poses) {
+    // Add the table that the arm sits on.
+    Vector3<double> r_WT = iiwa_pose.translation() + kTableBase;
+    r_WT.z() = 0;
+    tree_builder->AddFixedModelInstance("table", r_WT, Eigen::Vector3d::Zero());
+    // Add the arm.
+    int iiwa_id = tree_builder->AddFixedModelInstance(
+        "iiwa", iiwa_pose.translation(),
+        drake::math::rotmat2rpy(iiwa_pose.linear()));
+    iiwa_instances->push_back(
+        tree_builder->get_model_info_for_instance(iiwa_id));
+    // Add the gripper.
+    auto frame_ee = tree_builder->tree().findFrame("iiwa_frame_ee", iiwa_instances->back().instance_id);
+    auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
+    wsg_frame->get_mutable_transform_to_body()->rotate(
+        Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
+    wsg_frame->get_mutable_transform_to_body()->translate(0.07*Eigen::Vector3d::UnitY());
+    int wsg_id = tree_builder->AddModelInstanceToFrame(
+        "wsg", wsg_frame, drake::multibody::joints::kFixed);
+    wsg_instances->push_back(tree_builder->get_model_info_for_instance(wsg_id));
+  }
 
-  auto frame_ee = tree_builder->tree().findFrame("iiwa_frame_ee");
-  auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
-  wsg_frame->get_mutable_transform_to_body()->rotate(
-      Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
-  wsg_frame->get_mutable_transform_to_body()->translate(0.07*Eigen::Vector3d::UnitY());
-  int wsg_id = tree_builder->AddModelInstanceToFrame(
-      "wsg", wsg_frame, drake::multibody::joints::kFixed);
-  *wsg_instance = tree_builder->get_model_info_for_instance(wsg_id);
+  for (int i = 0; i < static_cast<int>(box_poses.size()); ++i) {
+    int box_id = tree_builder->AddFloatingModelInstance(
+        "target_" + std::to_string(i), box_poses[i].translation(),
+        drake::math::rotmat2rpy(box_poses[i].linear()));
+    box_instances->push_back(tree_builder->get_model_info_for_instance(box_id));
+  }
+
 
   return std::make_unique<systems::RigidBodyPlant<double>>(
       tree_builder->Build());
@@ -220,47 +235,61 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 };
 
 int DoMain(void) {
-  // Locations for the posts from physical pick and place tests with
-  // the iiwa+WSG.
+  // Locations for the tables
   std::vector<Eigen::Vector3d> round_table_locations;
-  // TODO(sam.creasey) this should be 1.10 in the Y direction.
   round_table_locations.push_back(Eigen::Vector3d(0.00, 0.9, 0.32));  // position A
   round_table_locations.push_back(Eigen::Vector3d(0.80, 0.36, 0.32));  // position B
   round_table_locations.push_back(Eigen::Vector3d(0.30, -0.9, 0.15));  // position D
   round_table_locations.push_back(Eigen::Vector3d(-0.1, -1.0, 0.04));  // position E
 
-  // Position of the pick and place location on the table, relative to
-  // the base of the arm.  In the original test, the position was
-  // specified as 0.90m forward of the arm.  We change that to 0.86
-  // here as the previous test grasped the target with the tip of the
-  // fingers in the middle while this test places the fingertip
-  // further forward.  The position is right at the edge of what we
-  // can plan to, so this 4cm change does matter.
-  //const Eigen::Vector3d table_position(0.86, -0.36, -0.07);  // position C
-  const Eigen::Vector3d table_position(0.80, -0.36, 0.25);  // position C
+  // Poses for the arms
+  std::vector<Isometry3<double>> iiwa_poses;
+  iiwa_poses.emplace_back(Isometry3<double>::Identity());
+  iiwa_poses.back().translate(kRobotBase);
+  iiwa_poses.emplace_back(Isometry3<double>::Identity());
+  iiwa_poses.back().translate(kRobotBase + Vector3<double>(0.0, -2.0, 0.0));
 
-  OptitrackConfiguration::Target target =
-      kOptitrackConfiguration.target(FLAGS_target);
+  DRAKE_THROW_UNLESS(FLAGS_num_iiwas > 0 && FLAGS_num_iiwas <= 2);
+  iiwa_poses.resize(FLAGS_num_iiwas);
+  const int start_table_indices[] = {FLAGS_start_position_1,
+                                     FLAGS_start_position_2};
+  const double target_orientations[] = {FLAGS_orientation_1,
+                                        FLAGS_orientation_2};
+  const OptitrackConfiguration::Target targets[] = {
+      kOptitrackConfiguration.target(FLAGS_target_1),
+      kOptitrackConfiguration.target(FLAGS_target_2)};
 
-  Eigen::Vector3d box_origin(0, 0, kTableTopZInWorld);
-  box_origin += round_table_locations[FLAGS_start_position];
-  Eigen::Vector3d half_target_height(0, 0, target.dimensions(2) * 0.5);
-  box_origin += half_target_height;
-  drake::log()->debug("box_origin = [{}]", box_origin.transpose());
+  std::vector<Isometry3<double>> box_poses;
+  std::vector<std::string> target_models;
+
+  for (int i = 0; i < FLAGS_num_iiwas; ++i) {
+
+    Eigen::Vector3d box_origin(0, 0, kTableTopZInWorld);
+    box_origin += round_table_locations[start_table_indices[i]];
+    Eigen::Vector3d half_target_height(0, 0,
+                                       targets[i].dimensions(2) * 0.5);
+    box_origin += half_target_height;
+    box_poses.emplace_back(Isometry3<double>::Identity());
+    box_poses.back().translation() = box_origin;
+    box_poses.back().rotate(
+        AngleAxis<double>(target_orientations[i], Vector3<double>::UnitZ()));
+    drake::log()->debug("Box {} origin = [{}]", i, box_origin.transpose());
+    target_models.push_back(targets[i].model_name);
+  }
 
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;
-  ModelInstanceInfo<double> iiwa_instance, wsg_instance, box_instance;
-  std::vector<ModelInstanceInfo<double>> table_instances;
+  std::vector<ModelInstanceInfo<double>> iiwa_instances, wsg_instances,
+      box_instances, table_instances;
 
   std::unique_ptr<systems::RigidBodyPlant<double>> model_ptr =
       BuildCombinedPlant(
-          round_table_locations, target.model_name,
-          box_origin, Vector3<double>(0, 0, FLAGS_orientation), &iiwa_instance,
-          &wsg_instance, &box_instance, &table_instances);
+          iiwa_poses, round_table_locations, target_models,
+          box_poses, &iiwa_instances,
+          &wsg_instances, &box_instances, &table_instances);
 
   auto plant = builder.AddSystem<IiwaAndWsgPlantWithStateEstimator<double>>(
-      std::move(model_ptr), iiwa_instance, wsg_instance, box_instance);
+      std::move(model_ptr), iiwa_instances, wsg_instances, box_instances);
   plant->set_name("plant");
 
   auto contact_viz =
@@ -285,17 +314,19 @@ int DoMain(void) {
 
   // Connect to "simulated" optitrack
   std::vector<OptitrackBodyInfo> mocap_info;
-  mocap_info.push_back(std::make_tuple(
-      plant->get_tree()
-          .FindModelInstanceBodies(iiwa_instance.instance_id)
-          .front(),
-      Isometry3<double>::Identity(),
-      kOptitrackConfiguration.iiwa_base(FLAGS_iiwa_index).object_id));
-  mocap_info.push_back(
-      std::make_tuple(plant->get_tree()
-                          .FindModelInstanceBodies(box_instance.instance_id)
-                          .front(),
-                      Isometry3<double>::Identity(), target.object_id));
+  for (int i = 0; i < FLAGS_num_iiwas; ++i) {
+    mocap_info.push_back(std::make_tuple(
+        plant->get_tree()
+            .FindModelInstanceBodies(iiwa_instances[i].instance_id)
+            .front(),
+        Isometry3<double>::Identity(),
+        kOptitrackConfiguration.iiwa_base(i).object_id));
+    mocap_info.push_back(
+        std::make_tuple(plant->get_tree()
+                            .FindModelInstanceBodies(box_instances[i].instance_id)
+                            .front(),
+                        Isometry3<double>::Identity(), targets[i].object_id));
+  }
   for (int i = 0; i < kOptitrackConfiguration.num_tables(); ++i) {
     mocap_info.push_back(std::make_tuple(
         plant->get_tree()
@@ -326,79 +357,81 @@ int DoMain(void) {
   builder.Connect(optitrack->get_output_port(0),
                   optitrack_pub->get_input_port(0));
 
-  //auto iiwa_trajectory_generator = builder.AddSystem<RobotPlanInterpolator>(
-      //FindResourceOrThrow(kIiwaUrdf));
-  //builder.Connect(plant->get_output_port_iiwa_state(),
-                  //iiwa_trajectory_generator->get_state_input_port());
-  auto iiwa_command_sub = builder.AddSystem(
-      systems::lcm::LcmSubscriberSystem::Make<lcmt_iiwa_command>("IIWA_COMMAND",
-                                                                 &lcm));
-  iiwa_command_sub->set_name("iiwa_command_subscriber");
-  auto iiwa_command_receiver =
-      builder.AddSystem<IiwaCommandReceiver>(7);
-  iiwa_command_receiver->set_name("iiwa_command_receiver");
+  std::vector<IiwaCommandReceiver*> iiwa_command_receivers;
+  for (int i = 0; i < FLAGS_num_iiwas; ++i) {
+    const std::string suffix{"_" + std::to_string(i)};
+    auto iiwa_command_sub = builder.AddSystem(
+        systems::lcm::LcmSubscriberSystem::Make<lcmt_iiwa_command>(
+            "IIWA_COMMAND" + suffix, &lcm));
+    iiwa_command_sub->set_name("iiwa_command_subscriber" + suffix);
+    auto iiwa_command_receiver = builder.AddSystem<IiwaCommandReceiver>(7);
+    iiwa_command_receivers.push_back(iiwa_command_receiver);
+    iiwa_command_receiver->set_name("iiwa_command_receiver" + suffix);
 
-  builder.Connect(iiwa_command_sub->get_output_port(0),
-                        iiwa_command_receiver->get_input_port(0));
-  builder.Connect(iiwa_command_receiver->get_output_port(0),
-                        plant->get_input_port_iiwa_state_command());
+    builder.Connect(iiwa_command_sub->get_output_port(0),
+                    iiwa_command_receiver->get_input_port(0));
+    builder.Connect(iiwa_command_receiver->get_output_port(0),
+                    plant->get_input_port_iiwa_state_command(i));
 
-  auto iiwa_status_pub = builder.AddSystem(
-      systems::lcm::LcmPublisherSystem::Make<lcmt_iiwa_status>("IIWA_STATUS",
-                                                               &lcm));
-  iiwa_status_pub->set_name("iiwa_status_publisher");
-  iiwa_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
-  auto iiwa_status_sender = builder.AddSystem<IiwaStatusSender>(7);
-  iiwa_status_sender->set_name("iiwa_status_sender");
+    auto iiwa_status_pub = builder.AddSystem(
+        systems::lcm::LcmPublisherSystem::Make<lcmt_iiwa_status>(
+            "IIWA_STATUS" + suffix, &lcm));
+    iiwa_status_pub->set_name("iiwa_status_publisher" + suffix);
+    iiwa_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
+    auto iiwa_status_sender = builder.AddSystem<IiwaStatusSender>(7);
+    iiwa_status_sender->set_name("iiwa_status_sender" + suffix);
 
-  builder.Connect(plant->get_output_port_iiwa_state(),
-                        iiwa_status_sender->get_state_input_port());
-  builder.Connect(iiwa_command_receiver->get_output_port(0),
-                        iiwa_status_sender->get_command_input_port());
-  builder.Connect(iiwa_status_sender->get_output_port(0),
-                        iiwa_status_pub->get_input_port(0));
+    builder.Connect(plant->get_output_port_iiwa_state(i),
+                    iiwa_status_sender->get_state_input_port());
+    builder.Connect(iiwa_command_receiver->get_output_port(0),
+                    iiwa_status_sender->get_command_input_port());
+    builder.Connect(iiwa_status_sender->get_output_port(0),
+                    iiwa_status_pub->get_input_port(0));
 
-  auto wsg_controller = builder.AddSystem<SchunkWsgController>();
-  builder.Connect(plant->get_output_port_wsg_state(),
-                  wsg_controller->get_state_input_port());
-  builder.Connect(wsg_controller->get_output_port(0),
-                  plant->get_input_port_wsg_command());
+    auto wsg_controller = builder.AddSystem<SchunkWsgController>();
+    wsg_controller->set_name("wsg_controller" + suffix);
+    builder.Connect(plant->get_output_port_wsg_state(i),
+                    wsg_controller->get_state_input_port());
+    builder.Connect(wsg_controller->get_output_port(0),
+                    plant->get_input_port_wsg_command(i));
 
-  auto wsg_status_sender = builder.AddSystem<SchunkWsgStatusSender>(
-      plant->get_output_port_wsg_state().size(), 0, 0);
-  builder.Connect(plant->get_output_port_wsg_state(),
-                  wsg_status_sender->get_input_port(0));
+    auto wsg_status_sender = builder.AddSystem<SchunkWsgStatusSender>(
+        plant->get_output_port_wsg_state(i).size(), 0, 0);
+    wsg_status_sender->set_name("wsg_status_sender" + suffix);
+    builder.Connect(plant->get_output_port_wsg_state(i),
+                    wsg_status_sender->get_input_port(0));
 
-  const Eigen::Vector3d robot_base(0, 0, kTableTopZInWorld);
-  Isometry3<double> iiwa_base = Isometry3<double>::Identity();
-  iiwa_base.translation() = robot_base;
+    const Eigen::Vector3d robot_base(0, 0, kTableTopZInWorld);
+    Isometry3<double> iiwa_base = Isometry3<double>::Identity();
+    iiwa_base.translation() = robot_base;
 
-  auto object_state_pub = builder.AddSystem(
-      systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
-        "OBJECT_STATE_EST", &lcm));
-  builder.Connect(plant->get_output_port_box_robot_state_msg(),
-                  object_state_pub->get_input_port(0));
-  object_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
+    auto object_state_pub = builder.AddSystem(
+        systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
+            "OBJECT_STATE_EST" + suffix, &lcm));
+    builder.Connect(plant->get_output_port_box_robot_state_msg(i),
+                    object_state_pub->get_input_port(0));
+    object_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
 
-  auto wsg_status_pub = builder.AddSystem(
-      systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(
-          "SCHUNK_WSG_STATUS", &lcm));
-  builder.Connect(wsg_status_sender->get_output_port(0),
-                  wsg_status_pub->get_input_port(0));
-  wsg_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
+    auto wsg_status_pub = builder.AddSystem(
+        systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(
+            "SCHUNK_WSG_STATUS" + suffix, &lcm));
+    builder.Connect(wsg_status_sender->get_output_port(0),
+                    wsg_status_pub->get_input_port(0));
+    wsg_status_pub->set_publish_period(kIiwaLcmStatusPeriod);
 
-  auto iiwa_robot_state_pub = builder.AddSystem(
-      systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
-          "EST_ROBOT_STATE", &lcm));
-  builder.Connect(plant->get_output_port_iiwa_robot_state_msg(),
-                  iiwa_robot_state_pub->get_input_port(0));
-  iiwa_robot_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
+    auto iiwa_robot_state_pub = builder.AddSystem(
+        systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
+            "EST_ROBOT_STATE" + suffix, &lcm));
+    builder.Connect(plant->get_output_port_iiwa_robot_state_msg(i),
+                    iiwa_robot_state_pub->get_input_port(0));
+    iiwa_robot_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
 
-  auto wsg_command_sub = builder.AddSystem(
-    systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_command>(
-        "SCHUNK_WSG_COMMAND", &lcm));
-  builder.Connect(wsg_command_sub->get_output_port(0),
-                  wsg_controller->get_command_input_port());
+    auto wsg_command_sub = builder.AddSystem(
+        systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_command>(
+            "SCHUNK_WSG_COMMAND" + suffix, &lcm));
+    builder.Connect(wsg_command_sub->get_output_port(0),
+                    wsg_controller->get_command_input_port());
+  }
 
   auto sys = builder.Build();
   Simulator<double> simulator(*sys);
@@ -412,11 +445,12 @@ int DoMain(void) {
   simulator.set_publish_every_time_step(false);
   simulator.Initialize();
 
-  iiwa_command_receiver->set_initial_position(
-      &sys->GetMutableSubsystemContext(*iiwa_command_receiver,
-                                       simulator.get_mutable_context()),
-      VectorX<double>::Zero(7));
-
+  for (auto& iiwa_command_receiver : iiwa_command_receivers) {
+    iiwa_command_receiver->set_initial_position(
+        &sys->GetMutableSubsystemContext(*iiwa_command_receiver,
+                                         simulator.get_mutable_context()),
+        VectorX<double>::Zero(7));
+  }
 
   // Step the simulator in some small increment.  Between steps, check
   // to see if the state machine thinks we're done, and if so that the
