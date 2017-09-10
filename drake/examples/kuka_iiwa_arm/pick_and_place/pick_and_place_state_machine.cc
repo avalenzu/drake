@@ -835,6 +835,7 @@ void PickAndPlaceStateMachine::Update(
           case PickAndPlaceState::kApproachPickPregrasp: {
             if (!env_state.get_object_pose().translation().isApprox(expected_object_pose_.translation(), 0.05)) {
               drake::log()->info("Target moved! Re-planning ...");
+              interpolation_result_map_.clear();
               state_ = PickAndPlaceState::kPlan;
             }
           }
