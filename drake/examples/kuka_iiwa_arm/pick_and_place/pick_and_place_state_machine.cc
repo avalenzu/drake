@@ -406,7 +406,88 @@ std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
   }
 }
 
-void PickAndPlaceStateMachine::ComputeDesiredPoses(
+bool ComputeInitialAndFinalObjectPoses(
+    const WorldState& env_state,
+    std::pair<Isometry3<double>, Isometry3<double>>* X_WO_initial_and_final) {
+  // W -- planning World frame, coincides with kuka base frame.
+  // S -- Sensor world frame
+  // O -- Object frame
+  // T -- Table frame
+  Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
+  X_WO_initial_and_final->first = X_WS*env_state.get_object_pose();
+
+  drake::log()->debug("r_WO_initial = [{}]",
+                      X_WO_initial_and_final->first.translation().transpose());
+  drake::log()->debug("R_WO_initial = \n{}",
+                      X_WO_initial_and_final->first.linear());
+
+  // Find the destination table
+  const std::vector<Isometry3<double>>& table_poses =
+      env_state.get_table_poses();
+  int destination_table_index = -1;
+  const double kMaxReach = 1.1;
+  double min_angle = std::numeric_limits<double>::infinity();
+  for (int i = 0; i < static_cast<int>(table_poses.size()); ++i) {
+    const Isometry3<double> X_WT = X_WS * table_poses[i];
+    Vector3<double> r_WT_in_xy_plane{X_WT.translation()};
+    r_WT_in_xy_plane.z() = 0;
+    drake::log()->debug("Table {}: Distance: {} m", i, r_WT_in_xy_plane.norm());
+    if (r_WT_in_xy_plane.norm() < kMaxReach) {
+      Vector3<double> r_WO_in_xy_plane{
+          X_WO_initial_and_final->first.translation()};
+      r_WO_in_xy_plane.z() = 0;
+      const Vector3<double> dir_WO_in_xy_plane{r_WO_in_xy_plane.normalized()};
+      double x = r_WT_in_xy_plane.dot(-dir_WO_in_xy_plane);
+      double y = (r_WT_in_xy_plane - x * (-dir_WO_in_xy_plane))
+                     .dot(Vector3<double>::UnitZ().cross(-dir_WO_in_xy_plane));
+      double angle = std::atan2(y, x) + M_PI;
+      //double angle = std::asin(-r_WO_in_xy_plane.normalized()
+                                   //.cross(r_WT_in_xy_plane.normalized())
+                                   //.z()) + 2*M_PI;
+      drake::log()->debug("Table {}: x = {}, y = {}, Angle: {} degrees", i, x, y, angle*180/M_PI);
+      if (angle > 20*M_PI/180 && angle < min_angle) {
+        drake::log()->debug("Table {} is the new destination candidate.", i);
+        destination_table_index = i;
+        min_angle = angle;
+      }
+    }
+  }
+  drake::log()->debug("Destination Table Index: {}", destination_table_index);
+
+  if (destination_table_index < 0) return false;
+
+  // Pose of destination table in world
+  const Isometry3<double> X_WT = X_WS * table_poses.at(destination_table_index);
+  const Vector3<double> r_WT = X_WT.translation();
+  drake::log()->debug("r_WT = [{}]",
+                      X_WT.translation().transpose());
+  drake::log()->debug("R_WT = \n{}",
+                      X_WT.linear());
+  double destination_table_radius =
+      env_state.get_table_radii().at(destination_table_index);
+
+  Vector3<double> dir_TO_final = -X_WT.linear().inverse()*r_WT;
+  dir_TO_final.z() = 0;
+  dir_TO_final.normalize();
+  Vector3<double> r_TO_final = 0.5 * destination_table_radius * dir_TO_final;
+  r_TO_final.z() += 0.5*env_state.get_object_dimensions().z();
+  Matrix3<double> R_TO_final{Matrix3<double>::Identity()};
+  R_TO_final.col(0) = -dir_TO_final;
+  R_TO_final.col(2) = Vector3<double>::UnitZ();
+  R_TO_final.col(1) = R_TO_final.col(2).cross(R_TO_final.col(0));
+  Isometry3<double> X_TO_final;
+  X_TO_final.translation() = r_TO_final;
+  X_TO_final.linear() = R_TO_final;
+  X_WO_initial_and_final->second = X_WT*X_TO_final;
+  drake::log()->debug("dir_TO_final = [{}]", dir_TO_final.transpose());
+  drake::log()->debug("r_TO_final = [{}]",
+                      X_WO_initial_and_final->second.translation().transpose());
+  drake::log()->debug("R_WO_final = \n{}",
+                      X_WO_initial_and_final->second.linear());
+  return true;
+}
+
+bool PickAndPlaceStateMachine::ComputeDesiredPoses(
     const WorldState& env_state, double yaw_offset) {
   X_WE_desired_.clear();
 
@@ -418,49 +499,20 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   //       |                                                        |
   //       + (ApproachPick)                         (ApproachPlace) +
 
+  std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
+  if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final)) {
+    return false;
+  }
+
+  Isometry3<double>& X_WO_initial = X_WO_initial_and_final.first;
+  Isometry3<double>& X_WO_final = X_WO_initial_and_final.second;
+
+  X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
+
   // Gripper is rotated relative to the end effector
   Isometry3<double> X_GE{Isometry3<double>::Identity()};
   X_GE.rotate(Eigen::AngleAxisd(0.39269908, Eigen::Vector3d::UnitX()));
 
-  // W -- planning World frame, coincides with kuka base frame.
-  // S -- Sensor world frame
-  // O -- Object frame
-  // T -- Table frame
-  Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
-  Isometry3<double> X_WO_initial{X_WS*env_state.get_object_pose()};
-  drake::log()->debug("r_WO_initial = [{}]",
-                      X_WO_initial.translation().transpose());
-  drake::log()->debug("R_WO_initial = \n{}",
-                      X_WO_initial.linear());
-  X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
-
-  // Pose of place table in world
-  const Isometry3<double>& X_WT =
-      X_WS*env_state.get_table_poses().at(next_place_location_);
-  const Vector3<double> r_WT = X_WT.translation();
-  drake::log()->debug("r_WT = [{}]",
-                      X_WT.translation().transpose());
-  drake::log()->debug("R_WT = \n{}",
-                      X_WT.linear());
-  Vector3<double> dir_TO_final = -X_WT.linear().inverse()*r_WT;
-  dir_TO_final.z() = 0;
-  dir_TO_final.normalize();
-  Vector3<double> r_TO_final =
-      0.5*env_state.get_table_radii().at(next_place_location_)*dir_TO_final;
-  r_TO_final.z() += 0.5*env_state.get_object_dimensions().z();
-  Matrix3<double> R_TO_final{Matrix3<double>::Identity()};
-  R_TO_final.col(0) = -dir_TO_final;
-  R_TO_final.col(2) = Vector3<double>::UnitZ();
-  R_TO_final.col(1) = R_TO_final.col(2).cross(R_TO_final.col(0));
-  Isometry3<double> X_TO_final;
-  X_TO_final.translation() = r_TO_final;
-  X_TO_final.linear() = R_TO_final;
-  Isometry3<double> X_WO_final{X_WT*X_TO_final};
-  drake::log()->debug("dir_TO_final = [{}]", dir_TO_final.transpose());
-  drake::log()->debug("r_TO_final = [{}]",
-                      X_WO_final.translation().transpose());
-  drake::log()->debug("R_WO_final = \n{}",
-                      X_WO_final.linear());
 
   // Set ApproachPick pose
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
@@ -499,6 +551,7 @@ void PickAndPlaceStateMachine::ComputeDesiredPoses(
   X_OG.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
                         X_WO_final * X_OG * X_GE);
+  return true;
 }
 
 PostureInterpolationRequest
@@ -555,7 +608,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
     posture_change_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
   std::vector<double> yaw_offsets{M_PI, 0.0};
-  const int kNumYawOffsets = yaw_offsets.size();
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   int kNumJoints{robot->get_num_positions()};
 
@@ -580,54 +632,56 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   q_nom.row(3).fill(M_PI_2);
 
   for (double yaw_offset : yaw_offsets) {
-    ComputeDesiredPoses(env_state, yaw_offset);
-    constraint_array.emplace_back();
+    if (ComputeDesiredPoses(env_state, yaw_offset)) {
+      constraint_array.emplace_back();
 
-    for (int i = 0; i < kNumKnots; ++i) {
-      const PickAndPlaceState state{states[i]};
-      const Vector2<double> knot_tspan{t(i), t(i)};
+      for (int i = 0; i < kNumKnots; ++i) {
+        const PickAndPlaceState state{states[i]};
+        const Vector2<double> knot_tspan{t(i), t(i)};
 
-      // Extract desired position and orientation of end effector at the given
-      // state.
-      const Isometry3<double>& X_WE = X_WE_desired_.at(state);
-      const Vector3<double>& r_WE = X_WE.translation();
-      const Quaternion<double>& quat_WE{X_WE.rotation()};
+        // Extract desired position and orientation of end effector at the given
+        // state.
+        const Isometry3<double>& X_WE = X_WE_desired_.at(state);
+        const Vector3<double>& r_WE = X_WE.translation();
+        const Quaternion<double>& quat_WE{X_WE.rotation()};
 
+        // Constrain the end-effector position for all knots.
+        position_constraints.emplace_back(new WorldPositionConstraint(
+            robot.get(), end_effector_body_idx, end_effector_points,
+            r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
+        constraint_array.back().push_back(position_constraints.back().get());
 
-      // Constrain the end-effector position for all knots.
-      position_constraints.emplace_back(new WorldPositionConstraint(
-          robot.get(), end_effector_body_idx, end_effector_points,
-          r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
-      constraint_array.back().push_back(position_constraints.back().get());
+        // Constrain the end-effector orientation for all knots
+        orientation_constraints.emplace_back(new WorldQuatConstraint(
+            robot.get(), end_effector_body_idx,
+            Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
+            tight_rot_tol_, knot_tspan));
+        constraint_array.back().push_back(orientation_constraints.back().get());
 
-      // Constrain the end-effector orientation for all knots
-      orientation_constraints.emplace_back(new WorldQuatConstraint(
-          robot.get(), end_effector_body_idx,
-          Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-          tight_rot_tol_, knot_tspan));
-      constraint_array.back().push_back(orientation_constraints.back().get());
-
-      // For each pair of adjacent knots, add a constraint on the change in
-      // joint
-      // positions.
-      if (i > 0) {
-        const VectorX<int> joint_indices =
-            VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
-        const Vector2<double> segment_tspan{t(i - 1), t(i)};
-        // The move to ApproachPlacePregrasp can require large joint motions.
-        const double max_joint_position_change =
-            (state == PickAndPlaceState::kApproachPlacePregrasp) ? 0.75 * M_PI
-                                                                 : M_PI_4;
-        const VectorX<double> ub_change{max_joint_position_change *
-                                        VectorX<double>::Ones(kNumJoints)};
-        const VectorX<double> lb_change{-ub_change};
-        posture_change_constraints.emplace_back(new PostureChangeConstraint(
-            robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
-        constraint_array.back().push_back(
-            posture_change_constraints.back().get());
+        // For each pair of adjacent knots, add a constraint on the change in
+        // joint
+        // positions.
+        if (i > 0) {
+          const VectorX<int> joint_indices =
+              VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+          const Vector2<double> segment_tspan{t(i - 1), t(i)};
+          // The move to ApproachPlacePregrasp can require large joint motions.
+          const double max_joint_position_change =
+              (state == PickAndPlaceState::kApproachPlacePregrasp) ? 0.75 * M_PI
+                                                                   : M_PI_4;
+          const VectorX<double> ub_change{max_joint_position_change *
+                                          VectorX<double>::Ones(kNumJoints)};
+          const VectorX<double> lb_change{-ub_change};
+          posture_change_constraints.emplace_back(new PostureChangeConstraint(
+              robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
+          constraint_array.back().push_back(
+              posture_change_constraints.back().get());
+        }
       }
     }
   }
+
+  if (constraint_array.empty()) return false;
 
   // Solve the IK problem. Re-seed with random values if the initial seed is
   // unsuccessful.
@@ -645,7 +699,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
     }
     ik_res =
         inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
-                             constraint_array[i % kNumYawOffsets], ikoptions);
+                             constraint_array[i % constraint_array.size()], ikoptions);
     success = ik_res.info[0] == 1;
     if (success) {
       q_seed_local = ik_res.q_sol.back();
@@ -878,18 +932,11 @@ void PickAndPlaceStateMachine::Update(
 
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
-      bool success{false};
-      //expected_object_pose_ = env_state.get_object_pose();
-      //success = ComputeTrajectories(iiwa, env_state);
-      for (int i = 0; i < static_cast<int>(env_state.get_table_poses().size()); ++i) {
-        expected_object_pose_ = env_state.get_object_pose();
-        success = ComputeTrajectories(iiwa, env_state);
-        if (success) break;
-        next_place_location_++;
-        next_place_location_ %= env_state.get_table_poses().size();
-      }
-      DRAKE_THROW_UNLESS(success);
-      state_ = PickAndPlaceState::kApproachPickPregrasp;
+      expected_object_pose_ = env_state.get_object_pose();
+      if (ComputeTrajectories(iiwa, env_state)) {
+        // Proceed to execution
+        state_ = PickAndPlaceState::kApproachPickPregrasp;
+      } // otherwise re-plan on next call to Update.
       break;
     }
 
