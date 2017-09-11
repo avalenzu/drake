@@ -101,7 +101,7 @@ class PickAndPlaceStateMachine {
   bool ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
                                     const WorldState& env_state);
 
-  void ComputeDesiredPoses(const WorldState& env_state, double yaw_offset);
+  bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset);
 
   bool ComputeTrajectories(const RigidBodyTree<double>& iiwa,
                            const WorldState& env_state);

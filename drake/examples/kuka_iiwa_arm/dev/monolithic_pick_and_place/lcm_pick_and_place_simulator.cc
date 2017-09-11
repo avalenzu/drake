@@ -151,7 +151,7 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
     auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
     wsg_frame->get_mutable_transform_to_body()->rotate(
         Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
-    wsg_frame->get_mutable_transform_to_body()->translate(0.07*Eigen::Vector3d::UnitY());
+    wsg_frame->get_mutable_transform_to_body()->translate(0.06*Eigen::Vector3d::UnitY());
     int wsg_id = tree_builder->AddModelInstanceToFrame(
         "wsg", wsg_frame, drake::multibody::joints::kFixed);
     wsg_instances->push_back(tree_builder->get_model_info_for_instance(wsg_id));
@@ -237,17 +237,31 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 int DoMain(void) {
   // Locations for the tables
   std::vector<Eigen::Vector3d> round_table_locations;
-  round_table_locations.push_back(Eigen::Vector3d(0.00, 0.9, 0.32));  // position A
-  round_table_locations.push_back(Eigen::Vector3d(0.80, 0.36, 0.32));  // position B
-  round_table_locations.push_back(Eigen::Vector3d(0.80, -2.35, 0.04));  // position E
-  round_table_locations.push_back(Eigen::Vector3d(0.00, -2.9, 0.15));  // position D
+  double kTallTableHeight{0.91 - kTableTopZInWorld};
+  double kShortTableHeight{0.66 - kTableTopZInWorld};
+  round_table_locations.push_back(Eigen::Vector3d(0.10, 0.9, kTallTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.80, 0.36, kShortTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.80, -0.36, kShortTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.10, -0.9, kTallTableHeight));
+
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.10, -1.6, kShortTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.80, -2.14, kTallTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.80, -2.86, kTallTableHeight));
+  round_table_locations.push_back(
+      Eigen::Vector3d(0.10, -3.4, kShortTableHeight));
 
   // Poses for the arms
   std::vector<Isometry3<double>> iiwa_poses;
   iiwa_poses.emplace_back(Isometry3<double>::Identity());
   iiwa_poses.back().translate(kRobotBase);
   iiwa_poses.emplace_back(Isometry3<double>::Identity());
-  iiwa_poses.back().translate(kRobotBase + Vector3<double>(0.0, -2.0, 0.0));
+  iiwa_poses.back().translate(kRobotBase + Vector3<double>(0.0, -2.5, 0.0));
 
   DRAKE_THROW_UNLESS(FLAGS_num_iiwas > 0 && FLAGS_num_iiwas <= 2);
   iiwa_poses.resize(FLAGS_num_iiwas);
