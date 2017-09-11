@@ -420,6 +420,14 @@ bool ComputeInitialAndFinalObjectPoses(
                       X_WO_initial_and_final->first.translation().transpose());
   drake::log()->debug("R_WO_initial = \n{}",
                       X_WO_initial_and_final->first.linear());
+  // Check that the object is oriented correctly
+  if (X_WO_initial_and_final->first.linear()(2,2) <
+      std::cos(20 * M_PI / 180)) {
+    drake::log()->debug(
+        "Improper object orientation relative to robot base. Please reset "
+        "object and/or check Optitrack markers.");
+    return false;
+  }
 
   // Find the destination table
   const std::vector<Isometry3<double>>& table_poses =
@@ -454,7 +462,10 @@ bool ComputeInitialAndFinalObjectPoses(
   }
   drake::log()->debug("Destination Table Index: {}", destination_table_index);
 
-  if (destination_table_index < 0) return false;
+  if (destination_table_index < 0) {
+    drake::log()->debug("Cannot find a suitable destination table.");
+    return false;
+  }
 
   // Pose of destination table in world
   const Isometry3<double> X_WT = X_WS * table_poses.at(destination_table_index);
