@@ -243,18 +243,22 @@ int DoMain(void) {
   round_table_locations.push_back(
       Eigen::Vector3d(0.80, 0.36, kShortTableHeight));
   round_table_locations.push_back(
-      Eigen::Vector3d(0.80, -0.36, kShortTableHeight));
+      Eigen::Vector3d(0.80, -0.36, kTallTableHeight));
   round_table_locations.push_back(
-      Eigen::Vector3d(0.10, -0.9, kTallTableHeight));
+      Eigen::Vector3d(0.10, -0.9, kShortTableHeight));
 
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.10, -1.6, kShortTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.80, -2.14, kTallTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.80, -2.86, kTallTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.10, -3.4, kShortTableHeight));
+  round_table_locations.push_back(round_table_locations[0]);
+  round_table_locations.back().y() -= 2.5;
+  round_table_locations.back().z() = kShortTableHeight;
+  round_table_locations.push_back(round_table_locations[1]);
+  round_table_locations.back().y() -= 2.5;
+  round_table_locations.back().z() = kTallTableHeight;
+  round_table_locations.push_back(round_table_locations[2]);
+  round_table_locations.back().y() -= 2.5;
+  round_table_locations.back().z() = kShortTableHeight;
+  round_table_locations.push_back(round_table_locations[3]);
+  round_table_locations.back().y() -= 2.5;
+  round_table_locations.back().z() = kTallTableHeight;
 
   // Poses for the arms
   std::vector<Isometry3<double>> iiwa_poses;
