@@ -29,7 +29,7 @@ void Action::StartAction(double start_time) {
 // seemed to occupy a space which was qualitatively "not too fast" and
 // "not too slow".  It's below the actual joint velocity limits of the
 // arm (significantly so for some joints).
-const double kMaxIiwaJointVelocity = 1.;  // rad/s
+const double kMaxIiwaJointVelocity = 1.5;  // rad/s
 
 IiwaMove::IiwaMove() {}
 
