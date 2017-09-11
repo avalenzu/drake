@@ -745,57 +745,70 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
   drake::log()->debug("\tq_0 = [{}]", q_0.transpose());
   drake::log()->debug("Clearing interpolation_result_map_.");
   interpolation_result_map_.clear();
+  const double kExtraShortDuration = 0.5;
   const double kShortDuration = 1;
   const double kLongDuration = 1.5;
   const double kExtraLongDuration = 1.5;
+  int kNumJoints = iiwa.get_num_positions();
   for (PickAndPlaceState state : states) {
     drake::log()->info("Planning trajectory for {}.", state);
     const VectorX<double> q_f = nominal_q_map_.at(state);
-    double duration{kShortDuration};
-    double position_tolerance{tight_pos_tol_(0)};
-    double orientation_tolerance{tight_rot_tol_};
-    bool fall_back_to_joint_space_interpolation{false};
-    switch (state) {
-      case PickAndPlaceState::kApproachPickPregrasp:
-      case PickAndPlaceState::kApproachPlacePregrasp: {
-        position_tolerance = loose_pos_tol_(0);
-        orientation_tolerance = loose_rot_tol_;
-        fall_back_to_joint_space_interpolation = true;
-        duration = kLongDuration;
-      } break;
+    PostureInterpolationResult result;
+    if ((q_f - q_0).array().abs().maxCoeff() < 10*M_PI/180) {
+      // If very close, just interpolate in joint space.
+      VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
+      VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
 
-      case PickAndPlaceState::kLiftFromPlace: {
-        position_tolerance = loose_pos_tol_(0);
-        orientation_tolerance = loose_rot_tol_;
-        fall_back_to_joint_space_interpolation = true;
-        duration = kExtraLongDuration;
-      } break;
+      result.success = true;
+      result.q_traj = PiecewisePolynomial<double>::Cubic(
+          {0, kExtraShortDuration}, {q_0, q_f}, q_dot0, q_dotf);
+    } else {
+      double duration{kShortDuration};
+      double position_tolerance{tight_pos_tol_(0)};
+      double orientation_tolerance{tight_rot_tol_};
+      bool fall_back_to_joint_space_interpolation{false};
+      switch (state) {
+        case PickAndPlaceState::kApproachPickPregrasp:
+        case PickAndPlaceState::kApproachPlacePregrasp: {
+          position_tolerance = loose_pos_tol_(0);
+          orientation_tolerance = loose_rot_tol_;
+          fall_back_to_joint_space_interpolation = true;
+          duration = kLongDuration;
+        } break;
 
-      default:  // No action needed for other cases
-        break;
+        case PickAndPlaceState::kLiftFromPlace: {
+          position_tolerance = loose_pos_tol_(0);
+          orientation_tolerance = loose_rot_tol_;
+          fall_back_to_joint_space_interpolation = true;
+          duration = kExtraLongDuration;
+        } break;
+
+        default:  // No action needed for other cases
+          break;
+      }
+      PostureInterpolationRequest request;
+
+      request.max_joint_position_change = 0.5 * M_PI_4;
+      request.q_initial = q_0;
+      request.q_final = q_f;
+      double max_delta_q{
+          (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
+      int num_via_points = std::min<int>(
+          3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
+      double dt{duration / static_cast<double>(num_via_points)};
+      request.times.resize(num_via_points + 1);
+      request.times.front() = 0.0;
+      for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
+        request.times[i] = i * dt;
+      }
+      request.times.back() = duration;
+      request.position_tolerance = position_tolerance;
+      request.orientation_tolerance = orientation_tolerance;
+      request.fall_back_to_joint_space_interpolation =
+          fall_back_to_joint_space_interpolation;
+
+      result = PlanStraightLineMotion(request, iiwa);
     }
-    PostureInterpolationRequest request;
-
-    request.max_joint_position_change = 0.5*M_PI_4;
-    request.q_initial = q_0;
-    request.q_final = q_f;
-    double max_delta_q{
-      (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
-    int num_via_points = std::min<int>(
-        3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
-    double dt{duration/static_cast<double>(num_via_points)};
-    request.times.resize(num_via_points + 1);
-    request.times.front() = 0.0;
-    for (int i = 1; i < static_cast<int>(request.times.size()) - 1; ++i) {
-      request.times[i] = i*dt;
-    }
-    request.times.back() = duration;
-    request.position_tolerance = position_tolerance;
-    request.orientation_tolerance = orientation_tolerance;
-    request.fall_back_to_joint_space_interpolation =
-        fall_back_to_joint_space_interpolation;
-
-    PostureInterpolationResult result = PlanStraightLineMotion(request, iiwa);
 
     interpolation_result_map_.emplace(state, result);
     success = success && result.success;
