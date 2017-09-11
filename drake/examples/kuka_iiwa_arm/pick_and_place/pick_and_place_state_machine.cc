@@ -629,7 +629,10 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   // state
   MatrixX<double> q_nom =
       MatrixX<double>::Zero(robot->get_num_positions(), kNumKnots);
-  q_nom.row(3).fill(M_PI_2);
+  for (int i = 0; i < kNumKnots; ++i) {
+    q_nom.col(i) = q_seed_local;
+  }
+  //q_nom.row(3).fill(M_PI_2);
 
   for (double yaw_offset : yaw_offsets) {
     if (ComputeDesiredPoses(env_state, yaw_offset)) {
