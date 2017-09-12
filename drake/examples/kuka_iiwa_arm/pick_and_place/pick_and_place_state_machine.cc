@@ -8,15 +8,13 @@
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/multibody/rigid_body_ik.h"
 
 namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
 namespace pick_and_place {
 namespace {
-
-using manipulation::planner::ConstraintRelaxingIk;
-
 
 // Position the gripper 30cm above the object before grasp.
 const double kPreGraspHeightOffset = 0.3;
@@ -831,12 +829,10 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
 void PickAndPlaceStateMachine::Update(
     const WorldState& env_state, const IiwaPublishCallback& iiwa_callback,
     const WsgPublishCallback& wsg_callback,
-    manipulation::planner::ConstraintRelaxingIk* planner) {
+    const RigidBodyTree<double>& iiwa) {
   IKResults ik_res;
   robotlocomotion::robot_plan_t stopped_plan{};
   stopped_plan.num_states = 0;
-
-  const RigidBodyTree<double>& iiwa = planner->get_robot();
 
   PickAndPlaceState next_state{state_};
   auto schunk_action = OpenGripper;

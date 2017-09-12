@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "bot_core/robot_state_t.hpp"
+#include "drake/multibody/parsers/urdf_parser.h"
 #include "robotlocomotion/robot_plan_t.hpp"
 
 using bot_core::robot_state_t;
@@ -31,7 +32,6 @@ lcmt_schunk_wsg_command MakeDefaultWsgCommand() {
 }
 }  // namespace
 
-using manipulation::planner::ConstraintRelaxingIk;
 using pick_and_place::PickAndPlaceStateMachine;
 
 namespace monolithic_pick_and_place {
@@ -61,8 +61,6 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
     : iiwa_model_path_(iiwa_model_path),
       end_effector_name_(end_effector_name),
       iiwa_base_(iiwa_base),
-      planner_(std::make_unique<ConstraintRelaxingIk>(
-          iiwa_model_path_, end_effector_name_, iiwa_base_)),
       num_tables_(num_tables),
       box_dimensions_(box_dimensions) {
   input_port_iiwa_state_ = this->DeclareAbstractInputPort().get_index();
@@ -86,6 +84,9 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
           .get_index();
 
   this->DeclarePeriodicUnrestrictedUpdate(period_sec, 0);
+
+  parsers::urdf::AddModelInstanceFromUrdfFileToWorld(
+      iiwa_model_path_, multibody::joints::kFixed, &iiwa_tree_);
 }
 
 std::unique_ptr<systems::AbstractValues>
@@ -164,7 +165,7 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
         internal_state.last_wsg_command = *msg;
       });
   internal_state.state_machine.Update(
-      internal_state.world_state, iiwa_callback, wsg_callback, planner_.get());
+      internal_state.world_state, iiwa_callback, wsg_callback, iiwa_tree_);
 }
 
 pick_and_place::PickAndPlaceState PickAndPlaceStateMachineSystem::state(

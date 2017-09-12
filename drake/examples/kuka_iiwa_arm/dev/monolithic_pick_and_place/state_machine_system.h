@@ -8,7 +8,6 @@
 
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_state_machine.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
-#include "drake/manipulation/planner/constraint_relaxing_ik.h"
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/systems/framework/leaf_system.h"
 #include "drake/systems/framework/symbolic_system_inspector.h"
@@ -139,9 +138,6 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
   std::string iiwa_model_path_;
   std::string end_effector_name_;
   const Isometry3<double> iiwa_base_;
-
-  const std::unique_ptr<
-    manipulation::planner::ConstraintRelaxingIk> planner_{nullptr};
 
   const int num_tables_;
   const Vector3<double> box_dimensions_;
