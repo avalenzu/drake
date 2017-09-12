@@ -8,11 +8,10 @@
 
 #include "drake/common/drake_copyable.h"
 #include "drake/common/eigen_types.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/action.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
 #include "drake/lcmt_schunk_wsg_command.hpp"
-#include "drake/manipulation/planner/constraint_relaxing_ik.h"
-
 namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
@@ -92,7 +91,7 @@ class PickAndPlaceStateMachine {
   void Update(const WorldState& env_state,
               const IiwaPublishCallback& iiwa_callback,
               const WsgPublishCallback& wsg_callback,
-              manipulation::planner::ConstraintRelaxingIk* planner);
+              const RigidBodyTree<double>& iiwa);
 
 
   PickAndPlaceState state() const { return state_; }
