@@ -632,6 +632,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   std::vector<double> pitch_offsets{M_PI/6, 0.0};
+  int kNumJoints = iiwa.get_num_positions();
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
@@ -674,13 +675,13 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
 
           // Constrain the end-effector position for all knots.
           position_constraints.emplace_back(new WorldPositionConstraint(
-              robot, end_effector_body_idx, end_effector_points,
+              robot.get(), end_effector_body_idx, end_effector_points,
               r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
           constraint_array.back().push_back(position_constraints.back().get());
 
           // Constrain the end-effector orientation for all knots
           orientation_constraints.emplace_back(
-              new WorldQuatConstraint(robot, end_effector_body_idx,
+              new WorldQuatConstraint(robot.get(), end_effector_body_idx,
                                       Eigen::Vector4d(quat_WE.w(), quat_WE.x(),
                                                       quat_WE.y(), quat_WE.z()),
                                       tight_rot_tol_, knot_tspan));
@@ -704,7 +705,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
                                             VectorX<double>::Ones(kNumJoints)};
             const VectorX<double> lb_change{-ub_change};
             posture_change_constraints.emplace_back(new PostureChangeConstraint(
-                robot, joint_indices, lb_change, ub_change, segment_tspan));
+                robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
             constraint_array.back().push_back(
                 posture_change_constraints.back().get());
           }
