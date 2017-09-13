@@ -56,13 +56,13 @@
       </geometry>
       <material name="Grey"/>
     </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="../meshes/collision/link_0.obj"/>
-      </geometry>
-      <material name="Grey"/>
-    </collision>
+    <!--<collision>-->
+      <!--<origin rpy="0 0 0" xyz="0 0 0"/>-->
+      <!--<geometry>-->
+        <!--<mesh filename="../meshes/collision/link_0.obj"/>-->
+      <!--</geometry>-->
+      <!--<material name="Grey"/>-->
+    <!--</collision>-->
     <self_collision_checking>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
@@ -93,13 +93,13 @@
       </geometry>
       <material name="Grey"/>
     </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="../meshes/collision/link_1.obj"/>
-      </geometry>
-      <material name="Grey"/>
-    </collision>
+    <!--<collision>-->
+      <!--<origin rpy="0 0 0" xyz="0 0 0"/>-->
+      <!--<geometry>-->
+        <!--<mesh filename="../meshes/collision/link_1.obj"/>-->
+      <!--</geometry>-->
+      <!--<material name="Grey"/>-->
+    <!--</collision>-->
   </link>
   <!-- joint between link_1 and link_2 -->
   <joint name="iiwa_joint_2" type="revolute">
@@ -446,4 +446,15 @@
       <mechanicalReduction>1</mechanicalReduction>
     </actuator>
   </transmission>
+  <collision_filter_group name="arm">
+    <member link="iiwa_link_0"/>
+    <member link="iiwa_link_1"/>
+    <member link="iiwa_link_2"/>
+    <member link="iiwa_link_3"/>
+    <member link="iiwa_link_4"/>
+    <member link="iiwa_link_5"/>
+    <member link="iiwa_link_6"/>
+    <member link="iiwa_link_7"/>
+    <ignored_collision_filter_group collision_filter_group="arm"/>
+  </collision_filter_group>
 </robot>

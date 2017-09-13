@@ -38,6 +38,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
       const Isometry3<double>& iiwa_base,
       int num_tables,
       const Vector3<double>& box_dimensions,
+      double collision_avoidance_threshold,
       const double period_sec = 0.01);
 
   std::unique_ptr<systems::AbstractValues> AllocateAbstractState()
@@ -140,6 +141,8 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
 
   const int num_tables_;
   const Vector3<double> box_dimensions_;
+
+  const double collision_avoidance_threshold_{0.01};
 };
 
 }  // namespace monolithic_pick_and_place

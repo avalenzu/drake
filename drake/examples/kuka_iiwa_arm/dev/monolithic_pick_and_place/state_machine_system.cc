@@ -39,12 +39,16 @@ namespace monolithic_pick_and_place {
 struct PickAndPlaceStateMachineSystem::InternalState {
   InternalState(const std::string& iiwa_model_path,
                 const std::string& end_effector_name, int num_tables,
-                const Vector3<double>& object_dimensions)
+                const Vector3<double>& object_dimensions,
+                double collision_avoidance_threshold)
       : world_state(iiwa_model_path, end_effector_name, num_tables,
                     object_dimensions),
-        state_machine(num_tables > 1),
+        state_machine(iiwa_model_path, num_tables > 1),
         last_iiwa_plan(MakeDefaultIiwaPlan()),
-        last_wsg_command(MakeDefaultWsgCommand()) {}
+        last_wsg_command(MakeDefaultWsgCommand()) {
+    state_machine.set_collision_avoidance_threshold(
+        collision_avoidance_threshold);
+  }
 
   ~InternalState() {}
 
@@ -57,12 +61,14 @@ struct PickAndPlaceStateMachineSystem::InternalState {
 PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
     const std::string& iiwa_model_path, const std::string& end_effector_name,
     const Isometry3<double>& iiwa_base, int num_tables,
-    const Vector3<double>& box_dimensions, const double period_sec)
+    const Vector3<double>& box_dimensions, double collision_avoidance_threshold,
+    const double period_sec)
     : iiwa_model_path_(iiwa_model_path),
       end_effector_name_(end_effector_name),
       iiwa_base_(iiwa_base),
       num_tables_(num_tables),
-      box_dimensions_(box_dimensions) {
+      box_dimensions_(box_dimensions),
+      collision_avoidance_threshold_(collision_avoidance_threshold) {
   input_port_iiwa_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_box_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_wsg_status_ = this->DeclareAbstractInputPort().get_index();
@@ -92,9 +98,10 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
 std::unique_ptr<systems::AbstractValues>
 PickAndPlaceStateMachineSystem::AllocateAbstractState() const {
   std::vector<std::unique_ptr<systems::AbstractValue>> abstract_vals;
-  abstract_vals.push_back(std::unique_ptr<systems::AbstractValue>(
-      new systems::Value<InternalState>(
-          InternalState(iiwa_model_path_, end_effector_name_, num_tables_, box_dimensions_))));
+  abstract_vals.push_back(
+      std::unique_ptr<systems::AbstractValue>(new systems::Value<InternalState>(
+          InternalState(iiwa_model_path_, end_effector_name_, num_tables_,
+                        box_dimensions_, collision_avoidance_threshold_))));
   return std::make_unique<systems::AbstractValues>(std::move(abstract_vals));
 }
 
@@ -103,8 +110,9 @@ void PickAndPlaceStateMachineSystem::SetDefaultState(
     systems::State<double>* state) const {
   InternalState& internal_state =
       state->get_mutable_abstract_state<InternalState>(kStateIndex);
-  internal_state = InternalState(iiwa_model_path_, end_effector_name_,
-                                 num_tables_, box_dimensions_);
+  internal_state =
+      InternalState(iiwa_model_path_, end_effector_name_, num_tables_,
+                    box_dimensions_, collision_avoidance_threshold_);
 }
 
 void PickAndPlaceStateMachineSystem::CalcIiwaPlan(
@@ -164,8 +172,8 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
       ([&](const lcmt_schunk_wsg_command* msg) {
         internal_state.last_wsg_command = *msg;
       });
-  internal_state.state_machine.Update(
-      internal_state.world_state, iiwa_callback, wsg_callback, iiwa_tree_);
+  internal_state.state_machine.Update(internal_state.world_state, iiwa_callback,
+                                      wsg_callback, iiwa_tree_);
 }
 
 pick_and_place::PickAndPlaceState PickAndPlaceStateMachineSystem::state(
