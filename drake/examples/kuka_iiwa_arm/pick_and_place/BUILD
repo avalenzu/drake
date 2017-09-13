@@ -14,6 +14,10 @@ package(
 
 drake_cc_library(
     name = "pick_and_place",
+    data = [
+        "//drake/examples/kuka_iiwa_arm:models",
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
     srcs = [
         "action.cc",
         "pick_and_place_state_machine.cc",
@@ -26,11 +30,13 @@ drake_cc_library(
     ],
     deps = [
         "//drake/common",
+        "//drake/common:find_resource",
         "//drake/common/trajectories:piecewise_polynomial",
         "//drake/common/trajectories:piecewise_quaternion",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/lcmtypes:schunk",
         "//drake/lcmtypes:viewer",
+        "//drake/manipulation/util:world_sim_tree_builder",
         "//drake/multibody:rigid_body_tree",
         "//drake/multibody:inverse_kinematics",
         "//drake/multibody/parsers",

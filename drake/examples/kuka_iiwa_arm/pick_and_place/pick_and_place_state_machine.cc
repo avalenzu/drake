@@ -5,10 +5,16 @@
 #include <spdlog/fmt/ostr.h>
 
 #include "drake/common/drake_assert.h"
+#include "drake/common/find_resource.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
+#include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/multibody/parsers/sdf_parser.h"
+#include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_ik.h"
+
+using drake::manipulation::util::WorldSimTreeBuilder;
 
 namespace drake {
 namespace examples {
@@ -22,17 +28,23 @@ const double kPreGraspHeightOffset = 0.3;
 // Finger is 19 cm from end-effector frame.
 const double kEndEffectorToMidFingerDepth = 0.19;
 
+// The `z` coordinate of the top of the table in the world frame.
+// The quantity 0.736 is the `z` coordinate of the frame associated with the
+// 'surface' collision element in the SDF. This element uses a box of height
+// 0.057m thus giving the surface height (`z`) in world coordinates as
+// 0.736 + 0.057 / 2.
+const double kBaseTableHeight = 0.736 + 0.057 / 2;
+const Eigen::Vector3d kBaseTablePosition(0.243716, 0.625087, -kBaseTableHeight);
+
 PostureInterpolationResult PlanMotionAboveEndPoints(
     const PostureInterpolationRequest& request,
-    const RigidBodyTree<double>& original_robot) {
+    RigidBodyTree<double>* robot, double collision_avoidance_threshold) {
   // Create local references to request member variables
   const VectorX<double>& q_0{request.q_initial};
   const VectorX<double>& q_f{request.q_final};
   const std::vector<double>& times{request.times};
-  const double& position_tolerance{request.position_tolerance};
+  //const double& position_tolerance{request.position_tolerance};
 
-  // Create a local copy of the robot
-  std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
   int kNumJoints{robot->get_num_positions()};
   const VectorX<int> joint_indices =
       VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
@@ -43,6 +55,7 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
   // Create vectors to hold the constraint objects
   std::vector<std::unique_ptr<PostureConstraint>> posture_constraints;
   std::vector<std::unique_ptr<WorldPositionInFrameConstraint>> position_in_frame_constraints;
+  std::vector<std::unique_ptr<MinDistanceConstraint>> min_distance_constraints;
   std::vector<RigidBodyConstraint*> constraint_array;
 
   const int kNumKnots = times.size();
@@ -74,34 +87,40 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
 
   // Constrain the configuration at the final knot point to match q_f.
   posture_constraints.emplace_back(
-      new PostureConstraint(robot.get(), final_tspan));
+      new PostureConstraint(robot, final_tspan));
   const VectorX<double> q_lb{q_f};
   const VectorX<double> q_ub{q_f};
   posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
   constraint_array.push_back(posture_constraints.back().get());
 
   // Construct intermediate constraints for via points
+  std::vector<int> active_bodies_idx;
+  std::set<std::string> active_group_names;
+  min_distance_constraints.emplace_back(new MinDistanceConstraint(
+        robot, collision_avoidance_threshold, active_bodies_idx, active_group_names));
+  constraint_array.push_back(min_distance_constraints.back().get());
+
   // We will constrain the z-component of the end-effector position to be above
   // the lower of the two end points at all via points.
-  Isometry3<double> X_WL{Isometry3<double>::Identity()}; // World to fLoor
-  X_WL.translation() =
-      (r_WE.first.z() < r_WE.second.z()) ? r_WE.first : r_WE.second;
+  //Isometry3<double> X_WL{Isometry3<double>::Identity()}; // World to fLoor
+  //X_WL.translation() =
+      //(r_WE.first.z() < r_WE.second.z()) ? r_WE.first : r_WE.second;
 
-  drake::log()->debug("Planning motion from {} to {}, above z = {}",
-                      r_WE.first.transpose(), r_WE.second.transpose(),
-                      X_WL.translation().z());
+  //drake::log()->debug("Planning motion from {} to {}, above z = {}",
+                      //r_WE.first.transpose(), r_WE.second.transpose(),
+                      //X_WL.translation().z());
 
-  Vector3<double> lb{-std::numeric_limits<double>::infinity(),
-                     -std::numeric_limits<double>::infinity(),
-                     -position_tolerance};
-  Vector3<double> ub{std::numeric_limits<double>::infinity(),
-                     std::numeric_limits<double>::infinity(),
-                     std::numeric_limits<double>::infinity()};
+  //Vector3<double> lb{-std::numeric_limits<double>::infinity(),
+                     //-std::numeric_limits<double>::infinity(),
+                     //-position_tolerance};
+  //Vector3<double> ub{std::numeric_limits<double>::infinity(),
+                     //std::numeric_limits<double>::infinity(),
+                     //std::numeric_limits<double>::infinity()};
 
-  position_in_frame_constraints.emplace_back(new WorldPositionInFrameConstraint(
-      robot.get(), end_effector_idx, end_effector_points, X_WL.matrix(), lb, ub,
-      intermediate_tspan));
-  constraint_array.push_back(position_in_frame_constraints.back().get());
+  //position_in_frame_constraints.emplace_back(new WorldPositionInFrameConstraint(
+      //robot.get(), end_effector_idx, end_effector_points, X_WL.matrix(), lb, ub,
+      //intermediate_tspan));
+  //constraint_array.push_back(position_in_frame_constraints.back().get());
 
   // Set the seed for the first attempt (and the nominal value for all attempts)
   // to be the cubic interpolation between the initial and final
@@ -121,7 +140,7 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
   for (int i = 0; i < kNumKnots; ++i) t(i) = times[i];
 
   // Configure ik input and output structs.
-  IKoptions ikoptions(robot.get());
+  IKoptions ikoptions(robot);
   ikoptions.setFixInitialState(true);
   ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
@@ -135,7 +154,7 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
   const int kNumRestarts = 50;
   std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
-    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_knots_nom,
+    ik_res = inverseKinTrajSimple(robot, t, q_knots_seed, q_knots_nom,
                                    constraint_array, ikoptions);
     if (ik_res.info[0] == 1) {
       break;
@@ -169,7 +188,8 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
 // @p X_WEndEffector1.
 PostureInterpolationResult PlanStraightLineMotion(
     const PostureInterpolationRequest& request,
-    const RigidBodyTree<double>& original_robot) {
+    RigidBodyTree<double>* robot,
+    double collision_avoidance_threshold) {
   // Create local references to request member variables
   const VectorX<double>& q_0{request.q_initial};
   const VectorX<double>& q_f{request.q_final};
@@ -190,7 +210,6 @@ PostureInterpolationResult PlanStraightLineMotion(
                       fall_back_to_joint_space_interpolation);
 
   // Create a local copy of the robot
-  std::unique_ptr<RigidBodyTree<double>> robot{original_robot.Clone()};
   int kNumJoints{robot->get_num_positions()};
   const VectorX<int> joint_indices =
       VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
@@ -244,7 +263,7 @@ PostureInterpolationResult PlanStraightLineMotion(
 
   // Constrain the configuration at the final knot point to match q_f.
   posture_constraints.emplace_back(
-      new PostureConstraint(robot.get(), final_tspan));
+      new PostureConstraint(robot, final_tspan));
   const VectorX<double> q_lb{q_f};
   const VectorX<double> q_ub{q_f};
   posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
@@ -259,7 +278,7 @@ PostureInterpolationResult PlanStraightLineMotion(
   double dist_lb{0.0};
   double dist_ub{position_tolerance};
   point_to_line_seg_constraints.emplace_back(new Point2LineSegDistConstraint(
-      robot.get(), end_effector_idx, end_effector_points, world_idx,
+      robot, end_effector_idx, end_effector_points, world_idx,
       line_ends_W, dist_lb, dist_ub, intermediate_tspan));
   constraint_array.push_back(point_to_line_seg_constraints.back().get());
 
@@ -276,14 +295,14 @@ PostureInterpolationResult PlanStraightLineMotion(
   // defining the rotation between the initial and final orientations.
   if (std::abs(aaxis.angle()) < orientation_tolerance) {
     orientation_constraints.emplace_back(new WorldQuatConstraint(
-        robot.get(), end_effector_idx,
+        robot, end_effector_idx,
         Eigen::Vector4d(quat_WE.second.w(), quat_WE.second.x(),
                         quat_WE.second.y(), quat_WE.second.z()),
         orientation_tolerance, intermediate_tspan));
     constraint_array.push_back(orientation_constraints.back().get());
   } else {
     gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
-        robot.get(), end_effector_idx, axis_E, dir_W,
+        robot, end_effector_idx, axis_E, dir_W,
         orientation_tolerance, intermediate_tspan));
     constraint_array.push_back(gaze_dir_constraints.back().get());
   }
@@ -295,7 +314,7 @@ PostureInterpolationResult PlanStraightLineMotion(
   for (int i = 1; i < kNumKnots; ++i) {
     const Vector2<double> segment_tspan{times[i-1], times[i]};
     posture_change_constraints.emplace_back(new PostureChangeConstraint(
-        robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
+        robot, joint_indices, lb_change, ub_change, segment_tspan));
     constraint_array.push_back(posture_change_constraints.back().get());
   }
 
@@ -317,7 +336,7 @@ PostureInterpolationResult PlanStraightLineMotion(
   for (int i = 0; i < kNumKnots; ++i) t(i) = times[i];
 
   // Configure ik input and output structs.
-  IKoptions ikoptions(robot.get());
+  IKoptions ikoptions(robot);
   ikoptions.setFixInitialState(true);
   ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
@@ -332,7 +351,7 @@ PostureInterpolationResult PlanStraightLineMotion(
       (fall_back_to_joint_space_interpolation) ? 5 : 50;
   std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
-    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_knots_nom,
+    ik_res = inverseKinTrajSimple(robot, t, q_knots_seed, q_knots_nom,
                                    constraint_array, ikoptions);
     if (ik_res.info[0] == 1) {
       break;
@@ -355,7 +374,7 @@ PostureInterpolationResult PlanStraightLineMotion(
     }
     result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf);
   } else if (fall_back_to_joint_space_interpolation) {
-    result = PlanMotionAboveEndPoints(request, original_robot);
+    result = PlanMotionAboveEndPoints(request, robot, collision_avoidance_threshold);
   } else {
     result.q_traj = PiecewisePolynomial<double>::Cubic(
             {times.front(), times.back()}, {q_0, q_0}, q_dot0, q_dotf);
@@ -604,7 +623,7 @@ PickAndPlaceStateMachine::CreatePostureInterpolationRequest(
   return request;
 }
 
-PickAndPlaceStateMachine::PickAndPlaceStateMachine(bool loop)
+PickAndPlaceStateMachine::PickAndPlaceStateMachine(std::string iiwa_model_path, bool loop)
     : next_place_location_(0),
       loop_(loop),
       state_(PickAndPlaceState::kOpenGripper),
@@ -614,13 +633,14 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(bool loop)
       tight_pos_tol_(0.001, 0.001, 0.001),
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.1, 0.1, 0.1),
-      loose_rot_tol_(30*M_PI/180) {
+      loose_rot_tol_(30*M_PI/180),
+      iiwa_model_path_(iiwa_model_path) {
 }
 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
 
 bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
-    const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
+    RigidBodyTree<double>* robot, const WorldState& env_state) {
   bool success = false;
   nominal_q_map_.clear();
   //  Create vectors to hold the constraint objects
@@ -628,10 +648,11 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
   std::vector<std::unique_ptr<PostureChangeConstraint>>
     posture_change_constraints;
+  std::vector<std::unique_ptr<MinDistanceConstraint>> min_distance_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
   std::vector<double> yaw_offsets{M_PI, 0.0};
-  std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
   std::vector<double> pitch_offsets{M_PI/6, 0.0};
+  int kNumJoints{robot->get_num_positions()};
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
@@ -715,10 +736,19 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
 
   if (constraint_array.empty()) return false;
 
+  // Add a collision avoidance constraints to each set of constraints
+  for (int i = 0; i < static_cast<int>(constraint_array.size()); ++i) {
+    std::vector<int> active_bodies_idx;
+    std::set<std::string> active_group_names;
+    min_distance_constraints.emplace_back(new MinDistanceConstraint(
+        robot, collision_avoidance_threshold_, active_bodies_idx, active_group_names));
+    constraint_array[i].push_back(min_distance_constraints.back().get());
+  }
+
   // Solve the IK problem. Re-seed with random values if the initial seed is
   // unsuccessful.
   IKResults ik_res;
-  IKoptions ikoptions(robot.get());
+  IKoptions ikoptions(robot);
   ikoptions.setFixInitialState(false);
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
@@ -730,7 +760,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
       q_knots_seed.col(j) = q_seed_local;
     }
     ik_res =
-        inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
+        inverseKinTrajSimple(robot, t, q_knots_seed, q_nom,
                              constraint_array[i % constraint_array.size()], ikoptions);
     success = ik_res.info[0] == 1;
     if (success) {
@@ -751,7 +781,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   return success;
 }
 
-bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& iiwa, const WorldState& env_state) {
+bool PickAndPlaceStateMachine::ComputeTrajectories(RigidBodyTree<double>* iiwa, const WorldState& env_state) {
   bool success = ComputeNominalConfigurations(iiwa, env_state);
   if (!success) return false;
   std::vector<PickAndPlaceState> states{
@@ -761,7 +791,8 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
       PickAndPlaceState::kApproachPlacePregrasp,
       PickAndPlaceState::kApproachPlace,
       PickAndPlaceState::kLiftFromPlace};
-  VectorX<double> q_0{iiwa.get_num_positions()};
+  int kNumJoints = iiwa->get_num_positions();
+  VectorX<double> q_0{kNumJoints};
   if (interpolation_result_map_.empty()) {
     q_0 << env_state.get_iiwa_q();
     drake::log()->debug("Using current configuration as q_0.");
@@ -778,7 +809,6 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
   const double kShortDuration = 1;
   const double kLongDuration = 1.5;
   const double kExtraLongDuration = 1.5;
-  int kNumJoints = iiwa.get_num_positions();
   for (PickAndPlaceState state : states) {
     drake::log()->info("Planning trajectory for {}.", state);
     const VectorX<double> q_f = nominal_q_map_.at(state);
@@ -836,7 +866,8 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(const RigidBodyTree<double>& 
       request.fall_back_to_joint_space_interpolation =
           fall_back_to_joint_space_interpolation;
 
-      result = PlanStraightLineMotion(request, iiwa);
+      result =
+          PlanStraightLineMotion(request, iiwa, collision_avoidance_threshold_);
     }
 
     interpolation_result_map_.emplace(state, result);
@@ -974,9 +1005,36 @@ void PickAndPlaceStateMachine::Update(
     }
 
     case PickAndPlaceState::kPlan: {
+      // TODO(avalenzu): Add world geometry to model.
+      std::string base_table_path = FindResourceOrThrow(
+          "drake/examples/kuka_iiwa_arm/models/table/"
+          "extra_heavy_duty_table_surface_only_collision.sdf");
+      std::string round_table_path = FindResourceOrThrow(
+          "drake/examples/kuka_iiwa_arm/models/objects/"
+          "round_table.urdf");
+      RigidBodyTree<double> iiwa_with_environment;
+      parsers::urdf::AddModelInstanceFromUrdfFileToWorld(
+          iiwa_model_path_, drake::multibody::joints::kFixed,
+          &iiwa_with_environment);
+      auto weld_to_frame = std::allocate_shared<RigidBodyFrame<double>>(
+          Eigen::aligned_allocator<RigidBodyFrame<double>>(), "world", nullptr,
+          kBaseTablePosition, Vector3<double>::Zero());
+      parsers::sdf::AddModelInstancesFromSdfFile(
+          base_table_path, drake::multibody::joints::kFixed, weld_to_frame,
+          &iiwa_with_environment);
+      const Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
+      for (Isometry3<double> X_ST : env_state.get_table_poses()) {
+        const Isometry3<double> X_WT{X_WS * X_ST};
+        auto round_table_frame = std::allocate_shared<RigidBodyFrame<double>>(
+            Eigen::aligned_allocator<RigidBodyFrame<double>>(), "world",
+            nullptr, X_WT.translation(), Vector3<double>::Zero());
+        parsers::urdf::AddModelInstanceFromUrdfFile(
+            round_table_path, drake::multibody::joints::kFixed,
+            round_table_frame, &iiwa_with_environment);
+      }
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
-      if (ComputeTrajectories(iiwa, env_state)) {
+      if (ComputeTrajectories(&iiwa_with_environment, env_state)) {
         // Proceed to execution
         state_ = PickAndPlaceState::kApproachPickPregrasp;
       } // otherwise re-plan on next call to Update.
@@ -1002,6 +1060,12 @@ void PickAndPlaceStateMachine::Update(
       break;
     }
   }
+}
+
+void PickAndPlaceStateMachine::set_collision_avoidance_threshold(
+    double collision_avoidance_threshold) {
+  DRAKE_THROW_UNLESS(collision_avoidance_threshold > 0);
+  collision_avoidance_threshold_ = collision_avoidance_threshold;
 }
 
 }  // namespace pick_and_place

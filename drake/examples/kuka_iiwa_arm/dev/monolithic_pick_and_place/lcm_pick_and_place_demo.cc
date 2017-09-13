@@ -30,6 +30,8 @@
 DEFINE_int32(target, 0, "ID of the target to pick.");
 DEFINE_int32(iiwa_index, 0, "ID of the iiwa to use.");
 DEFINE_int32(end_position, -1, "Position index to end at");
+DEFINE_double(collision_avoidance_threshold, 0.01,
+              "Threshold for collision avoidance constraint");
 DEFINE_bool(use_channel_suffix, true,
             "If true, append a suffix to channel names");
 
@@ -111,7 +113,7 @@ class RobotStateSplicer : public systems::LeafSystem<double> {
 
 const char kIiwaUrdf[] =
     "drake/manipulation/models/iiwa_description/urdf/"
-    "iiwa14_polytope_collision.urdf";
+    "iiwa14_mesh_collision.urdf";
 const char kIiwaEndEffectorName[] = "iiwa_link_ee";
 
 const OptitrackConfiguration kOptitrackConfiguration;
@@ -132,7 +134,7 @@ int DoMain(void) {
   auto state_machine =
       builder.AddSystem<PickAndPlaceStateMachineSystem>(
           FindResourceOrThrow(kIiwaUrdf), kIiwaEndEffectorName,
-          iiwa_base, kOptitrackConfiguration.num_tables(), target.dimensions);
+          iiwa_base, kOptitrackConfiguration.num_tables(), target.dimensions, FLAGS_collision_avoidance_threshold);
 
   auto iiwa_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(

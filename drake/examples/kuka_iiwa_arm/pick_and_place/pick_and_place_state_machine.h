@@ -80,7 +80,7 @@ class PickAndPlaceStateMachine {
   /// is true, the state machine will loop through the pick and place
   /// locations, otherwise it will remain in the kDone state once
   /// complete.
-  PickAndPlaceStateMachine(bool loop);
+  PickAndPlaceStateMachine(std::string iiwa_model_path_, bool loop);
   ~PickAndPlaceStateMachine();
 
   /// Update the state machine based on the state of the world in @p
@@ -96,14 +96,16 @@ class PickAndPlaceStateMachine {
 
   PickAndPlaceState state() const { return state_; }
 
+  void set_collision_avoidance_threshold(double collision_avoidance_threshold);
+
  private:
-  bool ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
+  bool ComputeNominalConfigurations(RigidBodyTree<double>* iiwa,
                                     const WorldState& env_state);
 
   bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset,
                            double pitch_offset);
 
-  bool ComputeTrajectories(const RigidBodyTree<double>& iiwa,
+  bool ComputeTrajectories(RigidBodyTree<double>* iiwa,
                            const WorldState& env_state);
 
   PostureInterpolationRequest CreatePostureInterpolationRequest(
@@ -146,6 +148,10 @@ class PickAndPlaceStateMachine {
 
   // Measured location of object at planning time
   Isometry3<double> expected_object_pose_;
+
+  std::string iiwa_model_path_;
+
+  double collision_avoidance_threshold_{0.01};
 };
 
 }  // namespace pick_and_place
