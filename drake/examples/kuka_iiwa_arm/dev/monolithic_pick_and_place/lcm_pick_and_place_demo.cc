@@ -32,6 +32,9 @@ DEFINE_int32(iiwa_index, 0, "ID of the iiwa to use.");
 DEFINE_int32(end_position, -1, "Position index to end at");
 DEFINE_double(collision_avoidance_threshold, 0.01,
               "Threshold for collision avoidance constraint");
+DEFINE_bool(ignore_tall_tables, false,
+            "If true, only tables below the robot's base will be used as place "
+            "locations");
 DEFINE_bool(use_channel_suffix, true,
             "If true, append a suffix to channel names");
 
@@ -131,10 +134,10 @@ int DoMain(void) {
   Isometry3<double> iiwa_base = Isometry3<double>::Identity();
   iiwa_base.translation() = robot_base;
 
-  auto state_machine =
-      builder.AddSystem<PickAndPlaceStateMachineSystem>(
-          FindResourceOrThrow(kIiwaUrdf), kIiwaEndEffectorName,
-          iiwa_base, kOptitrackConfiguration.num_tables(), target.dimensions, FLAGS_collision_avoidance_threshold);
+  auto state_machine = builder.AddSystem<PickAndPlaceStateMachineSystem>(
+      FindResourceOrThrow(kIiwaUrdf), kIiwaEndEffectorName, iiwa_base,
+      kOptitrackConfiguration.num_tables(), target.dimensions,
+      FLAGS_collision_avoidance_threshold, FLAGS_ignore_tall_tables);
 
   auto iiwa_status_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<bot_core::robot_state_t>(

@@ -425,7 +425,8 @@ std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
 
 bool ComputeInitialAndFinalObjectPoses(
     const WorldState& env_state,
-    std::pair<Isometry3<double>, Isometry3<double>>* X_WO_initial_and_final) {
+    std::pair<Isometry3<double>, Isometry3<double>>* X_WO_initial_and_final,
+    bool ignore_tall_tables) {
   // W -- planning World frame, coincides with kuka base frame.
   // S -- Sensor world frame
   // O -- Object frame
@@ -438,7 +439,7 @@ bool ComputeInitialAndFinalObjectPoses(
   drake::log()->debug("R_WO_initial = \n{}",
                       X_WO_initial_and_final->first.linear());
   // Check that the object is oriented correctly
-  if (X_WO_initial_and_final->first.linear()(2,2) <
+  if (X_WO_initial_and_final->first.linear()(2, 2) <
       std::cos(20 * M_PI / 180)) {
     drake::log()->debug(
         "Improper object orientation relative to robot base. Please reset "
@@ -456,8 +457,10 @@ bool ComputeInitialAndFinalObjectPoses(
     const Isometry3<double> X_WT = X_WS * table_poses[i];
     Vector3<double> r_WT_in_xy_plane{X_WT.translation()};
     r_WT_in_xy_plane.z() = 0;
-    drake::log()->debug("Table {}: Distance: {} m", i, r_WT_in_xy_plane.norm());
-    if (r_WT_in_xy_plane.norm() < kMaxReach) {
+    drake::log()->debug("Table {}: Distance: {} m, Height: {} m", i,
+                        r_WT_in_xy_plane.norm(), X_WT.translation().z());
+    if (r_WT_in_xy_plane.norm() < kMaxReach &&
+        (!ignore_tall_tables || X_WT.translation().z() < 0)) {
       Vector3<double> r_WO_in_xy_plane{
           X_WO_initial_and_final->first.translation()};
       r_WO_in_xy_plane.z() = 0;
@@ -515,8 +518,10 @@ bool ComputeInitialAndFinalObjectPoses(
   return true;
 }
 
-bool PickAndPlaceStateMachine::ComputeDesiredPoses(
-    const WorldState& env_state, double yaw_offset, double pitch_offset) {
+bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
+                                                   double yaw_offset,
+                                                   double pitch_offset,
+                                                   bool ignore_tall_tables) {
   X_WE_desired_.clear();
 
   //     
@@ -536,7 +541,8 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   // E  - End-effector frame
   // G  - Gripper frame
   std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
-  if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final)) {
+  if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final,
+                                         ignore_tall_tables)) {
     return false;
   }
 
@@ -640,7 +646,8 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(std::string iiwa_model_path, 
 PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
 
 bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
-    RigidBodyTree<double>* robot, const WorldState& env_state) {
+    RigidBodyTree<double>* robot, const WorldState& env_state,
+    bool ignore_tall_tables) {
   bool success = false;
   nominal_q_map_.clear();
   //  Create vectors to hold the constraint objects
@@ -679,7 +686,8 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
 
   for (double pitch_offset : pitch_offsets) {
     for (double yaw_offset : yaw_offsets) {
-      if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
+      if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset,
+                              ignore_tall_tables)) {
         constraint_array.emplace_back();
 
         for (int i = 0; i < kNumKnots; ++i) {
@@ -781,8 +789,11 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   return success;
 }
 
-bool PickAndPlaceStateMachine::ComputeTrajectories(RigidBodyTree<double>* iiwa, const WorldState& env_state) {
-  bool success = ComputeNominalConfigurations(iiwa, env_state);
+bool PickAndPlaceStateMachine::ComputeTrajectories(RigidBodyTree<double>* iiwa,
+                                                   const WorldState& env_state,
+                                                   bool ignore_tall_tables) {
+  bool success =
+      ComputeNominalConfigurations(iiwa, env_state, ignore_tall_tables);
   if (!success) return false;
   std::vector<PickAndPlaceState> states{
       PickAndPlaceState::kApproachPickPregrasp,
@@ -877,10 +888,11 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(RigidBodyTree<double>* iiwa, 
   return success;
 }
 
-void PickAndPlaceStateMachine::Update(
-    const WorldState& env_state, const IiwaPublishCallback& iiwa_callback,
-    const WsgPublishCallback& wsg_callback,
-    const RigidBodyTree<double>& iiwa) {
+void PickAndPlaceStateMachine::Update(const WorldState& env_state,
+                                      const IiwaPublishCallback& iiwa_callback,
+                                      const WsgPublishCallback& wsg_callback,
+                                      const RigidBodyTree<double>& iiwa,
+                                      bool ignore_tall_tables) {
   IKResults ik_res;
   robotlocomotion::robot_plan_t stopped_plan{};
   stopped_plan.num_states = 0;
@@ -1034,7 +1046,8 @@ void PickAndPlaceStateMachine::Update(
       }
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
-      if (ComputeTrajectories(&iiwa_with_environment, env_state)) {
+      if (ComputeTrajectories(&iiwa_with_environment, env_state,
+                              ignore_tall_tables)) {
         // Proceed to execution
         state_ = PickAndPlaceState::kApproachPickPregrasp;
       } // otherwise re-plan on next call to Update.
