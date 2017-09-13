@@ -100,7 +100,8 @@ class PickAndPlaceStateMachine {
   bool ComputeNominalConfigurations(const RigidBodyTree<double>& iiwa,
                                     const WorldState& env_state);
 
-  bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset);
+  bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset,
+                           double pitch_offset);
 
   bool ComputeTrajectories(const RigidBodyTree<double>& iiwa,
                            const WorldState& env_state);
@@ -117,7 +118,7 @@ class PickAndPlaceStateMachine {
 
   PickAndPlaceState state_;
 
-  // Poses used for storing end-points of Iiwa trajectories at various states
+  // Poses used for storing end-points of Iiwa trajectories_at various states
   // of the demo.
   Isometry3<double> X_Wend_effector_0_;
   Isometry3<double> X_Wend_effector_1_;

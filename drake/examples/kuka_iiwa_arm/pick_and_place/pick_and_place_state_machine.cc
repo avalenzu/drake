@@ -497,7 +497,7 @@ bool ComputeInitialAndFinalObjectPoses(
 }
 
 bool PickAndPlaceStateMachine::ComputeDesiredPoses(
-    const WorldState& env_state, double yaw_offset) {
+    const WorldState& env_state, double yaw_offset, double pitch_offset) {
   X_WE_desired_.clear();
 
   //     
@@ -507,59 +507,72 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   //       |                                                        |
   //       |                                                        |
   //       + (ApproachPick)                         (ApproachPlace) +
-
+  //
+  // W  - planning World frame, coincides with kuka base frame.
+  // S  - Sensor world frame
+  // O  - Object frame
+  // Oi - Object frame (initial)
+  // Of - Object frame (final)
+  // T  - Table frame
+  // E  - End-effector frame
+  // G  - Gripper frame
   std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
   if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final)) {
     return false;
   }
 
-  Isometry3<double>& X_WO_initial = X_WO_initial_and_final.first;
-  Isometry3<double>& X_WO_final = X_WO_initial_and_final.second;
+  Isometry3<double>& X_WOi = X_WO_initial_and_final.first;
+  Isometry3<double>& X_WOf = X_WO_initial_and_final.second;
 
-  X_WO_initial.rotate(Eigen::AngleAxisd(yaw_offset, Eigen::Vector3d::UnitZ()));
+  X_WOi.rotate(AngleAxis<double>(yaw_offset, Vector3<double>::UnitZ()));
 
-  // Gripper is rotated relative to the end effector
+  // Gripper pose should some distance in from the edge of the object, and
+  // should be rotated about the y-axis by pitch_offset
+  Isometry3<double> X_OG{Isometry3<double>::Identity()};
+  X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
+  X_OG.translation()[0] =
+      std::min<double>(-0.5 * env_state.get_object_dimensions().x() +
+                           0.07 * std::cos(pitch_offset),
+                       0);
+
+  // Gripper is rotated relative to the end effector link.
   Isometry3<double> X_GE{Isometry3<double>::Identity()};
   X_GE.rotate(Eigen::AngleAxisd(0.39269908, Eigen::Vector3d::UnitX()));
 
 
   // Set ApproachPick pose
-  Isometry3<double> X_OG{Isometry3<double>::Identity()};
-  X_OG.translation()[0] =
-      std::min<double>(-0.5*env_state.get_object_dimensions().x() + 0.07, 0);
+  Isometry3<double> X_OiO{Isometry3<double>::Identity()};
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPick,
-                        X_WO_initial * X_OG * X_GE);
+                        X_WOi * X_OiO * X_OG * X_GE);
 
   // Set ApproachPickPregrasp pose
-  X_OG.setIdentity();
-  X_OG.translation()[0] =
-      std::min<double>(-0.5*env_state.get_object_dimensions().x() + 0.07, 0);
-  X_OG.translation()[2] = kPreGraspHeightOffset;
+  Isometry3<double> X_GGoffset{Isometry3<double>::Identity()};
+  X_GGoffset.translate(Vector3<double>(-0.75*kPreGraspHeightOffset, 0.0, 0.0));
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
-                        X_WO_initial * X_OG * X_GE);
+                        X_WOi * X_OiO * X_OG * X_GGoffset* X_GE);
 
   // Set LiftFromPick pose
-  X_OG.setIdentity();
-  X_OG.translation()[2] = kPreGraspHeightOffset;
+  X_OiO.setIdentity();
+  X_OiO.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPick,
-                        X_WO_initial * X_OG * X_GE);
+                        X_WOi * X_OiO * X_OG * X_GE);
 
   // Set ApproachPlace pose
-  X_OG.setIdentity();
+  Isometry3<double> X_OfO{Isometry3<double>::Identity()};
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPlace,
-                        X_WO_final * X_OG * X_GE);
+                        X_WOf * X_OfO * X_OG * X_GE);
 
   // Set ApproachPlacePregrasp pose
-  X_OG.setIdentity();
-  X_OG.translation()[2] = kPreGraspHeightOffset;
+  X_OfO.setIdentity();
+  X_OfO.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPlacePregrasp,
-                        X_WO_final * X_OG * X_GE);
+                        X_WOf * X_OfO * X_OG * X_GE);
 
   // Set LiftFromPlace pose
-  X_OG.setIdentity();
-  X_OG.translation()[2] = kPreGraspHeightOffset;
+  X_OfO.setIdentity();
+  X_OfO.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
-                        X_WO_final * X_OG * X_GE);
+                        X_WOf * X_OfO * X_OG * X_GE);
   return true;
 }
 
@@ -618,7 +631,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
-  int kNumJoints{robot->get_num_positions()};
+  std::vector<double> pitch_offsets{M_PI/6, 0.0};
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
   Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
@@ -643,51 +656,58 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   }
   //q_nom.row(3).fill(M_PI_2);
 
-  for (double yaw_offset : yaw_offsets) {
-    if (ComputeDesiredPoses(env_state, yaw_offset)) {
-      constraint_array.emplace_back();
+  for (double pitch_offset : pitch_offsets) {
+    for (double yaw_offset : yaw_offsets) {
+      if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
+        constraint_array.emplace_back();
 
-      for (int i = 0; i < kNumKnots; ++i) {
-        const PickAndPlaceState state{states[i]};
-        const Vector2<double> knot_tspan{t(i), t(i)};
+        for (int i = 0; i < kNumKnots; ++i) {
+          const PickAndPlaceState state{states[i]};
+          const Vector2<double> knot_tspan{t(i), t(i)};
 
-        // Extract desired position and orientation of end effector at the given
-        // state.
-        const Isometry3<double>& X_WE = X_WE_desired_.at(state);
-        const Vector3<double>& r_WE = X_WE.translation();
-        const Quaternion<double>& quat_WE{X_WE.rotation()};
+          // Extract desired position and orientation of end effector at the
+          // given
+          // state.
+          const Isometry3<double>& X_WE = X_WE_desired_.at(state);
+          const Vector3<double>& r_WE = X_WE.translation();
+          const Quaternion<double>& quat_WE{X_WE.rotation()};
 
-        // Constrain the end-effector position for all knots.
-        position_constraints.emplace_back(new WorldPositionConstraint(
-            robot.get(), end_effector_body_idx, end_effector_points,
-            r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
-        constraint_array.back().push_back(position_constraints.back().get());
+          // Constrain the end-effector position for all knots.
+          position_constraints.emplace_back(new WorldPositionConstraint(
+              robot, end_effector_body_idx, end_effector_points,
+              r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
+          constraint_array.back().push_back(position_constraints.back().get());
 
-        // Constrain the end-effector orientation for all knots
-        orientation_constraints.emplace_back(new WorldQuatConstraint(
-            robot.get(), end_effector_body_idx,
-            Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(), quat_WE.z()),
-            tight_rot_tol_, knot_tspan));
-        constraint_array.back().push_back(orientation_constraints.back().get());
-
-        // For each pair of adjacent knots, add a constraint on the change in
-        // joint
-        // positions.
-        if (i > 0) {
-          const VectorX<int> joint_indices =
-              VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
-          const Vector2<double> segment_tspan{t(i - 1), t(i)};
-          // The move to ApproachPlacePregrasp can require large joint motions.
-          const double max_joint_position_change =
-              (state == PickAndPlaceState::kApproachPlacePregrasp) ? 0.75 * M_PI
-                                                                   : M_PI_4;
-          const VectorX<double> ub_change{max_joint_position_change *
-                                          VectorX<double>::Ones(kNumJoints)};
-          const VectorX<double> lb_change{-ub_change};
-          posture_change_constraints.emplace_back(new PostureChangeConstraint(
-              robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
+          // Constrain the end-effector orientation for all knots
+          orientation_constraints.emplace_back(
+              new WorldQuatConstraint(robot, end_effector_body_idx,
+                                      Eigen::Vector4d(quat_WE.w(), quat_WE.x(),
+                                                      quat_WE.y(), quat_WE.z()),
+                                      tight_rot_tol_, knot_tspan));
           constraint_array.back().push_back(
-              posture_change_constraints.back().get());
+              orientation_constraints.back().get());
+
+          // For each pair of adjacent knots, add a constraint on the change in
+          // joint
+          // positions.
+          if (i > 0) {
+            const VectorX<int> joint_indices =
+                VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+            const Vector2<double> segment_tspan{t(i - 1), t(i)};
+            // The move to ApproachPlacePregrasp can require large joint
+            // motions.
+            const double max_joint_position_change =
+                (state == PickAndPlaceState::kApproachPlacePregrasp)
+                    ? 0.75 * M_PI
+                    : M_PI_4;
+            const VectorX<double> ub_change{max_joint_position_change *
+                                            VectorX<double>::Ones(kNumJoints)};
+            const VectorX<double> lb_change{-ub_change};
+            posture_change_constraints.emplace_back(new PostureChangeConstraint(
+                robot, joint_indices, lb_change, ub_change, segment_tspan));
+            constraint_array.back().push_back(
+                posture_change_constraints.back().get());
+          }
         }
       }
     }
