@@ -91,7 +91,7 @@ class PickAndPlaceStateMachine {
   void Update(const WorldState& env_state,
               const IiwaPublishCallback& iiwa_callback,
               const WsgPublishCallback& wsg_callback,
-              const RigidBodyTree<double>& iiwa);
+              const RigidBodyTree<double>& iiwa, bool ignore_tall_tables);
 
 
   PickAndPlaceState state() const { return state_; }
@@ -100,13 +100,15 @@ class PickAndPlaceStateMachine {
 
  private:
   bool ComputeNominalConfigurations(RigidBodyTree<double>* iiwa,
-                                    const WorldState& env_state);
+                                    const WorldState& env_state,
+                                    bool ignore_tall_tables);
 
   bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset,
-                           double pitch_offset);
+                           double pitch_offset, bool ignore_tall_tables);
 
   bool ComputeTrajectories(RigidBodyTree<double>* iiwa,
-                           const WorldState& env_state);
+                           const WorldState& env_state,
+                           bool ignore_tall_tables);
 
   PostureInterpolationRequest CreatePostureInterpolationRequest(
       const WorldState& env_state, PickAndPlaceState state, double duration,
@@ -120,7 +122,7 @@ class PickAndPlaceStateMachine {
 
   PickAndPlaceState state_;
 
-  // Poses used for storing end-points of Iiwa trajectories_at various states
+  // Poses used for storing end-points of Iiwa trajectories at various states
   // of the demo.
   Isometry3<double> X_Wend_effector_0_;
   Isometry3<double> X_Wend_effector_1_;

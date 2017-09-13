@@ -62,13 +62,14 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
     const std::string& iiwa_model_path, const std::string& end_effector_name,
     const Isometry3<double>& iiwa_base, int num_tables,
     const Vector3<double>& box_dimensions, double collision_avoidance_threshold,
-    const double period_sec)
+    bool ignore_tall_tables, const double period_sec)
     : iiwa_model_path_(iiwa_model_path),
       end_effector_name_(end_effector_name),
       iiwa_base_(iiwa_base),
       num_tables_(num_tables),
       box_dimensions_(box_dimensions),
-      collision_avoidance_threshold_(collision_avoidance_threshold) {
+      collision_avoidance_threshold_(collision_avoidance_threshold),
+      ignore_tall_tables_(ignore_tall_tables) {
   input_port_iiwa_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_box_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_wsg_status_ = this->DeclareAbstractInputPort().get_index();
@@ -173,7 +174,8 @@ void PickAndPlaceStateMachineSystem::DoCalcUnrestrictedUpdate(
         internal_state.last_wsg_command = *msg;
       });
   internal_state.state_machine.Update(internal_state.world_state, iiwa_callback,
-                                      wsg_callback, iiwa_tree_);
+                                      wsg_callback, iiwa_tree_,
+                                      ignore_tall_tables_);
 }
 
 pick_and_place::PickAndPlaceState PickAndPlaceStateMachineSystem::state(
