@@ -43,6 +43,7 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
   const VectorX<double>& q_0{request.q_initial};
   const VectorX<double>& q_f{request.q_final};
   const std::vector<double>& times{request.times};
+  const double max_joint_position_change{request.max_joint_position_change};
   //const double& position_tolerance{request.position_tolerance};
 
   int kNumJoints{robot->get_num_positions()};
@@ -54,6 +55,7 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
 
   // Create vectors to hold the constraint objects
   std::vector<std::unique_ptr<PostureConstraint>> posture_constraints;
+  std::vector<std::unique_ptr<PostureChangeConstraint>> posture_change_constraints;
   std::vector<std::unique_ptr<WorldPositionInFrameConstraint>> position_in_frame_constraints;
   std::vector<std::unique_ptr<MinDistanceConstraint>> min_distance_constraints;
   std::vector<RigidBodyConstraint*> constraint_array;
@@ -121,6 +123,17 @@ PostureInterpolationResult PlanMotionAboveEndPoints(
       //robot.get(), end_effector_idx, end_effector_points, X_WL.matrix(), lb, ub,
       //intermediate_tspan));
   //constraint_array.push_back(position_in_frame_constraints.back().get());
+  //
+  // Place limits on the change in joint angles between knots
+  const VectorX<double> ub_change =
+      max_joint_position_change * VectorX<double>::Ones(kNumJoints);
+  const VectorX<double> lb_change = -ub_change;
+  for (int i = 1; i < kNumKnots; ++i) {
+    const Vector2<double> segment_tspan{times[i-1], times[i]};
+    posture_change_constraints.emplace_back(new PostureChangeConstraint(
+        robot, joint_indices, lb_change, ub_change, segment_tspan));
+    constraint_array.push_back(posture_change_constraints.back().get());
+  }
 
   // Set the seed for the first attempt (and the nominal value for all attempts)
   // to be the cubic interpolation between the initial and final
@@ -459,6 +472,8 @@ bool ComputeInitialAndFinalObjectPoses(
   double destination_table_angle = std::numeric_limits<double>::infinity();
   for (int i = 0; i < static_cast<int>(table_poses.size()); ++i) {
     const Isometry3<double> X_WT = X_WS * table_poses[i];
+    drake::log()->info("Table {}: ({}, {}, {})", i, X_WT.translation().x(),
+                        X_WT.translation().y(), X_WT.translation().z());
     Vector3<double> r_WT_in_xy_plane{X_WT.translation()};
     r_WT_in_xy_plane.z() = 0;
     drake::log()->debug("Table {}: Distance: {} m, Height: {} m", i,
@@ -494,7 +509,8 @@ bool ComputeInitialAndFinalObjectPoses(
   drake::log()->debug("Current Table Index:     {}", current_table_index);
   drake::log()->debug("Destination Table Index: {}", destination_table_index);
 
-  if (destination_table_index < 0) {
+  if (destination_table_index < 0 ||
+      destination_table_index == current_table_index) {
     drake::log()->debug("Cannot find a suitable destination table.");
     return false;
   }
@@ -803,8 +819,8 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   ikoptions.setFixInitialState(false);
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
-  const int kNumRestarts = 50;
-  std::default_random_engine rand_generator{1234};
+  //ikoptions.setMajorOptimalityTolerance(1e-6);
+  const int kNumRestarts = 10;
   for (int i = 0; i < kNumRestarts; ++i) {
     MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
     for (int j = 0; j < kNumKnots; ++j) {
@@ -818,7 +834,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
       q_seed_local = ik_res.q_sol.back();
       break;
     } else {
-      q_seed_local = robot->getRandomConfiguration(rand_generator);
+      q_seed_local = robot->getRandomConfiguration(rand_generator_);
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
     }
   }
@@ -906,8 +922,8 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(RigidBodyTree<double>* iiwa,
       request.q_final = q_f;
       double max_delta_q{
           (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
-      int num_via_points = std::min<int>(
-          3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
+      int num_via_points = std::max<int>(
+          3, std::ceil(max_delta_q / request.max_joint_position_change));
       double dt{duration / static_cast<double>(num_via_points)};
       request.times.resize(num_via_points + 1);
       request.times.front() = 0.0;

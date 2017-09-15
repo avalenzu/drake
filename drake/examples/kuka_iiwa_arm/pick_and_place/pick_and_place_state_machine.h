@@ -156,6 +156,8 @@ class PickAndPlaceStateMachine {
   std::string iiwa_model_path_;
 
   double collision_avoidance_threshold_{0.01};
+
+  std::default_random_engine rand_generator_{1234};
 };
 
 }  // namespace pick_and_place

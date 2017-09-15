@@ -239,28 +239,36 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 int DoMain(void) {
   // Locations for the tables
   std::vector<Eigen::Vector3d> round_table_locations;
-  double kTallTableHeight{FLAGS_tall_table_height - kTableTopZInWorld};
-  double kShortTableHeight{FLAGS_short_table_height - kTableTopZInWorld};
-  round_table_locations.push_back(Eigen::Vector3d(0.10, 0.9, kTallTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.80, 0.36, kShortTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.80, -0.36, kTallTableHeight));
-  round_table_locations.push_back(
-      Eigen::Vector3d(0.10, -0.9, kShortTableHeight));
+  //double kTallTableHeight{FLAGS_tall_table_height - kTableTopZInWorld};
+  //double kShortTableHeight{FLAGS_short_table_height - kTableTopZInWorld};
+  round_table_locations.push_back(Vector3<double>(-0.6035, -2.5 + 0.7835, 0.0819152));
+  round_table_locations.push_back(Vector3<double>(-0.0182963,-2.5 + 1.57622, 0.171309));
+  round_table_locations.push_back(Vector3<double>(0.898657,  -2.5 + 0.346553, 0.1632));
+  round_table_locations.push_back(Vector3<double>(0.2920,  -2.5 -0.8207, 0.127372));
+  round_table_locations.push_back(Vector3<double>(-0.408241, -2.5 -0.769076, -0.106061));
+  round_table_locations.push_back(Vector3<double>(0.190728,  -2.5 + 0.781401, -0.0969398));
+  round_table_locations.push_back(Vector3<double>(-0.734374, -2.5 + 1.74791, -0.0930361));
+  round_table_locations.push_back(Vector3<double>(0.923066,  -2.5 -0.423193, -0.103131));
+  //round_table_locations.push_back(Eigen::Vector3d(0.10, 0.9, kTalTableHeight));
+  //round_table_locations.push_back(
+      //Eigen::Vector3d(0.80, 0.36, kShortTableHeight));
+  //round_table_locations.push_back(
+      //Eigen::Vector3d(0.80, -0.36, kTallTableHeight));
+  //round_table_locations.push_back(
+      //Eigen::Vector3d(0.10, -0.9, kShortTableHeight));
 
-  round_table_locations.push_back(round_table_locations[0]);
-  round_table_locations.back().y() -= 2.5;
-  round_table_locations.back().z() = kShortTableHeight;
-  round_table_locations.push_back(round_table_locations[1]);
-  round_table_locations.back().y() -= 2.5;
-  round_table_locations.back().z() = kTallTableHeight;
-  round_table_locations.push_back(round_table_locations[2]);
-  round_table_locations.back().y() -= 2.5;
-  round_table_locations.back().z() = kShortTableHeight;
-  round_table_locations.push_back(round_table_locations[3]);
-  round_table_locations.back().y() -= 2.5;
-  round_table_locations.back().z() = kTallTableHeight;
+  //round_table_locations.push_back(round_table_locations[0]);
+  //round_table_locations.back().y() -= 2.5;
+  //round_table_locations.back().z() = kShortTableHeight;
+  //round_table_locations.push_back(round_table_locations[1]);
+  //round_table_locations.back().y() -= 2.5;
+  //round_table_locations.back().z() = kTallTableHeight;
+  //round_table_locations.push_back(round_table_locations[2]);
+  //round_table_locations.back().y() -= 2.5;
+  //round_table_locations.back().z() = kShortTableHeight;
+  //round_table_locations.push_back(round_table_locations[3]);
+  //round_table_locations.back().y() -= 2.5;
+  //round_table_locations.back().z() = kTallTableHeight;
 
   // Poses for the arms
   std::vector<Isometry3<double>> iiwa_poses;

@@ -313,10 +313,19 @@
     <origin rpy="0 -1.57079632679 0" xyz="0 0 0.045"/>
   </joint>
   <link name="iiwa_link_ee">
+    <!--Rough approximation of gripper bounding box-->
     <collision>
       <origin rpy="-0.39269908 0 0" xyz="0.125 0 0"/>
       <geometry>
         <box size="0.15 0.15 0.05"/>
+      </geometry>
+      <material name="Grey"/>
+    </collision>
+    <!--Rough approximation of grasped object-->
+    <collision>
+      <origin rpy="0 0 0" xyz="0.19 0 0"/>
+      <geometry>
+        <sphere radius="0.2"/>
       </geometry>
       <material name="Grey"/>
     </collision>
