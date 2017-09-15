@@ -51,6 +51,8 @@ DEFINE_double(realtime_rate, 1.0, "Rate at which to run the simulation, "
     "relative to realtime");
 DEFINE_bool(quick, false, "Run only a brief simulation and return success "
     "without executing the entire task");
+DEFINE_double(tall_table_height, 0.91, "Height of the tall tables.");
+DEFINE_double(short_table_height, 0.66, "Height of the short tables.");
 
 using robotlocomotion::robot_plan_t;
 
@@ -237,8 +239,8 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 int DoMain(void) {
   // Locations for the tables
   std::vector<Eigen::Vector3d> round_table_locations;
-  double kTallTableHeight{0.91 - kTableTopZInWorld};
-  double kShortTableHeight{0.66 - kTableTopZInWorld};
+  double kTallTableHeight{FLAGS_tall_table_height - kTableTopZInWorld};
+  double kShortTableHeight{FLAGS_short_table_height - kTableTopZInWorld};
   round_table_locations.push_back(Eigen::Vector3d(0.10, 0.9, kTallTableHeight));
   round_table_locations.push_back(
       Eigen::Vector3d(0.80, 0.36, kShortTableHeight));
