@@ -424,6 +424,7 @@ std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
 }
 
 bool ComputeInitialAndFinalObjectPoses(
+    RigidBodyTree<double>* robot,
     const WorldState& env_state,
     std::pair<Isometry3<double>, Isometry3<double>>* X_WO_initial_and_final,
     bool ignore_tall_tables) {
@@ -447,20 +448,23 @@ bool ComputeInitialAndFinalObjectPoses(
     return false;
   }
 
-  // Find the destination table
+  // Find the current, destination, and obstacle tables
   const std::vector<Isometry3<double>>& table_poses =
       env_state.get_table_poses();
+  int current_table_index = -1;
   int destination_table_index = -1;
+  std::set<int> obstacle_table_indices;
   const double kMaxReach = 1.1;
   double min_angle = std::numeric_limits<double>::infinity();
+  double destination_table_angle = std::numeric_limits<double>::infinity();
   for (int i = 0; i < static_cast<int>(table_poses.size()); ++i) {
     const Isometry3<double> X_WT = X_WS * table_poses[i];
     Vector3<double> r_WT_in_xy_plane{X_WT.translation()};
     r_WT_in_xy_plane.z() = 0;
     drake::log()->debug("Table {}: Distance: {} m, Height: {} m", i,
                         r_WT_in_xy_plane.norm(), X_WT.translation().z());
-    if (r_WT_in_xy_plane.norm() < kMaxReach &&
-        (!ignore_tall_tables || X_WT.translation().z() < 0)) {
+    if (r_WT_in_xy_plane.norm() < kMaxReach) {
+      obstacle_table_indices.insert(i);
       Vector3<double> r_WO_in_xy_plane{
           X_WO_initial_and_final->first.translation()};
       r_WO_in_xy_plane.z() = 0;
@@ -469,22 +473,56 @@ bool ComputeInitialAndFinalObjectPoses(
       double y = (r_WT_in_xy_plane - x * (-dir_WO_in_xy_plane))
                      .dot(Vector3<double>::UnitZ().cross(-dir_WO_in_xy_plane));
       double angle = std::atan2(y, x) + M_PI;
-      //double angle = std::asin(-r_WO_in_xy_plane.normalized()
-                                   //.cross(r_WT_in_xy_plane.normalized())
-                                   //.z()) + 2*M_PI;
-      drake::log()->debug("Table {}: x = {}, y = {}, Angle: {} degrees", i, x, y, angle*180/M_PI);
-      if (angle > 20*M_PI/180 && angle < min_angle) {
-        drake::log()->debug("Table {} is the new destination candidate.", i);
-        destination_table_index = i;
-        min_angle = angle;
+      drake::log()->debug("Table {}: x = {}, y = {}, Angle: {} degrees", i, x,
+                          y, angle * 180 / M_PI);
+      if (std::abs<double>(angle) < min_angle || std::abs<double>(angle - 2*M_PI) < min_angle) {
+        drake::log()->debug(
+            "Table {} is the new current table candidate. ({} < {})", i,
+            std::abs<double>(angle) * 180 / M_PI, min_angle * 180 / M_PI);
+        current_table_index = i;
+        min_angle = std::min<double>(angle, std::abs<double>(angle - 2*M_PI));
+      }
+      if (!ignore_tall_tables || X_WT.translation().z() < 0) {
+        if (angle > 20 * M_PI / 180 && angle < destination_table_angle) {
+          drake::log()->debug("Table {} is the new destination candidate.", i);
+          destination_table_index = i;
+          destination_table_angle = angle;
+        }
       }
     }
   }
+  drake::log()->debug("Current Table Index:     {}", current_table_index);
   drake::log()->debug("Destination Table Index: {}", destination_table_index);
 
   if (destination_table_index < 0) {
     drake::log()->debug("Cannot find a suitable destination table.");
     return false;
+  }
+
+  obstacle_table_indices.erase(
+      obstacle_table_indices.find(current_table_index));
+  obstacle_table_indices.erase(
+      obstacle_table_indices.find(destination_table_index));
+  drake::log()->debug("Obstacle Table Indices:");
+  for (int index : obstacle_table_indices) {
+    drake::log()->debug("\t{}", index);
+  }
+
+  // Add obstacle tables to collision model. The source and destination tables
+  // will be taken care of by the end-effector pose constraints.
+  std::string round_table_path = FindResourceOrThrow(
+      "drake/examples/kuka_iiwa_arm/models/objects/"
+      "round_table.urdf");
+
+  for (int index : obstacle_table_indices) {
+    const Isometry3<double> X_ST = env_state.get_table_poses().at(index);
+    const Isometry3<double> X_WT{X_WS * X_ST};
+    auto round_table_frame = std::allocate_shared<RigidBodyFrame<double>>(
+        Eigen::aligned_allocator<RigidBodyFrame<double>>(), "world",
+        nullptr, X_WT.translation(), Vector3<double>::Zero());
+    parsers::urdf::AddModelInstanceFromUrdfFile(
+        round_table_path, drake::multibody::joints::kFixed,
+        round_table_frame, robot);
   }
 
   // Pose of destination table in world
@@ -518,10 +556,10 @@ bool ComputeInitialAndFinalObjectPoses(
   return true;
 }
 
-bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
-                                                   double yaw_offset,
-                                                   double pitch_offset,
-                                                   bool ignore_tall_tables) {
+bool PickAndPlaceStateMachine::ComputeDesiredPoses(
+    const std::pair<Isometry3<double>, Isometry3<double>>& X_WO_initial_and_final,
+    const WorldState& env_state, double yaw_offset, double pitch_offset,
+    bool ignore_tall_tables) {
   X_WE_desired_.clear();
 
   //     
@@ -540,14 +578,8 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
   // T  - Table frame
   // E  - End-effector frame
   // G  - Gripper frame
-  std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
-  if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final,
-                                         ignore_tall_tables)) {
-    return false;
-  }
-
-  Isometry3<double>& X_WOi = X_WO_initial_and_final.first;
-  Isometry3<double>& X_WOf = X_WO_initial_and_final.second;
+  Isometry3<double> X_WOi = X_WO_initial_and_final.first;
+  Isometry3<double> X_WOf = X_WO_initial_and_final.second;
 
   X_WOi.rotate(AngleAxis<double>(yaw_offset, Vector3<double>::UnitZ()));
 
@@ -558,6 +590,10 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
   X_OG.translation()[0] =
       std::min<double>(-0.5 * env_state.get_object_dimensions().x() +
                            0.07 * std::cos(pitch_offset),
+                       0);
+  X_OG.translation()[2] =
+      std::max<double>(0.5 * env_state.get_object_dimensions().z() -
+                           0.03 * std::cos(pitch_offset),
                        0);
 
   // Gripper is rotated relative to the end effector link.
@@ -595,9 +631,10 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
 
   // Set LiftFromPlace pose
   X_OfO.setIdentity();
-  X_OfO.translation()[2] = kPreGraspHeightOffset;
+  X_GGoffset.setIdentity();
+  X_GGoffset.translate(Vector3<double>(-0.75*kPreGraspHeightOffset, 0.0, 0.0));
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
-                        X_WOf * X_OfO * X_OG * X_GE);
+                        X_WOf * X_OfO * X_OG * X_GGoffset * X_GE);
   return true;
 }
 
@@ -648,6 +685,12 @@ PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
 bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
     RigidBodyTree<double>* robot, const WorldState& env_state,
     bool ignore_tall_tables) {
+  std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
+  if (!ComputeInitialAndFinalObjectPoses(robot, env_state, &X_WO_initial_and_final,
+                                         ignore_tall_tables)) {
+    return false;
+  }
+
   bool success = false;
   nominal_q_map_.clear();
   //  Create vectors to hold the constraint objects
@@ -658,7 +701,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<std::unique_ptr<MinDistanceConstraint>> min_distance_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
   std::vector<double> yaw_offsets{M_PI, 0.0};
-  std::vector<double> pitch_offsets{M_PI/6, 0.0};
+  std::vector<double> pitch_offsets{M_PI/4};
   int kNumJoints{robot->get_num_positions()};
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
@@ -686,8 +729,8 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
 
   for (double pitch_offset : pitch_offsets) {
     for (double yaw_offset : yaw_offsets) {
-      if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset,
-                              ignore_tall_tables)) {
+      if (ComputeDesiredPoses(X_WO_initial_and_final, env_state, yaw_offset,
+                              pitch_offset, ignore_tall_tables)) {
         constraint_array.emplace_back();
 
         for (int i = 0; i < kNumKnots; ++i) {
@@ -1021,9 +1064,6 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       std::string base_table_path = FindResourceOrThrow(
           "drake/examples/kuka_iiwa_arm/models/table/"
           "extra_heavy_duty_table_surface_only_collision.sdf");
-      std::string round_table_path = FindResourceOrThrow(
-          "drake/examples/kuka_iiwa_arm/models/objects/"
-          "round_table.urdf");
       RigidBodyTree<double> iiwa_with_environment;
       parsers::urdf::AddModelInstanceFromUrdfFileToWorld(
           iiwa_model_path_, drake::multibody::joints::kFixed,
@@ -1034,16 +1074,6 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       parsers::sdf::AddModelInstancesFromSdfFile(
           base_table_path, drake::multibody::joints::kFixed, weld_to_frame,
           &iiwa_with_environment);
-      const Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
-      for (Isometry3<double> X_ST : env_state.get_table_poses()) {
-        const Isometry3<double> X_WT{X_WS * X_ST};
-        auto round_table_frame = std::allocate_shared<RigidBodyFrame<double>>(
-            Eigen::aligned_allocator<RigidBodyFrame<double>>(), "world",
-            nullptr, X_WT.translation(), Vector3<double>::Zero());
-        parsers::urdf::AddModelInstanceFromUrdfFile(
-            round_table_path, drake::multibody::joints::kFixed,
-            round_table_frame, &iiwa_with_environment);
-      }
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
       if (ComputeTrajectories(&iiwa_with_environment, env_state,

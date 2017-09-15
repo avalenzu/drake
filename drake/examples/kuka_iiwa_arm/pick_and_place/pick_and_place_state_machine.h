@@ -103,8 +103,10 @@ class PickAndPlaceStateMachine {
                                     const WorldState& env_state,
                                     bool ignore_tall_tables);
 
-  bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset,
-                           double pitch_offset, bool ignore_tall_tables);
+  bool ComputeDesiredPoses(
+      const std::pair<Isometry3<double>, Isometry3<double>>& X_WO_initial_and_final,
+      const WorldState& env_state, double yaw_offset, double pitch_offset,
+      bool ignore_tall_tables);
 
   bool ComputeTrajectories(RigidBodyTree<double>* iiwa,
                            const WorldState& env_state,
