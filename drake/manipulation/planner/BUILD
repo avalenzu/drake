@@ -111,8 +111,13 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "kinematic_trajectory_optimization_test",
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
     deps = [
         ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
+        "//drake/multibody/parsers",
     ],
 )
 
