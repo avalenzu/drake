@@ -62,7 +62,6 @@ drake_cc_binary(
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/lcm",
-        "//drake/multibody:inverse_kinematics",
         "//drake/multibody/parsers",
         "//drake/multibody/rigid_body_plant:drake_visualizer",
         "//drake/systems/analysis:simulator",

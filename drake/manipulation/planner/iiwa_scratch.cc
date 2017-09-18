@@ -8,9 +8,7 @@
 #include "drake/lcm/drake_lcm.h"
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/math/roll_pitch_yaw.h"
-#include "drake/multibody/constraint_wrappers.h"
 #include "drake/multibody/parsers/urdf_parser.h"
-#include "drake/multibody/rigid_body_constraint.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/solvers/snopt_solver.h"
@@ -32,8 +30,6 @@ DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orien
 DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
 
 using drake::solvers::SolutionResult;
-using drake::systems::plants::KinematicsCacheHelper;
-using drake::systems::plants::SingleTimeKinematicConstraintWrapper;
 using drake::systems::trajectory_optimization::MultipleShooting;
 using drake::systems::Diagram;
 using drake::systems::DiagramBuilder;
