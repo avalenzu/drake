@@ -59,6 +59,11 @@ class KinematicTrajectoryOptimization {
 
   void AddSpatialVelocityCost(const std::string& body_name, double weight);
 
+  void AddBodyPoseConstraint(
+      int index, const std::string& body_name, const Isometry3<double>& X_WFd,
+      double position_tolerance = 0.0, double orientation_tolerance = 0.0,
+      const Isometry3<double>& X_BF = Isometry3<double>::Identity());
+
   solvers::SolutionResult Solve();
 
  private:
