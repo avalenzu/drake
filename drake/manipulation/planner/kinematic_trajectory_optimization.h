@@ -20,7 +20,7 @@ class KinematicTrajectoryOptimization {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KinematicTrajectoryOptimization)
 
-  KinematicTrajectoryOptimization(const RigidBodyTree<double>& tree,
+  KinematicTrajectoryOptimization(std::unique_ptr<RigidBodyTree<double>> tree,
                                   int num_time_samples);
 
   int num_time_samples() { return num_time_samples_; };
@@ -64,11 +64,13 @@ class KinematicTrajectoryOptimization {
       double position_tolerance = 0.0, double orientation_tolerance = 0.0,
       const Isometry3<double>& X_BF = Isometry3<double>::Identity());
 
+  void AddCollisionAvoidanceConstraint();
+
   solvers::SolutionResult Solve();
 
  private:
   std::unique_ptr<systems::trajectory_optimization::MultipleShooting> prog_;
-  std::unique_ptr<const RigidBodyTree<double>> tree_;
+  std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
   std::unique_ptr<systems::LinearSystem<double>> system_;
   double dt_{0.1};

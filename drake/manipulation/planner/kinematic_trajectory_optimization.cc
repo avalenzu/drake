@@ -92,7 +92,7 @@ class BodyPoseConstraint : public Constraint {
     y(1) = X_FdF.translation().squaredNorm();
   }
 
-  int numOutputs() const { return 1; };
+  int numOutputs() const { return 2; };
 
  private:
   const RigidBodyTree<double>& tree_;
@@ -100,11 +100,72 @@ class BodyPoseConstraint : public Constraint {
   const Isometry3<double> X_WFd_;
   const Isometry3<double> X_BF_;
 };
+
+class CollisionAvoidanceConstraint : public Constraint {
+ public:
+  CollisionAvoidanceConstraint(const RigidBodyTree<double>& tree)
+      : Constraint(1, tree.get_num_positions(), Vector1<double>(0),
+                   Vector1<double>(0)),
+        tree_(tree) {}
+
+  virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      Eigen::VectorXd& y) const {
+    AutoDiffVecXd y_t;
+    Eval(math::initializeAutoDiff(x), y_t);
+    y = math::autoDiffToValueMatrix(y_t);
+  }
+
+  virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      AutoDiffVecXd& y) const {
+    const AutoDiffVecXd q = x.head(tree_.get_num_positions());
+    const VectorX<double> q_value = math::autoDiffToValueMatrix(q);
+
+    KinematicsCache<AutoDiffXd> autodiff_cache = tree_.doKinematics(q);
+    KinematicsCache<double> cache = tree_.doKinematics(q_value);
+    std::vector<drake::multibody::collision::PointPair> pairs =
+        const_cast<RigidBodyTree<double>*>(&tree_)
+            ->ComputeMaximumDepthCollisionPoints(cache, true);
+    const int kNumPairs = pairs.size();
+    y(0) = 0;
+    y(0).derivatives().resize(q.size());
+    y(0).derivatives().setZero();
+    if (kNumPairs > 0) {
+      drake::log()->debug("Number of collision pairs: {}", kNumPairs);
+      VectorX<int> idxA, idxB;
+      Matrix3X<double> xA, xB;
+      AutoDiffVecXd distance;
+      VectorX<double> distance_value(kNumPairs);
+      for (int i = 0; i < kNumPairs; ++i) {
+        idxA(i) = pairs.at(i).elementA->get_body()->get_body_index();
+        idxB(i) = pairs.at(i).elementB->get_body()->get_body_index();
+        xA.col(i) = pairs.at(i).ptA;
+        xB.col(i) = pairs.at(i).ptB;
+        distance_value(i) = pairs.at(i).distance;
+      }
+      MatrixX<double> J;
+      tree_.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
+      math::initializeAutoDiffGivenGradientMatrix(distance_value, J, distance);
+      for (int i = 0; i < kNumPairs; ++i) {
+        if (distance(i) < 0) {
+          y(0) += -distance(i) * exp(1 / distance(i));
+        }
+      }
+      drake::log()->debug("Constraint value: {}", math::autoDiffToValueMatrix(y));
+    }
+  }
+
+  int numOutputs() const { return 1; };
+
+ private:
+  const RigidBodyTree<double>& tree_;
+};
 }  // namespace
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
-    const RigidBodyTree<double>& tree, int num_time_samples)
-    : tree_(tree.Clone()),
+    std::unique_ptr<RigidBodyTree<double>> tree, int num_time_samples)
+    : tree_(std::move(tree)),
       num_time_samples_(num_time_samples) {
   const int kNumStates{3 * num_positions()};
   const int kNumInputs{num_positions()};
@@ -156,6 +217,15 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
   VectorXDecisionVariable vars{num_positions()};
   vars.head(num_positions()) = prog_->state(index).head(num_positions());
   prog_->AddConstraint(constraint, vars);
+}
+
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint() {
+  for (int i = 0; i < num_time_samples_ - 1; ++i) {
+    auto constraint = std::make_shared<CollisionAvoidanceConstraint>(*tree_);
+    VectorXDecisionVariable vars{num_positions()};
+    vars.head(num_positions()) = prog_->state(i).head(num_positions());
+    prog_->AddConstraint(constraint, vars);
+  }
 }
 
 void KinematicTrajectoryOptimization::AddRunningCost(
