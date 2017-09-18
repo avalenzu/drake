@@ -97,8 +97,8 @@ int DoMain() {
     iss_final_ee_orientation >> rpy_WFf(i);
     DRAKE_THROW_UNLESS(!iss_final_ee_orientation.fail());
   }
-  X_WF0.linear() = drake::math::rpy2rotmat(rpy_WF0);
-  X_WFf.linear() = drake::math::rpy2rotmat(rpy_WFf);
+  X_WF0.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WF0);
+  X_WFf.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WFf);
 
   const double kOrientationTolerance{FLAGS_orientation_tolerance*M_PI/180};
 
