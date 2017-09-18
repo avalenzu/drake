@@ -85,7 +85,7 @@ int DoMain() {
   prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", 1e5);
 
-  const int kNumPositions = iiwa->get_num_positions();
+  const int kNumPositions = kin_traj_opt.tree().get_num_positions();
 
   // v[0] = 0.
   VectorX<double> v0{VectorX<double>::Zero(kin_traj_opt.num_velocities())};
@@ -169,7 +169,7 @@ int DoMain() {
   // logger->get_input_port(0));
 
   lcm::DrakeLcm lcm;
-  auto visualizer = builder.AddSystem<DrakeVisualizer>(*iiwa, &lcm, true);
+  auto visualizer = builder.AddSystem<DrakeVisualizer>(kin_traj_opt.tree(), &lcm, true);
 
   auto gain = builder.AddSystem<systems::LinearSystem<double>>(
       MatrixX<double>::Zero(0, 0), MatrixX<double>::Zero(0, 2 * kNumPositions),
