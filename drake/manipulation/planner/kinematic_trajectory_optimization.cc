@@ -10,6 +10,7 @@ using drake::systems::trajectory_optimization::DirectTranscription;
 using drake::solvers::SolutionResult;
 using drake::solvers::VectorXDecisionVariable;
 using drake::solvers::Cost;
+using drake::solvers::Constraint;
 
 namespace drake {
 namespace manipulation {
@@ -50,6 +51,66 @@ class SpatialVelocityCost : public Cost {
   const RigidBodyTree<double>& tree_;
   const RigidBody<double>& body_;
   const double dt_;
+};
+
+class BodyPoseConstraint : public Constraint {
+ public:
+  BodyPoseConstraint(const RigidBodyTree<double>& tree,
+                     const RigidBody<double>& body,
+                     const Isometry3<double>& X_WFd, double position_tolerance,
+                     double orientation_tolerance,
+                     Isometry3<double> X_BF = Isometry3<double>::Identity())
+      : Constraint(2, tree.get_num_positions(), Vector2<double>(0.0, 0.0),
+                   Vector2<double>(orientation_tolerance,
+                                   std::pow(position_tolerance, 2.0))),
+        tree_(tree),
+        body_(body),
+        X_WFd_(X_WFd),
+        X_BF_(X_BF) {}
+
+  virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      Eigen::VectorXd& y) const {
+    AutoDiffVecXd y_t;
+    Eval(math::initializeAutoDiff(x), y_t);
+    y = math::autoDiffToValueMatrix(y_t);
+  }
+
+  virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      AutoDiffVecXd& y) const {
+    const AutoDiffVecXd q = x.head(tree_.get_num_positions());
+    Isometry3<AutoDiffXd> X_BF;
+    Vector3<AutoDiffXd> r_BF;
+    Matrix3<AutoDiffXd> R_BF;
+    math::initializeAutoDiff(X_BF_.translation(), r_BF, x(0).derivatives().size(), x(0).derivatives().size());
+    math::initializeAutoDiff(X_BF_.rotation(), R_BF, x(0).derivatives().size(), x(0).derivatives().size());
+    X_BF.translation() = r_BF;
+    X_BF.linear() = R_BF;
+
+    Isometry3<AutoDiffXd> X_WFd;
+    Vector3<AutoDiffXd> r_WFd;
+    Matrix3<AutoDiffXd> R_WFd;
+    math::initializeAutoDiff(X_WFd_.translation(), r_WFd, x(0).derivatives().size(), x(0).derivatives().size());
+    math::initializeAutoDiff(X_WFd_.rotation(), R_WFd, x(0).derivatives().size(), x(0).derivatives().size());
+    X_WFd.translation() = r_WFd;
+    X_WFd.linear() = R_WFd;
+
+    KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
+    const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(cache, body_, X_BF)};
+    Isometry3<AutoDiffXd> X_FdF = X_WFd.inverse()*X_WF;
+
+    y(0) = AngleAxis<AutoDiffXd>(X_FdF.rotation()).angle();
+    y(1) = X_FdF.translation().squaredNorm();
+  }
+
+  int numOutputs() const { return 1; };
+
+ private:
+  const RigidBodyTree<double>& tree_;
+  const RigidBody<double>& body_;
+  const Isometry3<double> X_WFd_;
+  const Isometry3<double> X_BF_;
 };
 }  // namespace
 
@@ -95,6 +156,18 @@ void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& 
         prog_->state(i).head(num_positions() + num_velocities());
     prog_->AddCost(cost, vars);
   }
+}
+
+void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
+    int index, const std::string& body_name, const Isometry3<double>& X_WFd,
+    double position_tolerance, double orientation_tolerance,
+    const Isometry3<double>& X_BF) {
+  const RigidBody<double>* body = tree_->FindBody(body_name);
+  auto constraint = std::make_shared<BodyPoseConstraint>(
+      *tree_, *body, X_WFd, position_tolerance, orientation_tolerance, X_BF);
+  VectorXDecisionVariable vars{num_positions()};
+  vars.head(num_positions()) = prog_->state(index).head(num_positions());
+  prog_->AddConstraint(constraint, vars);
 }
 
 void KinematicTrajectoryOptimization::AddRunningCost(
