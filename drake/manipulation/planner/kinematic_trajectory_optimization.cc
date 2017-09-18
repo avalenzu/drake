@@ -57,12 +57,12 @@ class BodyPoseConstraint : public Constraint {
  public:
   BodyPoseConstraint(const RigidBodyTree<double>& tree,
                      const RigidBody<double>& body,
-                     const Isometry3<double>& X_WFd, double position_tolerance,
-                     double orientation_tolerance,
+                     const Isometry3<double>& X_WFd,
+                     double orientation_tolerance, double position_tolerance,
                      Isometry3<double> X_BF = Isometry3<double>::Identity())
-      : Constraint(2, tree.get_num_positions(), Vector2<double>(0.0, 0.0),
-                   Vector2<double>(orientation_tolerance,
-                                   std::pow(position_tolerance, 2.0))),
+      : Constraint(2, tree.get_num_positions(),
+                   Vector2<double>(cos(orientation_tolerance), 0.0),
+                   Vector2<double>(1.0, std::pow(position_tolerance, 2.0))),
         tree_(tree),
         body_(body),
         X_WFd_(X_WFd),
@@ -80,27 +80,15 @@ class BodyPoseConstraint : public Constraint {
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       AutoDiffVecXd& y) const {
     const AutoDiffVecXd q = x.head(tree_.get_num_positions());
-    Isometry3<AutoDiffXd> X_BF;
-    Vector3<AutoDiffXd> r_BF;
-    Matrix3<AutoDiffXd> R_BF;
-    math::initializeAutoDiff(X_BF_.translation(), r_BF, x(0).derivatives().size(), x(0).derivatives().size());
-    math::initializeAutoDiff(X_BF_.rotation(), R_BF, x(0).derivatives().size(), x(0).derivatives().size());
-    X_BF.translation() = r_BF;
-    X_BF.linear() = R_BF;
-
-    Isometry3<AutoDiffXd> X_WFd;
-    Vector3<AutoDiffXd> r_WFd;
-    Matrix3<AutoDiffXd> R_WFd;
-    math::initializeAutoDiff(X_WFd_.translation(), r_WFd, x(0).derivatives().size(), x(0).derivatives().size());
-    math::initializeAutoDiff(X_WFd_.rotation(), R_WFd, x(0).derivatives().size(), x(0).derivatives().size());
-    X_WFd.translation() = r_WFd;
-    X_WFd.linear() = R_WFd;
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
-    const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(cache, body_, X_BF)};
-    Isometry3<AutoDiffXd> X_FdF = X_WFd.inverse()*X_WF;
+    const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(cache, body_, X_BF_.cast<AutoDiffXd>())};
+    Isometry3<AutoDiffXd> X_FdF = X_WFd_.inverse().cast<AutoDiffXd>()*X_WF;
 
-    y(0) = AngleAxis<AutoDiffXd>(X_FdF.rotation()).angle();
+    AutoDiffXd prod{Quaternion<AutoDiffXd>(X_FdF.linear())
+                        .coeffs()
+                        .dot(Quaternion<AutoDiffXd>::Identity().coeffs())};
+    y(0) = 2.0 * prod * prod - 1;
     y(1) = X_FdF.translation().squaredNorm();
   }
 
@@ -160,11 +148,11 @@ void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& 
 
 void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
     int index, const std::string& body_name, const Isometry3<double>& X_WFd,
-    double position_tolerance, double orientation_tolerance,
+    double orientation_tolerance, double position_tolerance,
     const Isometry3<double>& X_BF) {
   const RigidBody<double>* body = tree_->FindBody(body_name);
   auto constraint = std::make_shared<BodyPoseConstraint>(
-      *tree_, *body, X_WFd, position_tolerance, orientation_tolerance, X_BF);
+      *tree_, *body, X_WFd, orientation_tolerance, position_tolerance, X_BF);
   VectorXDecisionVariable vars{num_positions()};
   vars.head(num_positions()) = prog_->state(index).head(num_positions());
   prog_->AddConstraint(constraint, vars);
