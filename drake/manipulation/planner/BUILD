@@ -64,6 +64,7 @@ drake_cc_binary(
         "//drake/lcm",
         "//drake/multibody/parsers",
         "//drake/multibody/rigid_body_plant:drake_visualizer",
+        "//drake/multibody:rigid_body_tree_construction",
         "//drake/systems/analysis:simulator",
         "//drake/systems/framework:diagram_builder",
         "//drake/systems/primitives:linear_system",

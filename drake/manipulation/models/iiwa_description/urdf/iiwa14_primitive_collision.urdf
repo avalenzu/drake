@@ -288,10 +288,19 @@
       <!--0.3 Original Drake URDF value-->
       <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
     </inertial>
+    <!--<visual>-->
+      <!--<origin rpy="0 0 0" xyz="0 0 0"/>-->
+      <!--<geometry>-->
+        <!--<mesh filename="../meshes/visual/link_7.obj"/>-->
+      <!--</geometry>-->
+      <!--<material name="Grey"/>-->
+    <!--</visual>-->
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/visual/link_7.obj"/>
+        <!-- Note that the mesh-based collision model is intentionally being
+            used despite being in "primitive" mode. -->
+        <mesh filename="../meshes/collision/link_7.obj"/>
       </geometry>
       <material name="Grey"/>
     </visual>

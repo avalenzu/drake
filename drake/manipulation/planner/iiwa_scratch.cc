@@ -11,6 +11,7 @@
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_tree.h"
+#include "drake/multibody/rigid_body_tree_construction.h"
 #include "drake/solvers/snopt_solver.h"
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
@@ -28,6 +29,9 @@ DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
 DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
 DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
+DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_size, "0.2 0.2 0.5", "Dimensions of obstacle (m)");
+DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -44,20 +48,44 @@ namespace planner {
 int DoMain() {
   const std::string kModelPath = FindResourceOrThrow(
       "drake/manipulation/models/iiwa_description/urdf/"
-      "iiwa14_polytope_collision.urdf");
-  RigidBodyTree<double> iiwa{};
+      "iiwa14_primitive_collision.urdf");
+  auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
-      kModelPath, multibody::joints::kFixed, nullptr, &iiwa);
+      kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
+  drake::multibody::AddFlatTerrainToWorld(iiwa.get());
+
+  // Add an obstacle to the world
+  std::istringstream iss_obstacle_position{FLAGS_obstacle_position};
+  std::istringstream iss_obstacle_size{FLAGS_obstacle_size};
+  Vector3<double> obstacle_size;
+  Isometry3<double> X_WO{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_size >> obstacle_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_size.fail());
+    iss_obstacle_position >> X_WO.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO.translation().z() += obstacle_size.z() / 2;
+  DrakeShapes::Box geom(obstacle_size);
+  RigidBody<double>& world = iiwa->world();
+  Eigen::Vector4d color;
+  color << 0.5, 0.5, 0.5, 1;
+  world.AddVisualElement(DrakeShapes::VisualElement(geom, X_WO, color));
+  iiwa->addCollisionElement(
+      drake::multibody::collision::Element(geom, X_WO, &world), world,
+      "terrain");
+  iiwa->compile();
 
   const int kNumKnots = std::ceil(FLAGS_duration / 0.1) + 1;
   drake::log()->info("Number of knots: {}", kNumKnots);
 
-  KinematicTrajectoryOptimization kin_traj_opt{iiwa, kNumKnots};
+  KinematicTrajectoryOptimization kin_traj_opt{std::move(iiwa), kNumKnots};
   MultipleShooting* prog = kin_traj_opt.mutable_prog();
   prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", 1e5);
 
-  const int kNumPositions = iiwa.get_num_positions();
+  const int kNumPositions = iiwa->get_num_positions();
 
   // v[0] = 0.
   VectorX<double> v0{VectorX<double>::Zero(kin_traj_opt.num_velocities())};
@@ -104,6 +132,8 @@ int DoMain() {
   kin_traj_opt.AddBodyPoseConstraint(kNumKnots - 1, "iiwa_link_ee", X_WFf,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
+  // Add collision avoidance constraints
+  kin_traj_opt.AddCollisionAvoidanceConstraint();
 
   SolutionResult result{prog->Solve()};
   drake::log()->info("Solver returns {}.", result);
@@ -119,8 +149,14 @@ int DoMain() {
     knots.push_back(x_sol.value(t).topRows(2 * kNumPositions));
     knots_dot.push_back(x_sol.value(t).bottomRows(2 * kNumPositions));
   }
-  PiecewisePolynomialTrajectory q_and_v_traj{
-      PiecewisePolynomial<double>::Cubic(breaks, knots, knots_dot)};
+  std::unique_ptr<PiecewisePolynomialTrajectory> q_and_v_traj;
+  if (FLAGS_animate_with_zoh) {
+    q_and_v_traj = std::make_unique<PiecewisePolynomialTrajectory>(
+        PiecewisePolynomial<double>::ZeroOrderHold(breaks, knots));
+  } else {
+    q_and_v_traj = std::make_unique<PiecewisePolynomialTrajectory>(
+        PiecewisePolynomial<double>::Cubic(breaks, knots, knots_dot));
+  }
 
   DiagramBuilder<double> builder;
 
@@ -128,12 +164,12 @@ int DoMain() {
   // iiwa.get_num_positions() + iiwa.get_num_velocities());
 
   auto trajectory_source =
-      builder.AddSystem<TrajectorySource<double>>(q_and_v_traj);
+      builder.AddSystem<TrajectorySource<double>>(*q_and_v_traj);
   // builder.Connect(trajectory_source->get_output_port(),
   // logger->get_input_port(0));
 
   lcm::DrakeLcm lcm;
-  auto visualizer = builder.AddSystem<DrakeVisualizer>(iiwa, &lcm, true);
+  auto visualizer = builder.AddSystem<DrakeVisualizer>(*iiwa, &lcm, true);
 
   auto gain = builder.AddSystem<systems::LinearSystem<double>>(
       MatrixX<double>::Zero(0, 0), MatrixX<double>::Zero(0, 2 * kNumPositions),
