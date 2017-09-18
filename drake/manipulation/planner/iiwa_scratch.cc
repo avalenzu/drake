@@ -66,54 +66,12 @@ namespace planner {
 
     kin_traj_opt.AddRunningCost(kin_traj_opt.input().transpose()*kin_traj_opt.input());
     kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee", FLAGS_spatial_velocity_weight);
-
-    // Move end effector along straight line path
-    //int end_effector_idx = iiwa.FindBodyIndex("iiwa_link_ee");
-    //int world_idx = iiwa.FindBodyIndex("world");
-    //const double kEndEffectorToMidFingerDepth = 0.12;
-    //Vector3<double> end_effector_points{kEndEffectorToMidFingerDepth, 0, 0};
-
-    //auto kinematics_cache = iiwa.CreateKinematicsCache();
-    //std::pair<Isometry3<double>, Isometry3<double>> X_WE;
-
-    //kinematics_cache.initialize(x0.head(kNumPositions));
-    //iiwa.doKinematics(kinematics_cache);
-    //X_WE.first =
-        //iiwa.relativeTransform(kinematics_cache, world_idx, end_effector_idx);
-
-    //kinematics_cache.initialize(xf.head(kNumPositions));
-    //iiwa.doKinematics(kinematics_cache);
-    //X_WE.second =
-        //iiwa.relativeTransform(kinematics_cache, world_idx, end_effector_idx);
-
-    //Eigen::Matrix<double, 3, 2> line_ends_W;
-    //line_ends_W << X_WE.first.translation(), X_WE.second.translation();
-
-    //double dist_lb{0.0};
-    //double dist_ub{0.005};
-    //Point2LineSegDistConstraint point_to_line_seg_constraint{
-		    //&iiwa, end_effector_idx, end_effector_points, world_idx,
-		    //line_ends_W, dist_lb, dist_ub};
-
-    // Find axis-angle representation of the rotation from X_WE.first to
-    // X_WE.second.
-    //Isometry3<double> X_second_first = X_WE.second.inverse() * X_WE.first;
-    //Eigen::AngleAxis<double> aaxis{X_second_first.linear()};
-    //Vector3<double> axis_E{aaxis.axis()};
-    //Vector3<double> dir_W{X_WE.first.linear() * axis_E};
-
-    //WorldGazeDirConstraint gaze_dir_constraint{&iiwa, end_effector_idx, axis_E,
-                                               //dir_W, 0.01};
-
-    //KinematicsCacheHelper<double> kin_helper{iiwa.bodies};
-    //auto point_to_line_wrapper = std::make_shared<SingleTimeKinematicConstraintWrapper>(
-        //&point_to_line_seg_constraint, &kin_helper);
-    //auto gaze_dir_wrapper = std::make_shared<SingleTimeKinematicConstraintWrapper>(
-        //&gaze_dir_constraint, &kin_helper);
-    //for (int i = 0; i < kin_traj_opt.num_time_samples(); ++i) {
-      //prog->AddConstraint(point_to_line_wrapper, prog->state(i).head(kNumPositions)); 
-      //prog->AddConstraint(gaze_dir_wrapper, prog->state(i).head(kNumPositions)); 
-    //}
+    Isometry3<double> X_WF0{Isometry3<double>::Identity()};
+    X_WF0.translate(Vector3<double>(0.75, 0.75, 0.75));
+    Isometry3<double> X_WFf{Isometry3<double>::Identity()};
+    X_WFf.translate(Vector3<double>(0.75, -0.75, 0.75));
+    kin_traj_opt.AddBodyPoseConstraint(0, "iiwa_link_ee", X_WF0);
+    //kin_traj_opt.AddBodyPoseConstraint(kNumKnots, "iiwa_link_ee", X_WFf);
 
     SolutionResult result{prog->Solve()};
     drake::log()->info("Solver returns {}.", result);
