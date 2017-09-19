@@ -21,13 +21,15 @@
 #include "drake/systems/primitives/trajectory_source.h"
 
 DEFINE_double(duration, 2, "Duration of trajectory.");
-DEFINE_double(spatial_velocity_weight, 1e3,
+DEFINE_double(spatial_velocity_weight, 1e1,
               "Relative weight of end-effector spatial velocity cost");
+DEFINE_double(jerk_weight, 1e0,
+              "Relative weight of jerk-squared cost");
 DEFINE_double(orientation_tolerance, 0.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.0, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
-DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at knot points");
-DEFINE_double(max_velocity, 10, "Maximum joint-velocity for all joints");
+DEFINE_double(collision_avoidance_threshold, 0.1, "Minimum distance to obstacles at knot points");
+DEFINE_double(max_velocity, 5, "Maximum joint-velocity for all joints");
 DEFINE_double(optimality_tolerance, 1e-6, "Major optimality tolerance for solver");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
@@ -84,7 +86,8 @@ int DoMain() {
       "terrain");
   iiwa->compile();
 
-  const int kNumKnots = std::ceil(FLAGS_duration / 0.1) + 1;
+  const double kDuration{FLAGS_duration};
+  const int kNumKnots = std::ceil(kDuration / 0.1) + 1;
   drake::log()->info("Number of knots: {}", kNumKnots);
 
   KinematicTrajectoryOptimization kin_traj_opt{std::move(iiwa), kNumKnots};
@@ -102,12 +105,23 @@ int DoMain() {
 
   const int kNumPositions = kin_traj_opt.tree().get_num_positions();
 
+  // q[0] = 0
+  prog->AddLinearConstraint(
+      prog->initial_state().head(kin_traj_opt.num_positions()) ==
+      kin_traj_opt.tree().getZeroConfiguration());
+
   // v[0] = 0 and a[0] = 0.
   prog->AddLinearConstraint(
       prog->initial_state().tail(2 * kin_traj_opt.num_velocities()) ==
       VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
 
-  // v[tf] = 0.
+  // v[tmid] = 0 and a[tmid] = 0.
+  const int kMidKnotIndex{kNumKnots/2};
+  prog->AddLinearConstraint(
+      prog->state(kMidKnotIndex).tail(2 * kin_traj_opt.num_velocities()) ==
+      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
+
+  // v[tf] = 0 and a[tf] = 0.
   prog->AddLinearConstraint(
       prog->final_state().tail(2 * kin_traj_opt.num_velocities()) ==
       VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
@@ -125,12 +139,12 @@ int DoMain() {
       -FLAGS_max_velocity *
           VectorX<double>::Ones(kin_traj_opt.num_velocities()));
 
-  kin_traj_opt.AddRunningCost(kin_traj_opt.input().transpose() *
+  kin_traj_opt.AddRunningCost(FLAGS_jerk_weight * kin_traj_opt.input().transpose() *
                               kin_traj_opt.input());
   kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee",
                                       FLAGS_spatial_velocity_weight);
 
-  // Add initial and final pose constraints
+  // Add middle and final pose constraints
   Isometry3<double> X_WF0{Isometry3<double>::Identity()};
   Isometry3<double> X_WFf{Isometry3<double>::Identity()};
   Vector3<double> rpy_WF0;
@@ -154,7 +168,7 @@ int DoMain() {
 
   const double kOrientationTolerance{FLAGS_orientation_tolerance*M_PI/180};
 
-  kin_traj_opt.AddBodyPoseConstraint(0, "iiwa_link_ee", X_WF0,
+  kin_traj_opt.AddBodyPoseConstraint(kMidKnotIndex, "iiwa_link_ee", X_WF0,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   kin_traj_opt.AddBodyPoseConstraint(kNumKnots - 1, "iiwa_link_ee", X_WFf,
