@@ -20,21 +20,25 @@
 #include "drake/systems/primitives/signal_logger.h"
 #include "drake/systems/primitives/trajectory_source.h"
 
-DEFINE_double(duration, 1, "Duration of trajectory.");
-DEFINE_double(spatial_velocity_weight, 1,
+DEFINE_double(duration, 2, "Duration of trajectory.");
+DEFINE_double(spatial_velocity_weight, 1e3,
               "Relative weight of end-effector spatial velocity cost");
 DEFINE_double(orientation_tolerance, 0.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.0, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
 DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at knot points");
+DEFINE_double(max_velocity, 10, "Maximum joint-velocity for all joints");
+DEFINE_double(optimality_tolerance, 1e-6, "Major optimality tolerance for solver");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
 DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
 DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
 DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
-DEFINE_string(obstacle_size, "0.2 0.2 0.5", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
+DEFINE_int32(num_restarts, 10, "Number of random restarts allowed");
+DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -86,19 +90,40 @@ int DoMain() {
   KinematicTrajectoryOptimization kin_traj_opt{std::move(iiwa), kNumKnots};
   MultipleShooting* prog = kin_traj_opt.mutable_prog();
   prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
-                        "Major iterations limit", 1e5);
+                        "Major iterations limit", FLAGS_iteration_limit);
+  prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
+                        "Major optimality tolerance",
+                        FLAGS_optimality_tolerance);
+
+  lcm::DrakeLcm lcm;
+  lcm.StartReceiveThread();
+  DrakeVisualizer visualizer{kin_traj_opt.tree(), &lcm, true};
+  visualizer.PublishLoadRobot();
 
   const int kNumPositions = kin_traj_opt.tree().get_num_positions();
 
-  // v[0] = 0.
-  VectorX<double> v0{VectorX<double>::Zero(kin_traj_opt.num_velocities())};
+  // v[0] = 0 and a[0] = 0.
   prog->AddLinearConstraint(
-      prog->initial_state().tail(kin_traj_opt.num_velocities()) == v0);
+      prog->initial_state().tail(2 * kin_traj_opt.num_velocities()) ==
+      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
 
   // v[tf] = 0.
-  VectorX<double> vf{VectorX<double>::Zero(kin_traj_opt.num_velocities())};
   prog->AddLinearConstraint(
-      prog->final_state().tail(kin_traj_opt.num_velocities()) == vf);
+      prog->final_state().tail(2 * kin_traj_opt.num_velocities()) ==
+      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
+
+  // v[i] < v_max
+  prog->AddConstraintToAllKnotPoints(
+      prog->state().segment(kin_traj_opt.num_positions(),
+                            kin_traj_opt.num_velocities()) <=
+      FLAGS_max_velocity *
+          VectorX<double>::Ones(kin_traj_opt.num_velocities()));
+
+  prog->AddConstraintToAllKnotPoints(
+      prog->state().segment(kin_traj_opt.num_positions(),
+                            kin_traj_opt.num_velocities()) >=
+      -FLAGS_max_velocity *
+          VectorX<double>::Ones(kin_traj_opt.num_velocities()));
 
   kin_traj_opt.AddRunningCost(kin_traj_opt.input().transpose() *
                               kin_traj_opt.input());
@@ -139,8 +164,18 @@ int DoMain() {
   kin_traj_opt.AddCollisionAvoidanceConstraint(
       FLAGS_collision_avoidance_threshold);
 
-  SolutionResult result{prog->Solve()};
-  drake::log()->info("Solver returns {}.", result);
+  std::default_random_engine rand_generator{1234};
+  SolutionResult result{drake::solvers::kUnknownError};
+  for (int k = 0; k < FLAGS_num_restarts; ++k) {
+    for (int i = 0; i < kNumKnots; ++i) {
+      prog->SetInitialGuess(
+          prog->state(i).head(kin_traj_opt.num_positions()),
+          kin_traj_opt.tree().getRandomConfiguration(rand_generator));
+    }
+    result = prog->Solve();
+    drake::log()->info("Attempt {}: Solver returns {}.", k, result);
+    if (result == drake::solvers::kSolutionFound) break;
+  }
 
   auto x_sol = prog->ReconstructStateTrajectory();
   std::vector<double> breaks{
@@ -165,9 +200,6 @@ int DoMain() {
         PiecewisePolynomial<double>::Cubic(breaks, knots, knots_dot));
   }
 
-  lcm::DrakeLcm lcm;
-  lcm.StartReceiveThread();
-  DrakeVisualizer visualizer{kin_traj_opt.tree(), &lcm, true};
   while (true) {
     visualizer.PlaybackTrajectory(q_and_v_traj->get_piecewise_polynomial());
   }
