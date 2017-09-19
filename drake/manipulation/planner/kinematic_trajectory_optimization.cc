@@ -167,9 +167,9 @@ class CollisionAvoidanceConstraint : public Constraint {
                                                   distance);
       for (int i = 0; i < kNumPairs; ++i) {
         if (distance(i) < 2*collision_avoidance_threshold_) {
-          drake::log()->debug(
-              "\t{} and {}: {} m", tree_.get_body(idxA(i)).get_name(),
-              tree_.get_body(idxB(i)).get_name(), distance_value(i));
+          //drake::log()->debug(
+              //"\t{} and {}: {} m", tree_.get_body(idxA(i)).get_name(),
+              //tree_.get_body(idxB(i)).get_name(), distance_value(i));
           distance(i) /= collision_avoidance_threshold_;
           distance(i) -= 2;
           //y(0) += distance(i) * distance(i);
