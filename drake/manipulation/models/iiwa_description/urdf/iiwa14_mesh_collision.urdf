@@ -49,20 +49,20 @@
       <mass value="5"/>
       <inertia ixx="0.05" ixy="0" ixz="0" iyy="0.06" iyz="0" izz="0.03"/>
     </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="../meshes/visual/link_0.obj"/>
-      </geometry>
-      <material name="Grey"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="../meshes/collision/link_0.obj"/>
-      </geometry>
-      <material name="Grey"/>
-    </collision>
+    <!--<visual>-->
+      <!--<origin rpy="0 0 0" xyz="0 0 0"/>-->
+      <!--<geometry>-->
+        <!--<mesh filename="../meshes/visual/link_0.obj"/>-->
+      <!--</geometry>-->
+      <!--<material name="Grey"/>-->
+    <!--</visual>-->
+    <!--<collision>-->
+      <!--<origin rpy="0 0 0" xyz="0 0 0"/>-->
+      <!--<geometry>-->
+        <!--<mesh filename="../meshes/collision/link_0.obj"/>-->
+      <!--</geometry>-->
+      <!--<material name="Grey"/>-->
+    <!--</collision>-->
     <self_collision_checking>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
@@ -446,4 +446,16 @@
       <mechanicalReduction>1</mechanicalReduction>
     </actuator>
   </transmission>
+  <collision_filter_group name="arm">
+    <member link="iiwa_link_0"/>
+    <member link="iiwa_link_1"/>
+    <member link="iiwa_link_2"/>
+    <member link="iiwa_link_3"/>
+    <member link="iiwa_link_4"/>
+    <member link="iiwa_link_5"/>
+    <member link="iiwa_link_6"/>
+    <member link="iiwa_link_7"/>
+    <member link="iiwa_link_ee"/>
+    <ignored_collision_filter_group collision_filter_group="arm"/>
+  </collision_filter_group>
 </robot>

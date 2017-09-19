@@ -103,10 +103,12 @@ class BodyPoseConstraint : public Constraint {
 
 class CollisionAvoidanceConstraint : public Constraint {
  public:
-  CollisionAvoidanceConstraint(const RigidBodyTree<double>& tree)
+  CollisionAvoidanceConstraint(const RigidBodyTree<double>& tree,
+                               double collision_avoidance_threshold)
       : Constraint(1, tree.get_num_positions(), Vector1<double>(0),
-                   Vector1<double>(0)),
-        tree_(tree) {}
+                   Vector1<double>(exp(-1))),
+        tree_(tree),
+        collision_avoidance_threshold_(collision_avoidance_threshold) {}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
@@ -124,35 +126,57 @@ class CollisionAvoidanceConstraint : public Constraint {
 
     KinematicsCache<AutoDiffXd> autodiff_cache = tree_.doKinematics(q);
     KinematicsCache<double> cache = tree_.doKinematics(q_value);
-    std::vector<drake::multibody::collision::PointPair> pairs =
-        const_cast<RigidBodyTree<double>*>(&tree_)
-            ->ComputeMaximumDepthCollisionPoints(cache, true);
-    const int kNumPairs = pairs.size();
+    VectorX<double> distance_value;
+    Matrix3X<double> xA, xB, normal;
+    std::vector<int> idxA_tmp;
+    std::vector<int> idxB_tmp;
+    const_cast<RigidBodyTree<double>&>(tree_).collisionDetect(cache, distance_value, normal, xA, xB, idxA_tmp, idxB_tmp);
+    const int kNumPairs = distance_value.size();
+    //std::vector<drake::multibody::collision::PointPair> pairs =
+        //const_cast<RigidBodyTree<double>*>(&tree_)
+            //->ComputeMaximumDepthCollisionPoints(cache, true);
+    //const int kNumPairs = pairs.size();
     y(0) = 0;
     y(0).derivatives().resize(q.size());
     y(0).derivatives().setZero();
     if (kNumPairs > 0) {
-      drake::log()->debug("Number of collision pairs: {}", kNumPairs);
-      VectorX<int> idxA, idxB;
-      Matrix3X<double> xA, xB;
-      AutoDiffVecXd distance;
-      VectorX<double> distance_value(kNumPairs);
+      //drake::log()->debug("Number of collision pairs: {}", kNumPairs);
+      VectorX<int> idxA(kNumPairs);
+      VectorX<int> idxB(kNumPairs);
       for (int i = 0; i < kNumPairs; ++i) {
-        idxA(i) = pairs.at(i).elementA->get_body()->get_body_index();
-        idxB(i) = pairs.at(i).elementB->get_body()->get_body_index();
-        xA.col(i) = pairs.at(i).ptA;
-        xB.col(i) = pairs.at(i).ptB;
-        distance_value(i) = pairs.at(i).distance;
+        idxA(i) = idxA_tmp[i];
+        idxB(i) = idxB_tmp[i];
+        //idxA(i) = pairs.at(i).elementA->get_body()->get_body_index();
+        //idxB(i) = pairs.at(i).elementB->get_body()->get_body_index();
+        //xA.col(i) = pairs.at(i).ptA;
+        //xB.col(i) = pairs.at(i).ptB;
+        //distance_value(i) = pairs.at(i).distance;
+        //drake::log()->debug(
+            //"\t{} and {}: {} m", pairs.at(i).elementA->get_body()->get_name(),
+            //pairs.at(i).elementB->get_body()->get_name(), distance_value(i));
       }
       MatrixX<double> J;
       tree_.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
-      math::initializeAutoDiffGivenGradientMatrix(distance_value, J, distance);
+      MatrixX<double> ddist_dq{kNumPairs, q.size()};
       for (int i = 0; i < kNumPairs; ++i) {
-        if (distance(i) < 0) {
+        //ddist_dq.row(i) = pairs.at(i).normal.transpose() * J.middleRows(3*i, 3);
+        ddist_dq.row(i) = normal.col(i).transpose() * J.middleRows(3*i, 3);
+      }
+      AutoDiffVecXd distance{kNumPairs};
+      math::initializeAutoDiffGivenGradientMatrix(distance_value, ddist_dq,
+                                                  distance);
+      for (int i = 0; i < kNumPairs; ++i) {
+        if (distance(i) < 2*collision_avoidance_threshold_) {
+          drake::log()->debug(
+              "\t{} and {}: {} m", tree_.get_body(idxA(i)).get_name(),
+              tree_.get_body(idxB(i)).get_name(), distance_value(i));
+          distance(i) /= collision_avoidance_threshold_;
+          distance(i) -= 2;
+          //y(0) += distance(i) * distance(i);
           y(0) += -distance(i) * exp(1 / distance(i));
         }
       }
-      drake::log()->debug("Constraint value: {}", math::autoDiffToValueMatrix(y));
+      //drake::log()->debug("Constraint value: {}", math::autoDiffToValueMatrix(y));
     }
   }
 
@@ -160,6 +184,7 @@ class CollisionAvoidanceConstraint : public Constraint {
 
  private:
   const RigidBodyTree<double>& tree_;
+  double collision_avoidance_threshold_;
 };
 }  // namespace
 
@@ -219,9 +244,11 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
   prog_->AddConstraint(constraint, vars);
 }
 
-void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint() {
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
+    double collision_avoidance_threshold) {
   for (int i = 0; i < num_time_samples_ - 1; ++i) {
-    auto constraint = std::make_shared<CollisionAvoidanceConstraint>(*tree_);
+    auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
+        *tree_, collision_avoidance_threshold);
     VectorXDecisionVariable vars{num_positions()};
     vars.head(num_positions()) = prog_->state(i).head(num_positions());
     prog_->AddConstraint(constraint, vars);

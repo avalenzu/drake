@@ -25,6 +25,8 @@ DEFINE_double(spatial_velocity_weight, 1,
               "Relative weight of end-effector spatial velocity cost");
 DEFINE_double(orientation_tolerance, 0.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.0, "Position tolerance");
+DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
+DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at knot points");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
 DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
@@ -32,6 +34,7 @@ DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position 
 DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_size, "0.2 0.2 0.5", "Dimensions of obstacle (m)");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
+DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -48,7 +51,7 @@ namespace planner {
 int DoMain() {
   const std::string kModelPath = FindResourceOrThrow(
       "drake/manipulation/models/iiwa_description/urdf/"
-      "iiwa14_primitive_collision.urdf");
+      "iiwa14_mesh_collision.urdf");
   auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
       kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
@@ -133,21 +136,25 @@ int DoMain() {
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   // Add collision avoidance constraints
-  kin_traj_opt.AddCollisionAvoidanceConstraint();
+  kin_traj_opt.AddCollisionAvoidanceConstraint(
+      FLAGS_collision_avoidance_threshold);
 
   SolutionResult result{prog->Solve()};
   drake::log()->info("Solver returns {}.", result);
 
   auto x_sol = prog->ReconstructStateTrajectory();
-  const std::vector<double> breaks{
+  std::vector<double> breaks{
       x_sol.get_piecewise_polynomial().getSegmentTimes()};
   std::vector<MatrixX<double>> knots;
   std::vector<MatrixX<double>> knots_dot;
   knots.reserve(breaks.size());
   knots_dot.reserve(breaks.size());
-  for (double t : breaks) {
+  drake::log()->info("Number of knots in solution: {}", breaks.size());
+  for (int i = 0; i < static_cast<int>(breaks.size()); ++i) {
+    const double t{breaks[i]};
     knots.push_back(x_sol.value(t).topRows(2 * kNumPositions));
-    knots_dot.push_back(x_sol.value(t).bottomRows(2 * kNumPositions));
+    knots_dot.push_back(FLAGS_realtime_rate * x_sol.value(t).bottomRows(2 * kNumPositions));
+    breaks[i] /= FLAGS_realtime_rate;
   }
   std::unique_ptr<PiecewisePolynomialTrajectory> q_and_v_traj;
   if (FLAGS_animate_with_zoh) {
@@ -158,38 +165,44 @@ int DoMain() {
         PiecewisePolynomial<double>::Cubic(breaks, knots, knots_dot));
   }
 
-  DiagramBuilder<double> builder;
+  lcm::DrakeLcm lcm;
+  lcm.StartReceiveThread();
+  DrakeVisualizer visualizer{kin_traj_opt.tree(), &lcm, true};
+  while (true) {
+    visualizer.PlaybackTrajectory(q_and_v_traj->get_piecewise_polynomial());
+  }
+
+  //DiagramBuilder<double> builder;
 
   // auto logger = builder.AddSystem<SignalLogger<double>>(
   // iiwa.get_num_positions() + iiwa.get_num_velocities());
 
-  auto trajectory_source =
-      builder.AddSystem<TrajectorySource<double>>(*q_and_v_traj);
+  //auto trajectory_source =
+      //builder.AddSystem<TrajectorySource<double>>(*q_and_v_traj);
   // builder.Connect(trajectory_source->get_output_port(),
   // logger->get_input_port(0));
 
-  lcm::DrakeLcm lcm;
-  auto visualizer = builder.AddSystem<DrakeVisualizer>(kin_traj_opt.tree(), &lcm, true);
+  //auto visualizer = builder.AddSystem<DrakeVisualizer>(kin_traj_opt.tree(), &lcm, true);
 
-  auto gain = builder.AddSystem<systems::LinearSystem<double>>(
-      MatrixX<double>::Zero(0, 0), MatrixX<double>::Zero(0, 2 * kNumPositions),
-      MatrixX<double>::Zero(2 * kNumPositions, 0),
-      MatrixX<double>::Identity(2 * kNumPositions, 2 * kNumPositions), 0.02);
-  builder.Connect(trajectory_source->get_output_port(), gain->get_input_port());
-  builder.Connect(gain->get_output_port(), visualizer->get_input_port(0));
-  drake::log()->debug("Added visualizer.");
+  //auto gain = builder.AddSystem<systems::LinearSystem<double>>(
+      //MatrixX<double>::Zero(0, 0), MatrixX<double>::Zero(0, 2 * kNumPositions),
+      //MatrixX<double>::Zero(2 * kNumPositions, 0),
+      //MatrixX<double>::Identity(2 * kNumPositions, 2 * kNumPositions), 0.02);
+  //builder.Connect(trajectory_source->get_output_port(), gain->get_input_port());
+  //builder.Connect(gain->get_output_port(), visualizer->get_input_port(0));
+  //drake::log()->debug("Added visualizer.");
 
-  auto sys = builder.Build();
+  //auto sys = builder.Build();
 
-  Simulator<double> simulator{*sys};
-  simulator.set_target_realtime_rate(1);
-  simulator.Initialize();
+  //Simulator<double> simulator{*sys};
+  //simulator.set_target_realtime_rate(FLAGS_realtime_rate);
+  //simulator.Initialize();
 
-  drake::log()->info("Stepping to t = {} s.", x_sol.get_end_time());
-  simulator.StepTo(x_sol.get_end_time());
-  while (true) {
-    visualizer->ReplayCachedSimulation();
-  }
+  //drake::log()->info("Stepping to t = {} s.", x_sol.get_end_time());
+  //simulator.StepTo(x_sol.get_end_time());
+  //while (true) {
+    //visualizer->ReplayCachedSimulation();
+  //}
   return result;
 }
 }  // namespace drake

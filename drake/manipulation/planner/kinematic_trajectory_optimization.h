@@ -64,7 +64,7 @@ class KinematicTrajectoryOptimization {
       double position_tolerance = 0.0, double orientation_tolerance = 0.0,
       const Isometry3<double>& X_BF = Isometry3<double>::Identity());
 
-  void AddCollisionAvoidanceConstraint();
+  void AddCollisionAvoidanceConstraint(double collision_avoidance_threshold);
 
   solvers::SolutionResult Solve();
 
