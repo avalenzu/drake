@@ -20,20 +20,20 @@
 #include "drake/systems/primitives/signal_logger.h"
 #include "drake/systems/primitives/trajectory_source.h"
 
-DEFINE_double(duration, 2, "Maximum duration of trajectory.");
+DEFINE_double(duration, 10, "Maximum duration of trajectory.");
 DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
 DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
-DEFINE_double(spatial_velocity_weight, 1e1,
+DEFINE_double(spatial_velocity_weight, 1e0,
               "Relative weight of end-effector spatial velocity cost");
-DEFINE_double(jerk_weight, 1e0,
+DEFINE_double(jerk_weight, 1e-1,
               "Relative weight of jerk-squared cost");
 DEFINE_double(tfinal_weight, 1e1,
               "Relative weight of final-time cost");
-DEFINE_double(orientation_tolerance, 0.0, "Orientation tolerance (degrees)");
-DEFINE_double(position_tolerance, 0.0, "Position tolerance");
+DEFINE_double(orientation_tolerance, 1.0, "Orientation tolerance (degrees)");
+DEFINE_double(position_tolerance, 0.001, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
 DEFINE_double(collision_avoidance_threshold, 0.1, "Minimum distance to obstacles at knot points");
-DEFINE_double(max_velocity, 5, "Maximum joint-velocity for all joints");
+DEFINE_double(max_velocity, 1.5, "Maximum joint-velocity for all joints");
 DEFINE_double(optimality_tolerance, 1e-6, "Major optimality tolerance for solver");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
@@ -43,9 +43,9 @@ DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
-DEFINE_int32(num_restarts, 10, "Number of random restarts allowed");
+DEFINE_int32(num_restarts, 0, "Number of random restarts allowed");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
-DEFINE_int32(num_knots, 10, "Number of knot points.");
+DEFINE_int32(num_knots, 15, "Number of knot points.");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -189,12 +189,14 @@ int DoMain() {
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   // Add collision avoidance constraints
-  kin_traj_opt.AddCollisionAvoidanceConstraint(
-      FLAGS_collision_avoidance_threshold);
+  if (FLAGS_collision_avoidance_threshold > 0) {
+    kin_traj_opt.AddCollisionAvoidanceConstraint(
+        FLAGS_collision_avoidance_threshold);
+  }
 
   std::default_random_engine rand_generator{1234};
   SolutionResult result{drake::solvers::kUnknownError};
-  for (int k = 0; k < FLAGS_num_restarts; ++k) {
+  for (int k = 0; k < FLAGS_num_restarts + 1; ++k) {
     for (int i = 0; i < kNumKnots; ++i) {
       kin_traj_opt.SetInitialGuess(
           kin_traj_opt.state(i).head(kin_traj_opt.num_positions()),
@@ -213,6 +215,8 @@ int DoMain() {
   knots.reserve(breaks.size());
   knots_dot.reserve(breaks.size());
   drake::log()->info("Number of knots in solution: {}", breaks.size());
+  drake::log()->info("Duration of solution trajectory: {} s",
+                     x_sol.get_end_time() - x_sol.get_start_time());
   for (int i = 0; i < static_cast<int>(breaks.size()); ++i) {
     const double t{breaks[i]};
     knots.push_back(x_sol.value(t).topRows(2 * kNumPositions));
@@ -228,9 +232,9 @@ int DoMain() {
         PiecewisePolynomial<double>::Cubic(breaks, knots, knots_dot));
   }
 
-  while (true) {
+  do {
     visualizer.PlaybackTrajectory(q_and_v_traj->get_piecewise_polynomial());
-  }
+  } while (FLAGS_loop_animation);
 
   return result;
 }
