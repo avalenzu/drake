@@ -21,7 +21,8 @@ class KinematicTrajectoryOptimization {
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KinematicTrajectoryOptimization)
 
   KinematicTrajectoryOptimization(std::unique_ptr<RigidBodyTree<double>> tree,
-                                  int num_time_samples);
+                                  int num_time_samples, double minimum_timestep,
+                                  double maximum_timestep);
 
   int num_time_samples() { return num_time_samples_; };
 
@@ -73,7 +74,6 @@ class KinematicTrajectoryOptimization {
   std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
   std::unique_ptr<systems::LinearSystem<double>> system_;
-  double dt_{0.1};
 };
 
 }  // namespace planner

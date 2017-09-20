@@ -21,7 +21,7 @@ drake_cc_library(
         "//drake/multibody:rigid_body_tree",
         "//drake/systems/primitives:linear_system",
         "//drake/systems/trajectory_optimization:multiple_shooting",
-        "//drake/systems/trajectory_optimization:direct_transcription",
+        "//drake/systems/trajectory_optimization:direct_collocation",
     ],
 )
 
