@@ -34,14 +34,32 @@ class KinematicTrajectoryOptimization {
 
   systems::trajectory_optimization::MultipleShooting* mutable_prog() const {
     return prog_.get();
-  };
+  }
 
-  const solvers::VectorXDecisionVariable& state() const {
+  const solvers::VectorDecisionVariable<1>& time() const {
+    return prog_->time();
+  }
+
+  const solvers::VectorXDecisionVariable state() const {
     return prog_->state();
+  }
+
+  const solvers::VectorXDecisionVariable state(int index) const {
+    return prog_->state(index);
   }
 
   const solvers::VectorXDecisionVariable& input() const {
     return prog_->input();
+  }
+
+  const Eigen::VectorBlock<const solvers::VectorXDecisionVariable>
+  initial_state() const {
+    return prog_->initial_state();
+  }
+
+  const Eigen::VectorBlock<const solvers::VectorXDecisionVariable>
+  final_state() const {
+    return prog_->final_state();
   }
 
   /// Adds an integrated cost to all time steps, of the form
@@ -52,11 +70,30 @@ class KinematicTrajectoryOptimization {
   /// derived class implementation.
   void AddRunningCost(const symbolic::Expression& g);
 
+  void AddFinalCost(const symbolic::Expression& g);
+
+  void AddEqualTimeIntervalsConstraints();
+
+  void AddDurationBounds(double lower_bound, double upper_bound);
+
+  /**
+   * Set the initial guess for the decision variables stored in @p var to be x0.
+   * Variables begin with a default initial guess of NaN to indicate that no
+   * guess is available.
+   */
+  template <typename DerivedA, typename DerivedB>
+  void SetInitialGuess(const Eigen::MatrixBase<DerivedA>& decision_variable_mat,
+                       const Eigen::MatrixBase<DerivedB>& x0) {
+    prog_->SetInitialGuess(decision_variable_mat, x0);
+  };
+
   template <typename Derived>
   void AddRunningCost(const Eigen::MatrixBase<Derived>& g) {
     DRAKE_DEMAND(g.rows() == 1 && g.cols() == 1);
     prog_->AddRunningCost(g(0, 0));
   }
+
+  void AddConstraintToAllKnotPoints(const symbolic::Formula& f);
 
   void AddSpatialVelocityCost(const std::string& body_name, double weight);
 
@@ -69,11 +106,23 @@ class KinematicTrajectoryOptimization {
 
   solvers::SolutionResult Solve();
 
+  PiecewisePolynomialTrajectory ReconstructStateTrajectory() const;
+
+  PiecewisePolynomialTrajectory ReconstructInputTrajectory() const;
+
+  template<typename T>
+  void SetSolverOption(const solvers::SolverId& solver_id,
+                       const std::string& solver_option,
+                       T option_value);
+
+  void AddLinearConstraint(const symbolic::Formula& f);
+
  private:
   std::unique_ptr<systems::trajectory_optimization::MultipleShooting> prog_;
   std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
   std::unique_ptr<systems::LinearSystem<double>> system_;
+
 };
 
 }  // namespace planner
