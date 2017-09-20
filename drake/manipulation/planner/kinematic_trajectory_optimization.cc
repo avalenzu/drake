@@ -2,11 +2,11 @@
 
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
-#include "drake/systems/trajectory_optimization/direct_transcription.h"
+#include "drake/systems/trajectory_optimization/direct_collocation.h"
 
 using Eigen::MatrixXd;
 using drake::systems::LinearSystem;
-using drake::systems::trajectory_optimization::DirectTranscription;
+using drake::systems::trajectory_optimization::DirectCollocation;
 using drake::solvers::SolutionResult;
 using drake::solvers::VectorXDecisionVariable;
 using drake::solvers::Cost;
@@ -19,11 +19,11 @@ namespace {
 class SpatialVelocityCost : public Cost {
  public:
   SpatialVelocityCost(const RigidBodyTree<double>& tree,
-                      const RigidBody<double>& body, double dt_)
+                      const RigidBody<double>& body, double weight)
       : Cost(tree.get_num_positions() + tree.get_num_velocities()),
         tree_(tree),
         body_(body),
-        dt_(dt_){}
+        weight_(weight){}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
@@ -41,7 +41,7 @@ class SpatialVelocityCost : public Cost {
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q, v);
     y(0) =
-        dt_ *
+        weight_ *
         tree_.CalcBodySpatialVelocityInWorldFrame(cache, body_).squaredNorm();
   }
 
@@ -50,7 +50,7 @@ class SpatialVelocityCost : public Cost {
  private:
   const RigidBodyTree<double>& tree_;
   const RigidBody<double>& body_;
-  const double dt_;
+  const double weight_;
 };
 
 class BodyPoseConstraint : public Constraint {
@@ -189,9 +189,9 @@ class CollisionAvoidanceConstraint : public Constraint {
 }  // namespace
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
-    std::unique_ptr<RigidBodyTree<double>> tree, int num_time_samples)
-    : tree_(std::move(tree)),
-      num_time_samples_(num_time_samples) {
+    std::unique_ptr<RigidBodyTree<double>> tree, int num_time_samples,
+    double minimum_timestep, double maximum_timestep)
+    : tree_(std::move(tree)), num_time_samples_(num_time_samples) {
   const int kNumStates{3 * num_positions()};
   const int kNumInputs{num_positions()};
   const int kNumOutputs{0};
@@ -201,18 +201,19 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
       MatrixXd::Identity(num_positions(), num_positions())};
 
   MatrixX<double> A{kNumStates, kNumStates};
-  A << kIdentity, dt_*kIdentity, kZero, kZero, kIdentity, dt_*kIdentity, kZero, kZero, kIdentity;
+  A << kZero, kIdentity, kZero, kZero, kZero, kIdentity, kZero, kZero, kZero;
 
   MatrixXd B{kNumStates, kNumInputs};
-  B << kZero, kZero, dt_*kIdentity;
+  B << kZero, kZero, kIdentity;
 
   MatrixXd C{kNumOutputs, kNumStates};
   MatrixXd D{kNumOutputs, kNumInputs};
 
-  system_ = std::make_unique<LinearSystem<double>>(A, B, C, D, dt_);
+  system_ = std::make_unique<LinearSystem<double>>(A, B, C, D);
 
-  prog_ = std::make_unique<DirectTranscription>(
-      system_.get(), *(system_->CreateDefaultContext()), num_time_samples_);
+  prog_ = std::make_unique<DirectCollocation>(
+      system_.get(), *(system_->CreateDefaultContext()), num_time_samples_,
+      minimum_timestep, maximum_timestep);
 
   prog_->AddConstraintToAllKnotPoints(prog_->state().head(num_positions()) >=
                                       tree_->joint_limit_min);
@@ -224,7 +225,7 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
   const RigidBody<double>* body = tree_->FindBody(body_name);
   for (int i = 0; i < num_time_samples_ - 1; ++i) {
-    auto cost = std::make_shared<SpatialVelocityCost>(*tree_, *body, weight*dt_);
+    auto cost = std::make_shared<SpatialVelocityCost>(*tree_, *body, weight);
     VectorXDecisionVariable vars{num_positions() + num_velocities()};
     vars.head(num_positions() + num_velocities()) =
         prog_->state(i).head(num_positions() + num_velocities());
