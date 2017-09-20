@@ -222,6 +222,24 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 
 };
 
+void KinematicTrajectoryOptimization::AddFinalCost(const symbolic::Expression& g) {
+  prog_->AddFinalCost(g);
+}
+
+void KinematicTrajectoryOptimization::AddEqualTimeIntervalsConstraints() {
+  prog_->AddEqualTimeIntervalsConstraints();
+};
+
+void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
+                                                        double upper_bound) {
+  prog_->AddDurationBounds(lower_bound, upper_bound);
+};
+
+void KinematicTrajectoryOptimization::AddConstraintToAllKnotPoints(
+    const symbolic::Formula& f) {
+  prog_->AddConstraintToAllKnotPoints(f);
+}
+
 void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
   const RigidBody<double>* body = tree_->FindBody(body_name);
   for (int i = 0; i < num_time_samples_ - 1; ++i) {
@@ -264,6 +282,41 @@ void KinematicTrajectoryOptimization::AddRunningCost(
 SolutionResult KinematicTrajectoryOptimization::Solve() {
     return prog_->Solve();
 };
+
+PiecewisePolynomialTrajectory
+KinematicTrajectoryOptimization::ReconstructStateTrajectory() const {
+  return prog_->ReconstructStateTrajectory();
+};
+
+PiecewisePolynomialTrajectory
+KinematicTrajectoryOptimization::ReconstructInputTrajectory() const {
+  return prog_->ReconstructInputTrajectory();
+};
+
+template <typename T>
+void KinematicTrajectoryOptimization::SetSolverOption(
+    const solvers::SolverId& solver_id, const std::string& solver_option,
+    T option_value) {
+  prog_->SetSolverOption(solver_id, solver_option, option_value);
+};
+
+void KinematicTrajectoryOptimization::AddLinearConstraint(
+    const symbolic::Formula& f) {
+  prog_->AddLinearConstraint(f);
+}
+
+// Explicit instantiations of SetSolverOption()
+template void KinematicTrajectoryOptimization::SetSolverOption(
+    const solvers::SolverId& solver_id, const std::string& solver_option,
+    double option_value);
+
+template void KinematicTrajectoryOptimization::SetSolverOption(
+    const solvers::SolverId& solver_id, const std::string& solver_option,
+    int option_value);
+
+template void KinematicTrajectoryOptimization::SetSolverOption(
+    const solvers::SolverId& solver_id, const std::string& solver_option,
+    const std::string& option_value);
 
 }  // namespace planner
 }  // namespace manipulation
