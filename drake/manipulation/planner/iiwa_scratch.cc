@@ -99,10 +99,9 @@ int DoMain() {
 
   KinematicTrajectoryOptimization kin_traj_opt{
       std::move(iiwa), kNumKnots, kMinimumTimestep, kMaximumTimestep};
-  MultipleShooting* prog = kin_traj_opt.mutable_prog();
-  prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
+  kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
-  prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
+  kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major optimality tolerance",
                         FLAGS_optimality_tolerance);
 
@@ -114,41 +113,41 @@ int DoMain() {
   const int kNumPositions = kin_traj_opt.tree().get_num_positions();
 
   // Enforce uniform spacing of knots
-  prog->AddEqualTimeIntervalsConstraints();
+  kin_traj_opt.AddEqualTimeIntervalsConstraints();
 
   // Enforce maximum duration
-  prog->AddDurationBounds(0.1, kDuration);
+  kin_traj_opt.AddDurationBounds(0.1, kDuration);
 
   // q[0] = 0
-  prog->AddLinearConstraint(
-      prog->initial_state().head(kin_traj_opt.num_positions()) ==
+  kin_traj_opt.AddLinearConstraint(
+      kin_traj_opt.initial_state().head(kin_traj_opt.num_positions()) ==
       kin_traj_opt.tree().getZeroConfiguration());
 
   // v[0] = 0 and a[0] = 0.
-  prog->AddLinearConstraint(
-      prog->initial_state().tail(2 * kin_traj_opt.num_velocities()) ==
+  kin_traj_opt.AddLinearConstraint(
+      kin_traj_opt.initial_state().tail(2 * kin_traj_opt.num_velocities()) ==
       VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
 
   // v[tmid] = 0 and a[tmid] = 0.
   const int kMidKnotIndex{kNumKnots/2};
-  prog->AddLinearConstraint(
-      prog->state(kMidKnotIndex).tail(2 * kin_traj_opt.num_velocities()) ==
+  kin_traj_opt.AddLinearConstraint(
+      kin_traj_opt.state(kMidKnotIndex).tail(2 * kin_traj_opt.num_velocities()) ==
       VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
 
   // v[tf] = 0 and a[tf] = 0.
-  prog->AddLinearConstraint(
-      prog->final_state().tail(2 * kin_traj_opt.num_velocities()) ==
+  kin_traj_opt.AddLinearConstraint(
+      kin_traj_opt.final_state().tail(2 * kin_traj_opt.num_velocities()) ==
       VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
 
   // v[i] < v_max
-  prog->AddConstraintToAllKnotPoints(
-      prog->state().segment(kin_traj_opt.num_positions(),
+  kin_traj_opt.AddConstraintToAllKnotPoints(
+      kin_traj_opt.state().segment(kin_traj_opt.num_positions(),
                             kin_traj_opt.num_velocities()) <=
       FLAGS_max_velocity *
           VectorX<double>::Ones(kin_traj_opt.num_velocities()));
 
-  prog->AddConstraintToAllKnotPoints(
-      prog->state().segment(kin_traj_opt.num_positions(),
+  kin_traj_opt.AddConstraintToAllKnotPoints(
+      kin_traj_opt.state().segment(kin_traj_opt.num_positions(),
                             kin_traj_opt.num_velocities()) >=
       -FLAGS_max_velocity *
           VectorX<double>::Ones(kin_traj_opt.num_velocities()));
@@ -157,7 +156,7 @@ int DoMain() {
                               kin_traj_opt.input());
   kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee",
                                       FLAGS_spatial_velocity_weight);
-  prog->AddFinalCost(FLAGS_tfinal_weight*prog->time()(0));
+  kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
 
   // Add middle and final pose constraints
   Isometry3<double> X_WF0{Isometry3<double>::Identity()};
@@ -197,16 +196,16 @@ int DoMain() {
   SolutionResult result{drake::solvers::kUnknownError};
   for (int k = 0; k < FLAGS_num_restarts; ++k) {
     for (int i = 0; i < kNumKnots; ++i) {
-      prog->SetInitialGuess(
-          prog->state(i).head(kin_traj_opt.num_positions()),
+      kin_traj_opt.SetInitialGuess(
+          kin_traj_opt.state(i).head(kin_traj_opt.num_positions()),
           kin_traj_opt.tree().getRandomConfiguration(rand_generator));
     }
-    result = prog->Solve();
+    result = kin_traj_opt.Solve();
     drake::log()->info("Attempt {}: Solver returns {}.", k, result);
     if (result == drake::solvers::kSolutionFound) break;
   }
 
-  auto x_sol = prog->ReconstructStateTrajectory();
+  auto x_sol = kin_traj_opt.ReconstructStateTrajectory();
   std::vector<double> breaks{
       x_sol.get_piecewise_polynomial().getSegmentTimes()};
   std::vector<MatrixX<double>> knots;
