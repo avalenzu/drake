@@ -265,7 +265,7 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
 
 void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
     double collision_avoidance_threshold) {
-  for (int i = 0; i < num_time_samples_ - 1; ++i) {
+  for (int i = 0; i < num_time_samples_; ++i) {
     auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
         *tree_, collision_avoidance_threshold);
     VectorXDecisionVariable vars{num_positions()};
