@@ -20,11 +20,15 @@
 #include "drake/systems/primitives/signal_logger.h"
 #include "drake/systems/primitives/trajectory_source.h"
 
-DEFINE_double(duration, 2, "Duration of trajectory.");
+DEFINE_double(duration, 2, "Maximum duration of trajectory.");
+DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
+DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
 DEFINE_double(spatial_velocity_weight, 1e1,
               "Relative weight of end-effector spatial velocity cost");
 DEFINE_double(jerk_weight, 1e0,
               "Relative weight of jerk-squared cost");
+DEFINE_double(tfinal_weight, 1e1,
+              "Relative weight of final-time cost");
 DEFINE_double(orientation_tolerance, 0.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.0, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
@@ -41,6 +45,7 @@ DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display 
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(num_restarts, 10, "Number of random restarts allowed");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
+DEFINE_int32(num_knots, 10, "Number of knot points.");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -87,10 +92,13 @@ int DoMain() {
   iiwa->compile();
 
   const double kDuration{FLAGS_duration};
-  const int kNumKnots = std::ceil(kDuration / 0.1) + 1;
+  const double kMinimumTimestep{FLAGS_min_timestep};
+  const double kMaximumTimestep{FLAGS_max_timestep};
+  const int kNumKnots{FLAGS_num_knots};
   drake::log()->info("Number of knots: {}", kNumKnots);
 
-  KinematicTrajectoryOptimization kin_traj_opt{std::move(iiwa), kNumKnots};
+  KinematicTrajectoryOptimization kin_traj_opt{
+      std::move(iiwa), kNumKnots, kMinimumTimestep, kMaximumTimestep};
   MultipleShooting* prog = kin_traj_opt.mutable_prog();
   prog->SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
@@ -104,6 +112,12 @@ int DoMain() {
   visualizer.PublishLoadRobot();
 
   const int kNumPositions = kin_traj_opt.tree().get_num_positions();
+
+  // Enforce uniform spacing of knots
+  prog->AddEqualTimeIntervalsConstraints();
+
+  // Enforce maximum duration
+  prog->AddDurationBounds(0.1, kDuration);
 
   // q[0] = 0
   prog->AddLinearConstraint(
@@ -143,6 +157,7 @@ int DoMain() {
                               kin_traj_opt.input());
   kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee",
                                       FLAGS_spatial_velocity_weight);
+  prog->AddFinalCost(FLAGS_tfinal_weight*prog->time()(0));
 
   // Add middle and final pose constraints
   Isometry3<double> X_WF0{Isometry3<double>::Identity()};
