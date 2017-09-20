@@ -233,37 +233,6 @@ int DoMain() {
     visualizer.PlaybackTrajectory(q_and_v_traj->get_piecewise_polynomial());
   }
 
-  //DiagramBuilder<double> builder;
-
-  // auto logger = builder.AddSystem<SignalLogger<double>>(
-  // iiwa.get_num_positions() + iiwa.get_num_velocities());
-
-  //auto trajectory_source =
-      //builder.AddSystem<TrajectorySource<double>>(*q_and_v_traj);
-  // builder.Connect(trajectory_source->get_output_port(),
-  // logger->get_input_port(0));
-
-  //auto visualizer = builder.AddSystem<DrakeVisualizer>(kin_traj_opt.tree(), &lcm, true);
-
-  //auto gain = builder.AddSystem<systems::LinearSystem<double>>(
-      //MatrixX<double>::Zero(0, 0), MatrixX<double>::Zero(0, 2 * kNumPositions),
-      //MatrixX<double>::Zero(2 * kNumPositions, 0),
-      //MatrixX<double>::Identity(2 * kNumPositions, 2 * kNumPositions), 0.02);
-  //builder.Connect(trajectory_source->get_output_port(), gain->get_input_port());
-  //builder.Connect(gain->get_output_port(), visualizer->get_input_port(0));
-  //drake::log()->debug("Added visualizer.");
-
-  //auto sys = builder.Build();
-
-  //Simulator<double> simulator{*sys};
-  //simulator.set_target_realtime_rate(FLAGS_realtime_rate);
-  //simulator.Initialize();
-
-  //drake::log()->info("Stepping to t = {} s.", x_sol.get_end_time());
-  //simulator.StepTo(x_sol.get_end_time());
-  //while (true) {
-    //visualizer->ReplayCachedSimulation();
-  //}
   return result;
 }
 }  // namespace drake
