@@ -113,7 +113,7 @@ class CollisionAvoidanceConstraint : public Constraint {
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       Eigen::VectorXd& y) const {
-    AutoDiffVecXd y_t;
+    AutoDiffVecXd y_t(1);
     Eval(math::initializeAutoDiff(x), y_t);
     y = math::autoDiffToValueMatrix(y_t);
   }
@@ -278,6 +278,19 @@ void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
   for (int i = 0; i < num_time_samples_; ++i) {
     AddCollisionAvoidanceConstraint(collision_avoidance_threshold, i);
   }
+}
+
+std::vector<bool> KinematicTrajectoryOptimization::CheckCollisions(
+    double collision_avoidance_threshold) {
+  std::vector<bool> has_collisions(num_time_samples_, false);
+  CollisionAvoidanceConstraint constraint{*tree_,
+                                          collision_avoidance_threshold};
+  MatrixX<double> q_values{prog_->GetStateSamples()};
+  for (int i = 0; i < num_time_samples_; ++i) {
+    const VectorX<double> q{q_values.col(i).head(num_positions())};
+    has_collisions.at(i) = !constraint.CheckSatisfied(q);
+  }
+  return has_collisions;
 }
 
 void KinematicTrajectoryOptimization::AddRunningCost(
