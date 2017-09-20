@@ -264,13 +264,19 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
 }
 
 void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
+    double collision_avoidance_threshold, int index) {
+  DRAKE_DEMAND(index >= 0 && index < num_time_samples_);
+  auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
+      *tree_, collision_avoidance_threshold);
+  VectorXDecisionVariable vars{num_positions()};
+  vars.head(num_positions()) = prog_->state(index).head(num_positions());
+  prog_->AddConstraint(constraint, vars);
+}
+
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
     double collision_avoidance_threshold) {
   for (int i = 0; i < num_time_samples_; ++i) {
-    auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
-        *tree_, collision_avoidance_threshold);
-    VectorXDecisionVariable vars{num_positions()};
-    vars.head(num_positions()) = prog_->state(i).head(num_positions());
-    prog_->AddConstraint(constraint, vars);
+    AddCollisionAvoidanceConstraint(collision_avoidance_threshold, i);
   }
 }
 
