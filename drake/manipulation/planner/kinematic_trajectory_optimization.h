@@ -107,6 +107,8 @@ class KinematicTrajectoryOptimization {
 
   void AddCollisionAvoidanceConstraint(double collision_avoidance_threshold);
 
+  std::vector<bool> CheckCollisions(double collision_avoidance_threshold);
+
   solvers::SolutionResult Solve();
 
   PiecewisePolynomialTrajectory ReconstructStateTrajectory() const;
