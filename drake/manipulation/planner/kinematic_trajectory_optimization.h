@@ -108,6 +108,8 @@ class KinematicTrajectoryOptimization {
     AddRunningCost(g(0,0));
   }
 
+  void TrackSpatialVelocityOfBody(const std::string& body_name);
+
   void AddSpatialVelocityCost(const std::string& body_name, double weight);
 
   void AddBodyPoseConstraint(
@@ -231,6 +233,8 @@ class KinematicTrajectoryOptimization {
   const solvers::VectorXDecisionVariable placeholder_v_vars_;
   const solvers::VectorXDecisionVariable placeholder_a_vars_;
   const solvers::VectorXDecisionVariable placeholder_j_vars_;
+  std::map<std::string, solvers::VectorDecisionVariable<6>>
+      placeholder_spatial_velocity_vars_;
 
   std::vector<std::unique_ptr<const symbolic::Expression>> running_cost_expressions_;
   std::vector<std::unique_ptr<const CostWrapper>> running_cost_objects_;

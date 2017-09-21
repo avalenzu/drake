@@ -233,6 +233,12 @@ void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
   duration_upper_bound_ = upper_bound;
 };
 
+void KinematicTrajectoryOptimization::TrackSpatialVelocityOfBody(
+    const std::string& body_name) {
+  placeholder_spatial_velocity_vars_.emplace(
+      body_name, MakeNamedVariables(body_name + "spatial_velocity", 6));
+}
+
 void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
   const RigidBody<double>* body = tree_->FindBody(body_name);
   VectorXDecisionVariable vars{num_positions() + num_velocities()};
@@ -292,7 +298,8 @@ void KinematicTrajectoryOptimization::AddRunningCost(
 
 std::unique_ptr<systems::System<double>> KinematicTrajectoryOptimization::CreateSystem() const {
   const int kNumStates{3 * num_positions()};
-  const int kNumInputs{num_positions()};
+  const int kNumSpatialVelocityInputs(6*placeholder_spatial_velocity_vars_.size());
+  const int kNumInputs(num_positions() + kNumSpatialVelocityInputs);
   const int kNumOutputs{0};
 
   const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
@@ -303,7 +310,9 @@ std::unique_ptr<systems::System<double>> KinematicTrajectoryOptimization::Create
   A << kZero, kIdentity, kZero, kZero, kZero, kIdentity, kZero, kZero, kZero;
 
   MatrixXd B{kNumStates, kNumInputs};
-  B << kZero, kZero, kIdentity;
+  B.setZero();
+  B.block(num_positions() + num_velocities(), 0, num_velocities(),
+          num_velocities()) = kIdentity;
 
   MatrixXd C{kNumOutputs, kNumStates};
   MatrixXd D{kNumOutputs, kNumInputs};
