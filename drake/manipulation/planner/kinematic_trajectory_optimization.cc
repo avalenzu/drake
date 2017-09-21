@@ -20,14 +20,14 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 namespace {
-class SpatialVelocityCost : public Cost {
+class SpatialVelocityConstraint : public Constraint {
  public:
-  SpatialVelocityCost(const RigidBodyTree<double>& tree,
-                      const RigidBody<double>& body, double weight)
-      : Cost(tree.get_num_positions() + tree.get_num_velocities()),
+  SpatialVelocityConstraint(const RigidBodyTree<double>& tree,
+                            const RigidBody<double>& body)
+      : Constraint(6, tree.get_num_positions() + tree.get_num_velocities() + 6,
+                   Vector6<double>::Zero(), Vector6<double>::Zero()),
         tree_(tree),
-        body_(body),
-        weight_(weight){}
+        body_(body) {}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
@@ -41,20 +41,27 @@ class SpatialVelocityCost : public Cost {
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       AutoDiffVecXd& y) const {
     const AutoDiffVecXd q = x.head(tree_.get_num_positions());
-    const AutoDiffVecXd v = x.tail(tree_.get_num_velocities());
+    const AutoDiffVecXd v =
+        x.segment(tree_.get_num_positions(), tree_.get_num_velocities());
+    const AutoDiffVecXd spatial_velocity =
+        x.segment(tree_.get_num_positions() + tree_.get_num_velocities(), 6);
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q, v);
-    y(0) =
-        weight_ *
-        tree_.CalcBodySpatialVelocityInWorldFrame(cache, body_).squaredNorm();
+    y = spatial_velocity -
+        tree_.CalcBodySpatialVelocityInWorldFrame(cache, body_);
+    //Isometry3<AutoDiffXd> X_FW{tree_.CalcBodyPoseInWorldFrame(cache, body_).inverse()};
+    //const AutoDiffVecXd wv_WF{tree_.CalcBodySpatialVelocityInWorldFrame(cache, body_)};
+    //const Vector3<AutoDiffXd> w_WF{wv_WF.head(3)};
+    //const Vector3<AutoDiffXd> v_WF{wv_WF.tail(3)};
+    //y.head(3) = spatial_velocity.head(3) - X_FW*w_WF;
+    //y.tail(3) = spatial_velocity.tail(3) - X_FW*v_WF;
   }
 
-  int numOutputs() const { return 1; };
+  int numOutputs() const { return 6; };
 
  private:
   const RigidBodyTree<double>& tree_;
   const RigidBody<double>& body_;
-  const double weight_;
 };
 
 class BodyPoseConstraint : public Constraint {
@@ -235,17 +242,17 @@ void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
 
 void KinematicTrajectoryOptimization::TrackSpatialVelocityOfBody(
     const std::string& body_name) {
-  placeholder_spatial_velocity_vars_.emplace(
-      body_name, MakeNamedVariables(body_name + "spatial_velocity", 6));
-}
-
-void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
-  const RigidBody<double>* body = tree_->FindBody(body_name);
-  VectorXDecisionVariable vars{num_positions() + num_velocities()};
+  VectorXDecisionVariable vars{num_positions() + num_velocities() + 6};
   vars.head(num_positions()) = position();
-  vars.tail(num_velocities()) = velocity();
-  std::shared_ptr<Cost> cost = std::make_shared<SpatialVelocityCost>(*tree_, *body, weight);
-  running_cost_objects_.emplace_back(new CostWrapper({cost, vars, Vector2<double>(0, 1)}));
+  vars.segment(num_positions(), num_velocities()) = velocity();
+  vars.tail(6) =
+      placeholder_spatial_velocity_vars_
+          .emplace(body_name,
+                   MakeNamedVariables(body_name + "_spatial_velocity", 6))
+          .first->second;
+  const RigidBody<double>* body = tree_->FindBody(body_name);
+  object_constraints_.emplace_back(new ConstraintWrapper({std::make_shared<SpatialVelocityConstraint>(
+      *tree_, *body), vars, {0,1}}));
 }
 
 void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
@@ -347,14 +354,21 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
   for (int i = 0; i < num_positions(); ++i) {
     sub.emplace(placeholder_q_vars_(i), prog.state()(i));
   }
-  for (int i = 0; i < num_positions(); ++i) {
+  for (int i = 0; i < num_velocities(); ++i) {
     sub.emplace(placeholder_v_vars_(i), prog.state()(num_positions() + i));
   }
-  for (int i = 0; i < num_positions(); ++i) {
+  for (int i = 0; i < num_velocities(); ++i) {
     sub.emplace(placeholder_a_vars_(i), prog.state()(num_positions() + num_velocities() + i));
   }
-  for (int i = 0; i < num_positions(); ++i) {
+  for (int i = 0; i < num_velocities(); ++i) {
     sub.emplace(placeholder_j_vars_(i), prog.input()(i));
+  }
+  int input_index = num_velocities();
+  for (auto& placeholder_vars : placeholder_spatial_velocity_vars_) {
+    for (int i = 0; i < 6; ++i) {
+      sub.emplace(placeholder_vars.second(i), prog.input()(input_index));
+      ++input_index;
+    }
   }
   return sub;
 }
@@ -374,6 +388,13 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
   }
   for (int i = 0; i < num_positions(); ++i) {
     sub.emplace(placeholder_j_vars_(i), prog.input(index)(i));
+  }
+  int input_index = num_velocities();
+  for (auto& placeholder_vars : placeholder_spatial_velocity_vars_) {
+    for (int i = 0; i < 6; ++i) {
+      sub.emplace(placeholder_vars.second(i), prog.input(index)(input_index));
+      ++input_index;
+    }
   }
   return sub;
 }
@@ -463,8 +484,16 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 
 void KinematicTrajectoryOptimization::AddRunningCostToProgram(
     const Expression& cost, MultipleShooting* prog) {
+  drake::log()->debug("Adding cost: {}", SubstitutePlaceholderVariables(cost, *prog));
   prog->AddRunningCost(SubstitutePlaceholderVariables(cost, *prog));
 }
+
+void KinematicTrajectoryOptimization::AddFinalCostToProgram(
+    const Expression& cost, MultipleShooting* prog) {
+  drake::log()->debug("Adding cost: {}", SubstitutePlaceholderVariables(cost, *prog));
+  prog->AddFinalCost(SubstitutePlaceholderVariables(cost, *prog));
+}
+
 
 void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
                                                        MultipleShooting* prog) {
@@ -497,6 +526,12 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
   }
   for (const auto& cost : running_cost_objects_) {
     AddCostToProgram(*cost, prog.get());
+  }
+  for (const auto& cost : running_cost_expressions_) {
+    AddRunningCostToProgram(*cost, prog.get());
+  }
+  for (const auto& cost : final_cost_expressions_) {
+    AddFinalCostToProgram(*cost, prog.get());
   }
 
   SolutionResult result{prog->Solve()};
