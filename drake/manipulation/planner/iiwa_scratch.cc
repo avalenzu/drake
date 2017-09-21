@@ -171,10 +171,13 @@ int DoMain() {
         kin_traj_opt.jerk().transpose() *
         kin_traj_opt.jerk());
   }
-  kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
   if (FLAGS_spatial_velocity_weight > 0) {
-    kin_traj_opt.AddSpatialVelocityCost(FLAGS_velocity_cost_body,
-        FLAGS_spatial_velocity_weight);
+    kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
+    auto spatial_velocity_vars =
+        kin_traj_opt.spatial_velocity_of_body(FLAGS_velocity_cost_body);
+    kin_traj_opt.AddRunningCost(FLAGS_spatial_velocity_weight *
+                                spatial_velocity_vars.transpose() *
+                                spatial_velocity_vars);
   }
   if (FLAGS_tfinal_weight > 0) {
     kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
