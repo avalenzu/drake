@@ -5,8 +5,10 @@
 #include "drake/systems/trajectory_optimization/direct_collocation.h"
 
 using Eigen::MatrixXd;
+using drake::systems::System;
 using drake::systems::LinearSystem;
 using drake::systems::trajectory_optimization::DirectCollocation;
+using drake::systems::trajectory_optimization::MultipleShooting;
 using drake::solvers::SolutionResult;
 using drake::solvers::VectorXDecisionVariable;
 using drake::solvers::Cost;
@@ -186,12 +188,107 @@ class CollisionAvoidanceConstraint : public Constraint {
   const RigidBodyTree<double>& tree_;
   double collision_avoidance_threshold_;
 };
+
+solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
+                                                    int num) {
+  solvers::VectorXDecisionVariable vars(num);
+  for (int i = 0; i < num; i++)
+    vars(i) = symbolic::Variable(prefix + std::to_string(i));
+  return vars;
+}
 }  // namespace
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     std::unique_ptr<RigidBodyTree<double>> tree, int num_time_samples,
     double minimum_timestep, double maximum_timestep)
-    : tree_(std::move(tree)), num_time_samples_(num_time_samples) {
+    : tree_(std::move(tree)),
+      num_time_samples_(num_time_samples),
+      placeholder_t_var_(solvers::VectorDecisionVariable<1>(symbolic::Variable("t"))),
+      placeholder_q_vars_(MakeNamedVariables("q", tree_->get_num_positions())),
+      placeholder_v_vars_(MakeNamedVariables("v", tree_->get_num_velocities())),
+      placeholder_a_vars_(MakeNamedVariables("a", tree_->get_num_velocities())),
+      placeholder_j_vars_(MakeNamedVariables("j", tree_->get_num_velocities())),
+      minimum_timestep_(minimum_timestep),
+      maximum_timestep_(maximum_timestep),
+      initial_position_trajectory_(PiecewisePolynomial<double>::ZeroOrderHold(
+          {0, 1},
+          {tree_->getZeroConfiguration(), tree_->getZeroConfiguration()})),
+      position_trajectory_(
+          PiecewisePolynomialTrajectory(initial_position_trajectory_)){
+      };
+
+void KinematicTrajectoryOptimization::AddFinalCost(const symbolic::Expression& g) {
+  final_cost_expressions_.emplace_back(new symbolic::Expression(g));
+}
+
+void KinematicTrajectoryOptimization::AddEqualTimeIntervalsConstraints() {
+  has_equal_time_intervals_ = true;
+};
+
+void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
+                                                        double upper_bound) {
+  duration_lower_bound_ = lower_bound;
+  duration_upper_bound_ = upper_bound;
+};
+
+void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
+  const RigidBody<double>* body = tree_->FindBody(body_name);
+  VectorXDecisionVariable vars{num_positions() + num_velocities()};
+  vars.head(num_positions()) = position();
+  vars.tail(num_velocities()) = velocity();
+  std::shared_ptr<Cost> cost = std::make_shared<SpatialVelocityCost>(*tree_, *body, weight);
+  running_cost_objects_.emplace_back(new CostWrapper({cost, vars, Vector2<double>(0, 1)}));
+}
+
+void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
+    double time, const std::string& body_name, const Isometry3<double>& X_WFd,
+    double orientation_tolerance, double position_tolerance,
+    const Isometry3<double>& X_BF) {
+  AddBodyPoseConstraint({time, time}, body_name, X_WFd, orientation_tolerance,
+                        position_tolerance, X_BF);
+}
+
+bool KinematicTrajectoryOptimization::IsValidPlanInterval(
+    Vector2<double> plan_interval) {
+  return 0 <= plan_interval(0) && plan_interval(0) <= 1 &&
+         0 <= plan_interval(1) && plan_interval(1) <= 1 &&
+         plan_interval(0) <= plan_interval(1);
+}
+
+void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
+    Vector2<double> plan_interval, const std::string& body_name, const Isometry3<double>& X_WFd,
+    double orientation_tolerance, double position_tolerance,
+    const Isometry3<double>& X_BF) {
+  DRAKE_THROW_UNLESS(IsValidPlanInterval(plan_interval));
+  const RigidBody<double>* body = tree_->FindBody(body_name);
+  VectorXDecisionVariable vars{num_positions()};
+  vars.head(num_positions()) = position();
+  object_constraints_.emplace_back(new ConstraintWrapper({std::make_shared<BodyPoseConstraint>(
+      *tree_, *body, X_WFd, orientation_tolerance, position_tolerance, X_BF), vars, plan_interval}));
+}
+
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
+    Vector2<double> plan_interval, double collision_avoidance_threshold) {
+  DRAKE_THROW_UNLESS(IsValidPlanInterval(plan_interval));
+  auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
+      *tree_, collision_avoidance_threshold);
+  VectorXDecisionVariable vars{num_positions()};
+  vars.head(num_positions()) = position();
+  object_constraints_.emplace_back(new ConstraintWrapper({std::make_shared<CollisionAvoidanceConstraint>(
+      *tree_, collision_avoidance_threshold), vars, plan_interval}));
+}
+
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
+    double collision_avoidance_threshold) {
+  AddCollisionAvoidanceConstraint({0, 1}, collision_avoidance_threshold);
+}
+
+void KinematicTrajectoryOptimization::AddRunningCost(
+    const symbolic::Expression& g) {
+  running_cost_expressions_.emplace_back(new symbolic::Expression(g));
+};
+
+std::unique_ptr<systems::System<double>> KinematicTrajectoryOptimization::CreateSystem() const {
   const int kNumStates{3 * num_positions()};
   const int kNumInputs{num_positions()};
   const int kNumOutputs{0};
@@ -209,119 +306,63 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   MatrixXd C{kNumOutputs, kNumStates};
   MatrixXd D{kNumOutputs, kNumInputs};
 
-  system_ = std::make_unique<LinearSystem<double>>(A, B, C, D);
+  return std::make_unique<LinearSystem<double>>(A, B, C, D);
+}
 
-  prog_ = std::make_unique<DirectCollocation>(
+std::unique_ptr<MultipleShooting>
+KinematicTrajectoryOptimization::CreateMathematicalProgram() const {
+  return std::make_unique<DirectCollocation>(
       system_.get(), *(system_->CreateDefaultContext()), num_time_samples_,
-      minimum_timestep, maximum_timestep);
-
-  prog_->AddConstraintToAllKnotPoints(prog_->state().head(num_positions()) >=
-                                      tree_->joint_limit_min);
-  prog_->AddConstraintToAllKnotPoints(prog_->state().head(num_positions()) <=
-                                      tree_->joint_limit_max);
-
-};
-
-void KinematicTrajectoryOptimization::AddFinalCost(const symbolic::Expression& g) {
-  prog_->AddFinalCost(g);
+      minimum_timestep_, maximum_timestep_);
 }
 
-void KinematicTrajectoryOptimization::AddEqualTimeIntervalsConstraints() {
-  prog_->AddEqualTimeIntervalsConstraints();
-};
-
-void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
-                                                        double upper_bound) {
-  prog_->AddDurationBounds(lower_bound, upper_bound);
-};
-
-void KinematicTrajectoryOptimization::AddConstraintToAllKnotPoints(
-    const symbolic::Formula& f) {
-  prog_->AddConstraintToAllKnotPoints(f);
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
+    const MultipleShooting& prog) const {
+  return prog.state().head(num_positions());
 }
-
-void KinematicTrajectoryOptimization::AddSpatialVelocityCost(const std::string& body_name, double weight) {
-  const RigidBody<double>* body = tree_->FindBody(body_name);
-  for (int i = 0; i < num_time_samples_ - 1; ++i) {
-    auto cost = std::make_shared<SpatialVelocityCost>(*tree_, *body, weight);
-    VectorXDecisionVariable vars{num_positions() + num_velocities()};
-    vars.head(num_positions() + num_velocities()) =
-        prog_->state(i).head(num_positions() + num_velocities());
-    prog_->AddCost(cost, vars);
-  }
-}
-
-void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
-    int index, const std::string& body_name, const Isometry3<double>& X_WFd,
-    double orientation_tolerance, double position_tolerance,
-    const Isometry3<double>& X_BF) {
-  const RigidBody<double>* body = tree_->FindBody(body_name);
-  auto constraint = std::make_shared<BodyPoseConstraint>(
-      *tree_, *body, X_WFd, orientation_tolerance, position_tolerance, X_BF);
-  VectorXDecisionVariable vars{num_positions()};
-  vars.head(num_positions()) = prog_->state(index).head(num_positions());
-  prog_->AddConstraint(constraint, vars);
-}
-
-void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
-    double collision_avoidance_threshold, int index) {
-  DRAKE_DEMAND(index >= 0 && index < num_time_samples_);
-  auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
-      *tree_, collision_avoidance_threshold);
-  VectorXDecisionVariable vars{num_positions()};
-  vars.head(num_positions()) = prog_->state(index).head(num_positions());
-  prog_->AddConstraint(constraint, vars);
-}
-
-void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
-    double collision_avoidance_threshold) {
-  for (int i = 0; i < num_time_samples_; ++i) {
-    AddCollisionAvoidanceConstraint(collision_avoidance_threshold, i);
-  }
-}
-
-std::vector<bool> KinematicTrajectoryOptimization::CheckCollisions(
-    double collision_avoidance_threshold) {
-  std::vector<bool> has_collisions(num_time_samples_, false);
-  CollisionAvoidanceConstraint constraint{*tree_,
-                                          collision_avoidance_threshold};
-  MatrixX<double> q_values{prog_->GetStateSamples()};
-  for (int i = 0; i < num_time_samples_; ++i) {
-    const VectorX<double> q{q_values.col(i).head(num_positions())};
-    has_collisions.at(i) = !constraint.CheckSatisfied(q);
-  }
-  return has_collisions;
-}
-
-void KinematicTrajectoryOptimization::AddRunningCost(
-    const symbolic::Expression& g) {
-  prog_->AddRunningCost(g);
-};
 
 SolutionResult KinematicTrajectoryOptimization::Solve() {
-    return prog_->Solve();
+  system_ = CreateSystem();
+  std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
+  auto position_variables{GetPositionVariablesFromProgram(*prog)};
+  prog->AddConstraintToAllKnotPoints(position_variables >=
+                                     tree_->joint_limit_min);
+  prog->AddConstraintToAllKnotPoints(position_variables <=
+                                     tree_->joint_limit_max);
+  if (has_equal_time_intervals_) {
+    prog->AddEqualTimeIntervalsConstraints();
+  }
+  prog->AddDurationBounds(duration_lower_bound_, duration_upper_bound_);
+  return prog->Solve();
 };
 
 PiecewisePolynomialTrajectory
-KinematicTrajectoryOptimization::ReconstructStateTrajectory() const {
-  return prog_->ReconstructStateTrajectory();
-};
-
-PiecewisePolynomialTrajectory
-KinematicTrajectoryOptimization::ReconstructInputTrajectory() const {
-  return prog_->ReconstructInputTrajectory();
+KinematicTrajectoryOptimization::GetPositionTrajectory() const {
+  return position_trajectory_;
 };
 
 template <typename T>
 void KinematicTrajectoryOptimization::SetSolverOption(
     const solvers::SolverId& solver_id, const std::string& solver_option,
     T option_value) {
-  prog_->SetSolverOption(solver_id, solver_option, option_value);
+  solver_options_container_.SetSolverOption(solver_id, solver_option,
+                                            option_value);
 };
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
     const symbolic::Formula& f) {
-  prog_->AddLinearConstraint(f);
+  AddLinearConstraint(f, {0, 1});
+}
+
+void KinematicTrajectoryOptimization::AddLinearConstraint(
+    const symbolic::Formula& f, double time) {
+  AddLinearConstraint(f, {time, time});
+}
+
+void KinematicTrajectoryOptimization::AddLinearConstraint(
+    const symbolic::Formula& f, Vector2<double> plan_interval) {
+  formula_constraints_.emplace_back(new FormulaWrapper({f, plan_interval}));
 }
 
 // Explicit instantiations of SetSolverOption()

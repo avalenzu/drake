@@ -110,7 +110,8 @@ int DoMain() {
   DrakeVisualizer visualizer{kin_traj_opt.tree(), &lcm, true};
   visualizer.PublishLoadRobot();
 
-  const int kNumPositions = kin_traj_opt.tree().get_num_positions();
+  const int kNumPositions = kin_traj_opt.num_positions();
+  const int kNumVelocities = kin_traj_opt.num_velocities();
 
   // Enforce uniform spacing of knots
   kin_traj_opt.AddEqualTimeIntervalsConstraints();
@@ -120,40 +121,38 @@ int DoMain() {
 
   // q[0] = 0
   kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.initial_state().head(kin_traj_opt.num_positions()) ==
-      kin_traj_opt.tree().getZeroConfiguration());
+      kin_traj_opt.position() == kin_traj_opt.tree().getZeroConfiguration(), 0);
 
+  const VectorX<double> kZeroNumVelocity{
+      VectorX<double>::Zero(kin_traj_opt.num_velocities())};
   // v[0] = 0 and a[0] = 0.
+  kin_traj_opt.AddLinearConstraint(kin_traj_opt.velocity() == kZeroNumVelocity,
+                                   0);
   kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.initial_state().tail(2 * kin_traj_opt.num_velocities()) ==
-      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
+      kin_traj_opt.acceleration() == kZeroNumVelocity, 0);
 
   // v[tmid] = 0 and a[tmid] = 0.
-  const int kMidKnotIndex{kNumKnots/2};
+  kin_traj_opt.AddLinearConstraint(kin_traj_opt.velocity() == kZeroNumVelocity,
+                                   0.5);
   kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.state(kMidKnotIndex).tail(2 * kin_traj_opt.num_velocities()) ==
-      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
+      kin_traj_opt.acceleration() == kZeroNumVelocity, 0.5);
 
   // v[tf] = 0 and a[tf] = 0.
+  kin_traj_opt.AddLinearConstraint(kin_traj_opt.velocity() == kZeroNumVelocity,
+                                   1);
   kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.final_state().tail(2 * kin_traj_opt.num_velocities()) ==
-      VectorX<double>::Zero(2 * kin_traj_opt.num_velocities()));
+      kin_traj_opt.acceleration() == kZeroNumVelocity, 1);
 
   // v[i] < v_max
-  kin_traj_opt.AddConstraintToAllKnotPoints(
-      kin_traj_opt.state().segment(kin_traj_opt.num_positions(),
-                            kin_traj_opt.num_velocities()) <=
+  const VectorX<double> kMaxVelocity{
       FLAGS_max_velocity *
-          VectorX<double>::Ones(kin_traj_opt.num_velocities()));
+      VectorX<double>::Ones(kin_traj_opt.num_velocities())};
+  kin_traj_opt.AddLinearConstraint(kin_traj_opt.velocity() <= kMaxVelocity);
+  kin_traj_opt.AddLinearConstraint(-kMaxVelocity <= kin_traj_opt.velocity());
 
-  kin_traj_opt.AddConstraintToAllKnotPoints(
-      kin_traj_opt.state().segment(kin_traj_opt.num_positions(),
-                            kin_traj_opt.num_velocities()) >=
-      -FLAGS_max_velocity *
-          VectorX<double>::Ones(kin_traj_opt.num_velocities()));
-
-  kin_traj_opt.AddRunningCost(FLAGS_jerk_weight * kin_traj_opt.input().transpose() *
-                              kin_traj_opt.input());
+  kin_traj_opt.AddRunningCost(FLAGS_jerk_weight *
+                              kin_traj_opt.jerk().transpose() *
+                              kin_traj_opt.jerk());
   kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee",
                                       FLAGS_spatial_velocity_weight);
   kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
@@ -182,90 +181,55 @@ int DoMain() {
 
   const double kOrientationTolerance{FLAGS_orientation_tolerance*M_PI/180};
 
-  kin_traj_opt.AddBodyPoseConstraint(kMidKnotIndex, "iiwa_link_ee", X_WF0,
+  kin_traj_opt.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
-  kin_traj_opt.AddBodyPoseConstraint(kNumKnots - 1, "iiwa_link_ee", X_WFf,
+  kin_traj_opt.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
-  //if (kCollisionAvoidanceThreshold > 0) {
-    //kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
-  //}
+  if (kCollisionAvoidanceThreshold > 0) {
+    kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
+  }
 
   std::default_random_engine rand_generator{1234};
   SolutionResult result{drake::solvers::kUnknownError};
-
-  for (int i = 0; i < kNumKnots; ++i) {
-    kin_traj_opt.SetInitialGuess(
-        kin_traj_opt.state(i).head(kin_traj_opt.num_positions()),
-        kin_traj_opt.tree().getRandomConfiguration(rand_generator));
-  }
-  bool done{false};
-  std::vector<bool> collision_constraint_enforced(kNumKnots, false);
-  auto num_enforced_knots = [](std::vector<bool> in) {
-    int out{0};
-    for (bool val : in) {
-      if (val) {
-        ++out;
-      }
+  const int kNumSeedKnots = 2;
+  for (int k = 0; k < FLAGS_num_restarts + 1; ++k) {
+    std::vector<double> t_seed;
+    std::vector<MatrixX<double>> q_seed;
+    for (int i = 0; i < kNumSeedKnots; ++i) {
+      t_seed.push_back(i/(kNumSeedKnots-1));
+      q_seed.push_back(
+          kin_traj_opt.tree().getRandomConfiguration(rand_generator));
     }
-    return out;
-  };
-  while (!done) {
+    kin_traj_opt.SetInitialTrajectory(
+        PiecewisePolynomial<double>::Pchip(t_seed, q_seed, true));
     result = kin_traj_opt.Solve();
-    drake::log()->debug(
-        "Collision constraints enforced at {} knots: Solver returns {}.",
-        num_enforced_knots(collision_constraint_enforced), result);
-    std::vector<bool> has_collisions{
-        kin_traj_opt.CheckCollisions(kCollisionAvoidanceThreshold)};
-    done = true;
-    for (int i = 0; i < kNumKnots; ++i) {
-      if (has_collisions.at(i) && !collision_constraint_enforced.at(i)) {
-        drake::log()->debug("Adding collision avoidance constraint at knot {}",
-                            i);
-        kin_traj_opt.AddCollisionAvoidanceConstraint(
-            kCollisionAvoidanceThreshold, i);
-        collision_constraint_enforced.at(i) = true;
-        done = false;
-      }
-    }
-    kin_traj_opt.mutable_prog()->SetInitialTrajectory(
-        kin_traj_opt.ReconstructInputTrajectory().get_piecewise_polynomial(),
-        kin_traj_opt.ReconstructStateTrajectory().get_piecewise_polynomial());
-    if (done &&
-        kin_traj_opt.mutable_prog()
-                ->GetSolverOptionsDouble(drake::solvers::SnoptSolver::id())
-                .at("Major optimality tolerance") >  
-            FLAGS_optimality_tolerance) {
-      kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
-                                   "Major optimality tolerance",
-                                   FLAGS_optimality_tolerance);
-      done = false;
-    }
+    drake::log()->info("Attempt {}: Solver returns {}.", k, result);
+    if (result == drake::solvers::kSolutionFound) break;
   }
-  //kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
-                        //"Major optimality tolerance",
-                        //FLAGS_optimality_tolerance);
-  //result = kin_traj_opt.Solve();
-  //drake::log()->debug(
-      //"Running with desired optimality tolerance: Solver returns {}.", result);
 
-  auto x_sol = kin_traj_opt.ReconstructStateTrajectory();
+  auto q_sol = kin_traj_opt.GetPositionTrajectory();
   std::vector<double> breaks{
-      x_sol.get_piecewise_polynomial().getSegmentTimes()};
+      q_sol.get_piecewise_polynomial().getSegmentTimes()};
   std::vector<MatrixX<double>> knots;
   std::vector<MatrixX<double>> knots_dot;
   knots.reserve(breaks.size());
   knots_dot.reserve(breaks.size());
   drake::log()->info("Number of knots in solution: {}", breaks.size());
   drake::log()->info("Duration of solution trajectory: {} s",
-                     x_sol.get_end_time() - x_sol.get_start_time());
+                     q_sol.get_end_time() - q_sol.get_start_time());
   for (int i = 0; i < static_cast<int>(breaks.size()); ++i) {
     const double t{breaks[i]};
-    knots.push_back(x_sol.value(t).topRows(2 * kNumPositions));
-    knots_dot.push_back(FLAGS_realtime_rate * x_sol.value(t).bottomRows(2 * kNumPositions));
+    // The visualizer won't use the velocities, so we only populate the
+    // positions here.
+    knots.emplace_back(kNumPositions + kNumVelocities, 1);
+    knots.back().topRows(kNumPositions) = q_sol.value(t);
+    knots_dot.emplace_back(kNumPositions + kNumVelocities, 1);
+    knots_dot.back().topRows(kNumPositions) =
+        FLAGS_realtime_rate * q_sol.derivative(1)->value(t);
     breaks[i] /= FLAGS_realtime_rate;
   }
   std::unique_ptr<PiecewisePolynomialTrajectory> q_and_v_traj;
