@@ -171,6 +171,7 @@ int DoMain() {
         kin_traj_opt.jerk().transpose() *
         kin_traj_opt.jerk());
   }
+  kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
   if (FLAGS_spatial_velocity_weight > 0) {
     kin_traj_opt.AddSpatialVelocityCost(FLAGS_velocity_cost_body,
         FLAGS_spatial_velocity_weight);
