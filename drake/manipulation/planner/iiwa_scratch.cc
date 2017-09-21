@@ -25,6 +25,10 @@ DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
 DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
 DEFINE_double(spatial_velocity_weight, 1e0,
               "Relative weight of end-effector spatial velocity cost");
+DEFINE_double(velocity_weight, 1e-1,
+              "Relative weight of velocity-squared cost");
+DEFINE_double(acceleration_weight, 1e-1,
+              "Relative weight of acceleration-squared cost");
 DEFINE_double(jerk_weight, 1e-1,
               "Relative weight of jerk-squared cost");
 DEFINE_double(tfinal_weight, 1e1,
@@ -41,6 +45,7 @@ DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orien
 DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
 DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
+DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(num_restarts, 0, "Number of random restarts allowed");
@@ -119,9 +124,10 @@ int DoMain() {
   // Enforce maximum duration
   kin_traj_opt.AddDurationBounds(0.1, kDuration);
 
-  // q[0] = 0
+  // q[0] = q0
+  VectorX<double> q0 = kin_traj_opt.tree().getZeroConfiguration();
   kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.position() == kin_traj_opt.tree().getZeroConfiguration(), 0);
+      kin_traj_opt.position() == q0, 0);
 
   const VectorX<double> kZeroNumVelocity{
       VectorX<double>::Zero(kin_traj_opt.num_velocities())};
@@ -150,12 +156,28 @@ int DoMain() {
   kin_traj_opt.AddLinearConstraint(kin_traj_opt.velocity() <= kMaxVelocity);
   kin_traj_opt.AddLinearConstraint(-kMaxVelocity <= kin_traj_opt.velocity());
 
-  kin_traj_opt.AddRunningCost(FLAGS_jerk_weight *
-                              kin_traj_opt.jerk().transpose() *
-                              kin_traj_opt.jerk());
-  kin_traj_opt.AddSpatialVelocityCost("iiwa_link_ee",
-                                      FLAGS_spatial_velocity_weight);
-  kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
+  if (FLAGS_velocity_weight > 0) {
+    kin_traj_opt.AddRunningCost(FLAGS_velocity_weight *
+        kin_traj_opt.velocity().transpose() *
+        kin_traj_opt.velocity());
+  }
+  if (FLAGS_acceleration_weight > 0) {
+    kin_traj_opt.AddRunningCost(FLAGS_acceleration_weight *
+        kin_traj_opt.acceleration().transpose() *
+        kin_traj_opt.acceleration());
+  }
+  if (FLAGS_jerk_weight > 0) {
+    kin_traj_opt.AddRunningCost(FLAGS_jerk_weight *
+        kin_traj_opt.jerk().transpose() *
+        kin_traj_opt.jerk());
+  }
+  if (FLAGS_spatial_velocity_weight > 0) {
+    kin_traj_opt.AddSpatialVelocityCost(FLAGS_velocity_cost_body,
+        FLAGS_spatial_velocity_weight);
+  }
+  if (FLAGS_tfinal_weight > 0) {
+    kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
+  }
 
   // Add middle and final pose constraints
   Isometry3<double> X_WF0{Isometry3<double>::Identity()};
@@ -200,7 +222,7 @@ int DoMain() {
     std::vector<double> t_seed;
     std::vector<MatrixX<double>> q_seed;
     for (int i = 0; i < kNumSeedKnots; ++i) {
-      t_seed.push_back(i/(kNumSeedKnots-1));
+      t_seed.push_back(static_cast<double>(i)/static_cast<double>(kNumSeedKnots-1));
       q_seed.push_back(
           kin_traj_opt.tree().getRandomConfiguration(rand_generator));
     }
