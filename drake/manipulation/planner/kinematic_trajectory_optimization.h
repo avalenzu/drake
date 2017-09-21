@@ -159,6 +159,47 @@ class KinematicTrajectoryOptimization {
     Vector2<double> plan_interval;
   };
 
+  // Helper method that performs the work for SubstitutePlaceHolderVariables
+  symbolic::Substitution ConstructPlaceholderVariableSubstitution(
+      const systems::trajectory_optimization::MultipleShooting&) const;
+  symbolic::Substitution ConstructPlaceholderVariableSubstitution(
+      const systems::trajectory_optimization::MultipleShooting&,
+      int index) const;
+
+  solvers::VectorXDecisionVariable SubstitutePlaceholderVariables(
+      const solvers::VectorXDecisionVariable& vars,
+      const systems::trajectory_optimization::MultipleShooting& prog);
+
+  solvers::VectorXDecisionVariable SubstitutePlaceholderVariables(
+      const solvers::VectorXDecisionVariable& vars,
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index);
+
+  symbolic::Formula SubstitutePlaceholderVariables(
+      const symbolic::Formula& f,
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index);
+
+  symbolic::Expression SubstitutePlaceholderVariables(
+      const symbolic::Expression& g,
+      const systems::trajectory_optimization::MultipleShooting& prog);
+
+  void AddConstraintToProgram(
+      const ConstraintWrapper& constraint,
+      systems::trajectory_optimization::MultipleShooting* prog);
+
+  void AddLinearConstraintToProgram(
+      const FormulaWrapper& constraint,
+      systems::trajectory_optimization::MultipleShooting* prog);
+
+  void AddRunningCostToProgram(
+      const symbolic::Expression& cost,
+      systems::trajectory_optimization::MultipleShooting* prog);
+
+  void AddCostToProgram(
+      const CostWrapper&,
+      systems::trajectory_optimization::MultipleShooting* prog);
+
   std::unique_ptr<systems::System<double>> CreateSystem() const;
 
   std::unique_ptr<systems::trajectory_optimization::MultipleShooting>
@@ -167,7 +208,16 @@ class KinematicTrajectoryOptimization {
   const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
       const systems::trajectory_optimization::MultipleShooting& prog) const;
 
-  static bool IsValidPlanInterval(Vector2<double>);
+  const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index) const;
+
+  static bool IsValidPlanInterval(const Vector2<double>&);
+
+  std::vector<int> ActiveKnotsForPlanInterval(
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      const Vector2<double>& plan_interval);
+
+  void UpdatePositionTrajectory(const systems::trajectory_optimization::MultipleShooting& prog);
 
   std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
@@ -185,7 +235,7 @@ class KinematicTrajectoryOptimization {
   std::vector<std::unique_ptr<const symbolic::Expression>> running_cost_expressions_;
   std::vector<std::unique_ptr<const CostWrapper>> running_cost_objects_;
   std::vector<std::unique_ptr<const symbolic::Expression>> final_cost_expressions_;
-  std::vector<std::unique_ptr<const FormulaWrapper>> formula_constraints_;
+  std::vector<std::unique_ptr<const FormulaWrapper>> formula_linear_constraints_;
   std::vector<std::unique_ptr<const ConstraintWrapper>> object_constraints_;
 
   double duration_lower_bound_{0};

@@ -13,6 +13,8 @@ using drake::solvers::SolutionResult;
 using drake::solvers::VectorXDecisionVariable;
 using drake::solvers::Cost;
 using drake::solvers::Constraint;
+using drake::symbolic::Expression;
+using drake::symbolic::Formula;
 
 namespace drake {
 namespace manipulation {
@@ -249,7 +251,7 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
 }
 
 bool KinematicTrajectoryOptimization::IsValidPlanInterval(
-    Vector2<double> plan_interval) {
+    const Vector2<double>& plan_interval) {
   return 0 <= plan_interval(0) && plan_interval(0) <= 1 &&
          0 <= plan_interval(1) && plan_interval(1) <= 1 &&
          plan_interval(0) <= plan_interval(1);
@@ -322,6 +324,149 @@ KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
   return prog.state().head(num_positions());
 }
 
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  return prog.state(index).head(num_positions());
+}
+
+symbolic::Substitution
+KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
+    const MultipleShooting& prog) const {
+  symbolic::Substitution sub;
+  sub.emplace(placeholder_t_var_(0), prog.time()(0));
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_q_vars_(i), prog.state()(i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_v_vars_(i), prog.state()(num_positions() + i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_a_vars_(i), prog.state()(num_positions() + num_velocities() + i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_j_vars_(i), prog.input()(i));
+  }
+  return sub;
+}
+
+symbolic::Substitution
+KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
+    const MultipleShooting& prog, int index) const {
+  symbolic::Substitution sub;
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_q_vars_(i), prog.state(index)(i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_v_vars_(i), prog.state(index)(num_positions() + i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_a_vars_(i), prog.state(index)(num_positions() + num_velocities() + i));
+  }
+  for (int i = 0; i < num_positions(); ++i) {
+    sub.emplace(placeholder_j_vars_(i), prog.input(index)(i));
+  }
+  return sub;
+}
+
+solvers::VectorXDecisionVariable KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
+    const solvers::VectorXDecisionVariable& vars,
+    const systems::trajectory_optimization::MultipleShooting& prog) {
+  VectorXDecisionVariable vars_out{vars.size()};
+  for (int i = 0; i < vars.size(); ++i) {
+    vars_out(i) =
+        *vars.cast<symbolic::Expression>()(i)
+             .Substitute(ConstructPlaceholderVariableSubstitution(prog))
+             .GetVariables()
+             .begin();
+  }
+  return vars_out;
+}
+
+solvers::VectorXDecisionVariable KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
+    const solvers::VectorXDecisionVariable& vars,
+    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+  VectorXDecisionVariable vars_out{vars.size()};
+  for (int i = 0; i < vars.size(); ++i) {
+    vars_out(i) =
+        *vars.cast<symbolic::Expression>()(i)
+             .Substitute(ConstructPlaceholderVariableSubstitution(prog, index))
+             .GetVariables()
+             .begin();
+  }
+  return vars_out;
+}
+
+Formula KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
+    const Formula& f,
+    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+  return f.Substitute(ConstructPlaceholderVariableSubstitution(prog, index));
+}
+
+Expression KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
+    const Expression& g,
+    const systems::trajectory_optimization::MultipleShooting& prog) {
+  return g.Substitute(ConstructPlaceholderVariableSubstitution(prog));
+}
+
+std::vector<int> KinematicTrajectoryOptimization::ActiveKnotsForPlanInterval(
+    const systems::trajectory_optimization::MultipleShooting& prog,
+    const Vector2<double>& plan_interval) {
+  std::vector<int> active_knots;
+  if (plan_interval(1) - plan_interval(0) < 1.0 / num_time_samples_) {
+    // It's possible that no knots will fall inside the interval. We don't want
+    // to loose the constraint, so apply it at the knot closest to the mid-point
+    // of the interval.
+    const double interval_center{plan_interval.mean()};
+    active_knots.push_back(
+        std::round(interval_center * (num_time_samples_ - 1)));
+  } else {
+    for (int i = 0; i < num_time_samples_; ++i) {
+      const double knot_time{static_cast<double>(i) /
+                             (static_cast<double>(num_time_samples_) - 1)};
+      if (plan_interval(0) <= knot_time && knot_time <= plan_interval(1)) {
+        active_knots.push_back(i);
+      }
+    }
+  }
+  return active_knots;
+}
+
+void KinematicTrajectoryOptimization::AddConstraintToProgram(
+    const ConstraintWrapper& constraint, MultipleShooting* prog) {
+  std::vector<int> active_knots{
+      ActiveKnotsForPlanInterval(*prog, constraint.plan_interval)};
+  for (int index : active_knots) {
+    prog->AddConstraint(
+        constraint.constraint,
+        SubstitutePlaceholderVariables(constraint.vars, *prog, index));
+  }
+}
+
+void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
+    const FormulaWrapper& constraint, MultipleShooting* prog) {
+  std::vector<int> active_knots{
+      ActiveKnotsForPlanInterval(*prog, constraint.plan_interval)};
+  for (int index : active_knots) {
+    prog->AddLinearConstraint(SubstitutePlaceholderVariables(constraint.formula, *prog, index));
+  }
+}
+
+void KinematicTrajectoryOptimization::AddRunningCostToProgram(
+    const Expression& cost, MultipleShooting* prog) {
+  prog->AddRunningCost(SubstitutePlaceholderVariables(cost, *prog));
+}
+
+void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
+                                                       MultipleShooting* prog) {
+  std::vector<int> active_knots{
+      ActiveKnotsForPlanInterval(*prog, cost.plan_interval)};
+  for (int index : active_knots) {
+    prog->AddCost(cost.cost,
+                  SubstitutePlaceholderVariables(cost.vars, *prog, index));
+  }
+}
+
 SolutionResult KinematicTrajectoryOptimization::Solve() {
   system_ = CreateSystem();
   std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
@@ -334,8 +479,39 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
     prog->AddEqualTimeIntervalsConstraints();
   }
   prog->AddDurationBounds(duration_lower_bound_, duration_upper_bound_);
-  return prog->Solve();
-};
+
+  for (const auto& constraint : object_constraints_) {
+    AddConstraintToProgram(*constraint, prog.get());
+  }
+  for (const auto& constraint : formula_linear_constraints_) {
+    AddLinearConstraintToProgram(*constraint, prog.get());
+  }
+  for (const auto& cost : running_cost_objects_) {
+    AddCostToProgram(*cost, prog.get());
+  }
+
+  SolutionResult result{prog->Solve()};
+
+  UpdatePositionTrajectory(*prog);
+  
+  return result;
+}
+
+void KinematicTrajectoryOptimization::UpdatePositionTrajectory(
+    const systems::trajectory_optimization::MultipleShooting& prog) {
+  VectorX<double> times{prog.GetSampleTimes()};
+  std::vector<double> times_vec(num_time_samples_);
+  std::vector<MatrixX<double>> positions(num_time_samples_);
+  std::vector<MatrixX<double>> velocities(num_time_samples_);
+  for (int i = 0; i < num_time_samples_; ++i) {
+    times_vec[i] = times(i);
+    positions[i] = prog.GetSolution(prog.state(i).head(num_positions()));
+    velocities[i] = prog.GetSolution(
+        prog.state(i).segment(num_positions(), num_velocities()));
+  }
+  position_trajectory_ = PiecewisePolynomialTrajectory(
+      PiecewisePolynomial<double>::Cubic(times_vec, positions, velocities));
+}
 
 PiecewisePolynomialTrajectory
 KinematicTrajectoryOptimization::GetPositionTrajectory() const {
@@ -348,7 +524,7 @@ void KinematicTrajectoryOptimization::SetSolverOption(
     T option_value) {
   solver_options_container_.SetSolverOption(solver_id, solver_option,
                                             option_value);
-};
+}
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
     const symbolic::Formula& f) {
@@ -362,7 +538,7 @@ void KinematicTrajectoryOptimization::AddLinearConstraint(
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
     const symbolic::Formula& f, Vector2<double> plan_interval) {
-  formula_constraints_.emplace_back(new FormulaWrapper({f, plan_interval}));
+  formula_linear_constraints_.emplace_back(new FormulaWrapper({f, plan_interval}));
 }
 
 // Explicit instantiations of SetSolverOption()
