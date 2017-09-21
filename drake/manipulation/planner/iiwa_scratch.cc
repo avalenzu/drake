@@ -103,7 +103,7 @@ int DoMain() {
                         "Major iterations limit", FLAGS_iteration_limit);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major optimality tolerance",
-                        FLAGS_optimality_tolerance);
+                        100*FLAGS_optimality_tolerance);
 
   lcm::DrakeLcm lcm;
   lcm.StartReceiveThread();
@@ -189,23 +189,68 @@ int DoMain() {
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   // Add collision avoidance constraints
-  if (FLAGS_collision_avoidance_threshold > 0) {
-    kin_traj_opt.AddCollisionAvoidanceConstraint(
-        FLAGS_collision_avoidance_threshold);
-  }
+  double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
+  //if (kCollisionAvoidanceThreshold > 0) {
+    //kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
+  //}
 
   std::default_random_engine rand_generator{1234};
   SolutionResult result{drake::solvers::kUnknownError};
-  for (int k = 0; k < FLAGS_num_restarts + 1; ++k) {
-    for (int i = 0; i < kNumKnots; ++i) {
-      kin_traj_opt.SetInitialGuess(
-          kin_traj_opt.state(i).head(kin_traj_opt.num_positions()),
-          kin_traj_opt.tree().getRandomConfiguration(rand_generator));
-    }
-    result = kin_traj_opt.Solve();
-    drake::log()->info("Attempt {}: Solver returns {}.", k, result);
-    if (result == drake::solvers::kSolutionFound) break;
+
+  for (int i = 0; i < kNumKnots; ++i) {
+    kin_traj_opt.SetInitialGuess(
+        kin_traj_opt.state(i).head(kin_traj_opt.num_positions()),
+        kin_traj_opt.tree().getRandomConfiguration(rand_generator));
   }
+  bool done{false};
+  std::vector<bool> collision_constraint_enforced(kNumKnots, false);
+  auto num_enforced_knots = [](std::vector<bool> in) {
+    int out{0};
+    for (bool val : in) {
+      if (val) {
+        ++out;
+      }
+    }
+    return out;
+  };
+  while (!done) {
+    result = kin_traj_opt.Solve();
+    drake::log()->debug(
+        "Collision constraints enforced at {} knots: Solver returns {}.",
+        num_enforced_knots(collision_constraint_enforced), result);
+    std::vector<bool> has_collisions{
+        kin_traj_opt.CheckCollisions(kCollisionAvoidanceThreshold)};
+    done = true;
+    for (int i = 0; i < kNumKnots; ++i) {
+      if (has_collisions.at(i) && !collision_constraint_enforced.at(i)) {
+        drake::log()->debug("Adding collision avoidance constraint at knot {}",
+                            i);
+        kin_traj_opt.AddCollisionAvoidanceConstraint(
+            kCollisionAvoidanceThreshold, i);
+        collision_constraint_enforced.at(i) = true;
+        done = false;
+      }
+    }
+    kin_traj_opt.mutable_prog()->SetInitialTrajectory(
+        kin_traj_opt.ReconstructInputTrajectory().get_piecewise_polynomial(),
+        kin_traj_opt.ReconstructStateTrajectory().get_piecewise_polynomial());
+    if (done &&
+        kin_traj_opt.mutable_prog()
+                ->GetSolverOptionsDouble(drake::solvers::SnoptSolver::id())
+                .at("Major optimality tolerance") >  
+            FLAGS_optimality_tolerance) {
+      kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
+                                   "Major optimality tolerance",
+                                   FLAGS_optimality_tolerance);
+      done = false;
+    }
+  }
+  //kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
+                        //"Major optimality tolerance",
+                        //FLAGS_optimality_tolerance);
+  //result = kin_traj_opt.Solve();
+  //drake::log()->debug(
+      //"Running with desired optimality tolerance: Solver returns {}.", result);
 
   auto x_sol = kin_traj_opt.ReconstructStateTrajectory();
   std::vector<double> breaks{
