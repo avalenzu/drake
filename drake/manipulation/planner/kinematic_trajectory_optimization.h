@@ -74,6 +74,17 @@ class KinematicTrajectoryOptimization {
     return placeholder_j_vars_;
   }
 
+  /// Returns a placeholder decision variable (not actually declared as a
+  /// decision variable in the MathematicalProgram) associated with the
+  /// spatial velocity vector of @p body_name.  This variable will be substituted for
+  /// real decision variables at particular times in methods like
+  /// AddRunningCost.  Passing this variable directly into
+  /// objectives/constraints for the parent classes will result in an error.
+  const solvers::VectorXDecisionVariable spatial_velocity_of_body(
+      const std::string& body_name) const {
+    return placeholder_spatial_velocity_vars_.at(body_name);
+  }
+
   int num_time_samples() { return num_time_samples_; };
 
   const RigidBodyTree<double>& tree() { return *tree_; };
@@ -195,6 +206,10 @@ class KinematicTrajectoryOptimization {
       systems::trajectory_optimization::MultipleShooting* prog);
 
   void AddRunningCostToProgram(
+      const symbolic::Expression& cost,
+      systems::trajectory_optimization::MultipleShooting* prog);
+
+  void AddFinalCostToProgram(
       const symbolic::Expression& cost,
       systems::trajectory_optimization::MultipleShooting* prog);
 
