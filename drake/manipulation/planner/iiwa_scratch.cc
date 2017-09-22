@@ -47,6 +47,7 @@ DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
+DEFINE_bool(use_random_seed, false, "If true, seed with a random trajectory.");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(num_restarts, 0, "Number of random restarts allowed");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
@@ -122,7 +123,8 @@ int DoMain() {
   kin_traj_opt.AddEqualTimeIntervalsConstraints();
 
   // Enforce maximum duration
-  kin_traj_opt.AddDurationBounds(0.1, kDuration);
+  const double kMinDuration{0.1};
+  kin_traj_opt.AddDurationBounds(kMinDuration, kDuration);
 
   // q[0] = q0
   VectorX<double> q0 = kin_traj_opt.tree().getZeroConfiguration();
@@ -221,17 +223,22 @@ int DoMain() {
 
   std::default_random_engine rand_generator{1234};
   SolutionResult result{drake::solvers::kUnknownError};
-  const int kNumSeedKnots = 2;
   for (int k = 0; k < FLAGS_num_restarts + 1; ++k) {
     std::vector<double> t_seed;
     std::vector<MatrixX<double>> q_seed;
-    for (int i = 0; i < kNumSeedKnots; ++i) {
-      t_seed.push_back(static_cast<double>(i)/static_cast<double>(kNumSeedKnots-1));
-      q_seed.push_back(
-          kin_traj_opt.tree().getRandomConfiguration(rand_generator));
+    for (int i = 0; i < kNumKnots; ++i) {
+      t_seed.push_back(kMinDuration*static_cast<double>(i)/static_cast<double>(kNumKnots-1));
+      if (FLAGS_use_random_seed) {
+        q_seed.push_back(
+            kin_traj_opt.tree().getRandomConfiguration(rand_generator));
+      } else {
+        q_seed.push_back(
+            kin_traj_opt.tree().getZeroConfiguration());
+      }
     }
-    kin_traj_opt.SetInitialTrajectory(
-        PiecewisePolynomial<double>::Pchip(t_seed, q_seed, true));
+    kin_traj_opt.SetInitialTrajectory(PiecewisePolynomial<double>::Cubic(
+        t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
+        VectorX<double>::Zero(kNumPositions)));
     result = kin_traj_opt.Solve();
     drake::log()->info("Attempt {}: Solver returns {}.", k, result);
     if (result == drake::solvers::kSolutionFound) break;
