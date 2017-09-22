@@ -23,11 +23,11 @@
 DEFINE_double(duration, 10, "Maximum duration of trajectory.");
 DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
 DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
-DEFINE_double(spatial_velocity_weight, 1e0,
+DEFINE_double(spatial_velocity_weight, 0e0,
               "Relative weight of end-effector spatial velocity cost");
-DEFINE_double(velocity_weight, 1e-1,
+DEFINE_double(velocity_weight, 0e0,
               "Relative weight of velocity-squared cost");
-DEFINE_double(acceleration_weight, 1e-1,
+DEFINE_double(acceleration_weight, 0e0,
               "Relative weight of acceleration-squared cost");
 DEFINE_double(jerk_weight, 1e-1,
               "Relative weight of jerk-squared cost");
