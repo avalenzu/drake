@@ -50,6 +50,10 @@ DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display 
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 DEFINE_int32(num_knots, 15, "Number of knot points.");
+DEFINE_int32(initial_num_knots, 15, "Number of knot points.");
+DEFINE_int32(num_knots_increment, 4, "Number of knot points.");
+DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
+DEFINE_int32(initial_system_order, 3, "Order of the dynamics model for the system.");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -99,11 +103,13 @@ int DoMain() {
   const double kMinimumTimestep{FLAGS_min_timestep};
   const double kMaximumTimestep{FLAGS_max_timestep};
   const int kFinalNumKnots{FLAGS_num_knots};
-  int num_knots{3};
+  const int kNumKnotsIncrement{FLAGS_num_knots_increment};
+  int num_knots{FLAGS_initial_num_knots};
   drake::log()->info("Number of knots: {}", num_knots);
 
   KinematicTrajectoryOptimization kin_traj_opt{
       std::move(iiwa), num_knots, kMinimumTimestep, kMaximumTimestep};
+  kin_traj_opt.set_system_order(FLAGS_initial_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
@@ -172,14 +178,6 @@ int DoMain() {
         kin_traj_opt.jerk().transpose() *
         kin_traj_opt.jerk());
   }
-  if (FLAGS_spatial_velocity_weight > 0) {
-    kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
-    auto spatial_velocity_vars =
-        kin_traj_opt.spatial_velocity_of_body(FLAGS_velocity_cost_body);
-    kin_traj_opt.AddRunningCost(FLAGS_spatial_velocity_weight *
-                                spatial_velocity_vars.transpose() *
-                                spatial_velocity_vars);
-  }
   if (FLAGS_tfinal_weight > 0) {
     kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
   }
@@ -214,6 +212,7 @@ int DoMain() {
   kin_traj_opt.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
+
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
   if (kCollisionAvoidanceThreshold > 0) {
@@ -236,7 +235,8 @@ int DoMain() {
       VectorX<double>::Zero(kNumPositions)));
   result = kin_traj_opt.Solve();
   drake::log()->info(
-      "Solved with {} knots: Solver returned {}. Trajectory Duration = {} s",
+      "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
+      kin_traj_opt.system_order(),
       kin_traj_opt.num_time_samples(), result,
       kin_traj_opt.GetPositionTrajectory().get_end_time());
   while (num_knots < kFinalNumKnots) {
@@ -244,12 +244,48 @@ int DoMain() {
       kin_traj_opt.SetInitialTrajectory(
           kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
     }
-    // num_knots = std::min(kFinalNumKnots, 2 * (num_knots-1) + 1);
-    num_knots = std::min(kFinalNumKnots, num_knots + 4);
+    num_knots = std::min(kFinalNumKnots, num_knots + kNumKnotsIncrement);
     kin_traj_opt.set_num_time_samples(num_knots);
     result = kin_traj_opt.Solve();
     drake::log()->info(
-        "Solved with {} knots: Solver returned {}. Trajectory Duration = {} s",
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
+        kin_traj_opt.system_order(),
+        kin_traj_opt.num_time_samples(), result,
+        kin_traj_opt.GetPositionTrajectory().get_end_time());
+  }
+
+  // Add spatial velocity cost
+  if (FLAGS_spatial_velocity_weight > 0) {
+    kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
+    auto spatial_velocity_vars =
+        kin_traj_opt.spatial_velocity_of_body(FLAGS_velocity_cost_body);
+    kin_traj_opt.AddRunningCost(FLAGS_spatial_velocity_weight *
+                                spatial_velocity_vars.transpose() *
+                                spatial_velocity_vars);
+    if (result == drake::solvers::kSolutionFound) {
+      kin_traj_opt.SetInitialTrajectory(
+          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    }
+    drake::log()->info("Adding spatial velocity cost");
+    result = kin_traj_opt.Solve();
+    drake::log()->info(
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
+        kin_traj_opt.system_order(),
+        kin_traj_opt.num_time_samples(), result,
+        kin_traj_opt.GetPositionTrajectory().get_end_time());
+  }
+
+  // Step up to final system order
+  for (int i = FLAGS_initial_system_order + 1; i <= FLAGS_system_order; ++i) {
+    kin_traj_opt.set_system_order(i);
+    if (result == drake::solvers::kSolutionFound) {
+      kin_traj_opt.SetInitialTrajectory(
+          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    }
+    result = kin_traj_opt.Solve();
+    drake::log()->info(
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
+        kin_traj_opt.system_order(),
         kin_traj_opt.num_time_samples(), result,
         kin_traj_opt.GetPositionTrajectory().get_end_time());
   }
