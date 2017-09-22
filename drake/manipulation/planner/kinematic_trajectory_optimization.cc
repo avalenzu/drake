@@ -143,34 +143,20 @@ class CollisionAvoidanceConstraint : public Constraint {
     std::vector<int> idxB_tmp;
     const_cast<RigidBodyTree<double>&>(tree_).collisionDetect(cache, distance_value, normal, xA, xB, idxA_tmp, idxB_tmp);
     const int kNumPairs = distance_value.size();
-    //std::vector<drake::multibody::collision::PointPair> pairs =
-        //const_cast<RigidBodyTree<double>*>(&tree_)
-            //->ComputeMaximumDepthCollisionPoints(cache, true);
-    //const int kNumPairs = pairs.size();
     y(0) = 0;
     y(0).derivatives().resize(q.size());
     y(0).derivatives().setZero();
     if (kNumPairs > 0) {
-      //drake::log()->debug("Number of collision pairs: {}", kNumPairs);
       VectorX<int> idxA(kNumPairs);
       VectorX<int> idxB(kNumPairs);
       for (int i = 0; i < kNumPairs; ++i) {
         idxA(i) = idxA_tmp[i];
         idxB(i) = idxB_tmp[i];
-        //idxA(i) = pairs.at(i).elementA->get_body()->get_body_index();
-        //idxB(i) = pairs.at(i).elementB->get_body()->get_body_index();
-        //xA.col(i) = pairs.at(i).ptA;
-        //xB.col(i) = pairs.at(i).ptB;
-        //distance_value(i) = pairs.at(i).distance;
-        //drake::log()->debug(
-            //"\t{} and {}: {} m", pairs.at(i).elementA->get_body()->get_name(),
-            //pairs.at(i).elementB->get_body()->get_name(), distance_value(i));
       }
       MatrixX<double> J;
       tree_.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
       MatrixX<double> ddist_dq{kNumPairs, q.size()};
       for (int i = 0; i < kNumPairs; ++i) {
-        //ddist_dq.row(i) = pairs.at(i).normal.transpose() * J.middleRows(3*i, 3);
         ddist_dq.row(i) = normal.col(i).transpose() * J.middleRows(3*i, 3);
       }
       AutoDiffVecXd distance{kNumPairs};
@@ -178,16 +164,11 @@ class CollisionAvoidanceConstraint : public Constraint {
                                                   distance);
       for (int i = 0; i < kNumPairs; ++i) {
         if (distance(i) < 2*collision_avoidance_threshold_) {
-          //drake::log()->debug(
-              //"\t{} and {}: {} m", tree_.get_body(idxA(i)).get_name(),
-              //tree_.get_body(idxB(i)).get_name(), distance_value(i));
           distance(i) /= collision_avoidance_threshold_;
           distance(i) -= 2;
-          //y(0) += distance(i) * distance(i);
           y(0) += -distance(i) * exp(1 / distance(i));
         }
       }
-      //drake::log()->debug("Constraint value: {}", math::autoDiffToValueMatrix(y));
     }
   }
 
