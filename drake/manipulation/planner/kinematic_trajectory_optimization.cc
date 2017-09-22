@@ -188,6 +188,24 @@ solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
 }
 }  // namespace
 
+bool KinematicTrajectoryOptimization::IsPositionTrajectoryCollisionFree(
+    double threshold) const {
+  const int kNumTimesToCheck{10 * num_time_samples_};
+  const double kStartTime{position_trajectory_.get_start_time()};
+  const double kEndTime{position_trajectory_.get_end_time()};
+  const VectorX<double> kTimesToCheck{
+      VectorX<double>::LinSpaced(kNumTimesToCheck, kStartTime, kEndTime)};
+  const CollisionAvoidanceConstraint kConstraint{*tree_, threshold};
+
+  for (int i = 0; i < kNumTimesToCheck; ++i) {
+    if (!kConstraint.CheckSatisfied(
+            position_trajectory_.value(kTimesToCheck(i)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     std::unique_ptr<RigidBodyTree<double>> tree, int num_time_samples,
     double minimum_timestep, double maximum_timestep)

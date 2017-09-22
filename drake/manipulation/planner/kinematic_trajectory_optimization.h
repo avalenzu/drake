@@ -154,6 +154,8 @@ class KinematicTrajectoryOptimization {
 
   void AddCollisionAvoidanceConstraint(double collision_avoidance_threshold);
 
+  bool IsPositionTrajectoryCollisionFree(double threshold) const;
+
   solvers::SolutionResult Solve();
 
   PiecewisePolynomialTrajectory GetPositionTrajectory() const;
