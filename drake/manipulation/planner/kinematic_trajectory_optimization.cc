@@ -536,8 +536,27 @@ std::vector<int> KinematicTrajectoryOptimization::ActiveKnotsForPlanInterval(
   return active_knots;
 }
 
+bool KinematicTrajectoryOptimization::AreVariablesPresentInProgram(
+    symbolic::Variables vars) const {
+  if (system_order_ < 3) {
+    if (!symbolic::intersect(symbolic::Variables(placeholder_j_vars_), vars)
+             .empty()) {
+      return false;
+    }
+    if (system_order_ < 2) {
+      if (!symbolic::intersect(symbolic::Variables(placeholder_a_vars_), vars)
+               .empty()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 void KinematicTrajectoryOptimization::AddConstraintToProgram(
     const ConstraintWrapper& constraint, MultipleShooting* prog) {
+  // Ignore constraints on higher order terms not present in the model.
+  if (!AreVariablesPresentInProgram(symbolic::Variables(constraint.vars))) return;
   std::vector<int> active_knots{
       ActiveKnotsForPlanInterval(*prog, constraint.plan_interval)};
   for (int index : active_knots) {
@@ -549,6 +568,7 @@ void KinematicTrajectoryOptimization::AddConstraintToProgram(
 
 void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
     const FormulaWrapper& constraint, MultipleShooting* prog) {
+  if (!AreVariablesPresentInProgram(constraint.formula.GetFreeVariables())) return;
   std::vector<int> active_knots{
       ActiveKnotsForPlanInterval(*prog, constraint.plan_interval)};
   for (int index : active_knots) {
@@ -558,12 +578,14 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 
 void KinematicTrajectoryOptimization::AddRunningCostToProgram(
     const Expression& cost, MultipleShooting* prog) {
+  if (!AreVariablesPresentInProgram(cost.GetVariables())) return;
   drake::log()->debug("Adding cost: {}", SubstitutePlaceholderVariables(cost, *prog));
   prog->AddRunningCost(SubstitutePlaceholderVariables(cost, *prog));
 }
 
 void KinematicTrajectoryOptimization::AddFinalCostToProgram(
     const Expression& cost, MultipleShooting* prog) {
+  if (!AreVariablesPresentInProgram(cost.GetVariables())) return;
   drake::log()->debug("Adding cost: {}", SubstitutePlaceholderVariables(cost, *prog));
   prog->AddFinalCost(SubstitutePlaceholderVariables(cost, *prog));
 }
@@ -571,6 +593,7 @@ void KinematicTrajectoryOptimization::AddFinalCostToProgram(
 
 void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
                                                        MultipleShooting* prog) {
+  if (!AreVariablesPresentInProgram(symbolic::Variables(cost.vars))) return;
   std::vector<int> active_knots{
       ActiveKnotsForPlanInterval(*prog, cost.plan_interval)};
   for (int index : active_knots) {
