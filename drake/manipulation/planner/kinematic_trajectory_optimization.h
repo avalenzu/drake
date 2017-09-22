@@ -92,11 +92,21 @@ class KinematicTrajectoryOptimization {
     num_time_samples_ = num_time_samples;
   };
 
+  int system_order() const { return system_order_; };
+  void set_system_order(int system_order) {
+    DRAKE_THROW_UNLESS(1 <= system_order && system_order <= 3);
+    system_order_ = system_order;
+  }
+
   const RigidBodyTree<double>& tree() { return *tree_; };
 
   int num_positions() const { return tree_->get_num_positions(); };
 
   int num_velocities() const { return tree_->get_num_velocities(); };
+
+  int num_body_spatial_velocity_variables() const {
+    return 6 * placeholder_spatial_velocity_vars_.size();
+  };
 
   /// Adds an integrated cost to all time steps, of the form
   ///    @f[ cost = \int_0^T g(t,x,u) dt, @f]
@@ -179,28 +189,23 @@ class KinematicTrajectoryOptimization {
 
   // Helper method that performs the work for SubstitutePlaceHolderVariables
   symbolic::Substitution ConstructPlaceholderVariableSubstitution(
-      const systems::trajectory_optimization::MultipleShooting&) const;
-  symbolic::Substitution ConstructPlaceholderVariableSubstitution(
       const systems::trajectory_optimization::MultipleShooting&,
-      int index) const;
-
-  solvers::VectorXDecisionVariable SubstitutePlaceholderVariables(
-      const solvers::VectorXDecisionVariable& vars,
-      const systems::trajectory_optimization::MultipleShooting& prog);
+      int index = -1) const;
 
   solvers::VectorXDecisionVariable SubstitutePlaceholderVariables(
       const solvers::VectorXDecisionVariable& vars,
       const systems::trajectory_optimization::MultipleShooting& prog,
-      int index);
+      int index = -1);
 
   symbolic::Formula SubstitutePlaceholderVariables(
       const symbolic::Formula& f,
       const systems::trajectory_optimization::MultipleShooting& prog,
-      int index);
+      int index = -1);
 
   symbolic::Expression SubstitutePlaceholderVariables(
       const symbolic::Expression& g,
-      const systems::trajectory_optimization::MultipleShooting& prog);
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1);
 
   void AddConstraintToProgram(
       const ConstraintWrapper& constraint,
@@ -230,11 +235,26 @@ class KinematicTrajectoryOptimization {
   std::unique_ptr<systems::trajectory_optimization::MultipleShooting>
   CreateMathematicalProgram() const;
 
-  const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog) const;
+  const solvers::VectorXDecisionVariable GetStateVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+
+  const solvers::VectorXDecisionVariable GetInputVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index) const;
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+
+  const solvers::VectorXDecisionVariable GetVelocityVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+
+  const solvers::VectorXDecisionVariable GetAccelerationVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+
+  const solvers::VectorXDecisionVariable GetJerkVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+
+  const solvers::VectorXDecisionVariable GetBodySpatialVelocityVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
 
   static bool IsValidPlanInterval(const Vector2<double>&);
 
@@ -269,6 +289,7 @@ class KinematicTrajectoryOptimization {
   double duration_upper_bound_{std::numeric_limits<double>::infinity()};
 
   bool has_equal_time_intervals_{false};
+  int system_order_{3};
   
   double minimum_timestep_;
   double maximum_timestep_;

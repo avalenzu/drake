@@ -285,25 +285,78 @@ void KinematicTrajectoryOptimization::AddRunningCost(
 };
 
 std::unique_ptr<systems::System<double>> KinematicTrajectoryOptimization::CreateSystem() const {
-  const int kNumStates{3 * num_positions()};
-  const int kNumSpatialVelocityInputs(6*placeholder_spatial_velocity_vars_.size());
-  const int kNumInputs(num_positions() + kNumSpatialVelocityInputs);
-  const int kNumOutputs{0};
+  MatrixX<double> A, B, C, D;
+  switch (system_order_) {
+    case 1: {
+      // State is q. Input is v.
+      const int kNumStates{num_positions()};
+      const int kNumSpatialVelocityInputs(
+          6 * placeholder_spatial_velocity_vars_.size());
+      const int kNumInputs(num_velocities() + kNumSpatialVelocityInputs);
+      const int kNumOutputs{0};
 
-  const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
-  const MatrixXd kIdentity{
-      MatrixXd::Identity(num_positions(), num_positions())};
+      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
+      const MatrixXd kIdentity{
+          MatrixXd::Identity(num_positions(), num_positions())};
 
-  MatrixX<double> A{kNumStates, kNumStates};
-  A << kZero, kIdentity, kZero, kZero, kZero, kIdentity, kZero, kZero, kZero;
+      A.resize(kNumStates, kNumStates);
+      A << kZero;
 
-  MatrixXd B{kNumStates, kNumInputs};
-  B.setZero();
-  B.block(num_positions() + num_velocities(), 0, num_velocities(),
-          num_velocities()) = kIdentity;
+      B.resize(kNumStates, kNumInputs);
+      B.setZero();
+      B.block(0, 0, num_velocities(), num_velocities()) = kIdentity;
 
-  MatrixXd C{kNumOutputs, kNumStates};
-  MatrixXd D{kNumOutputs, kNumInputs};
+      C.resize(kNumOutputs, kNumStates);
+      D.resize(kNumOutputs, kNumInputs);
+    } break;
+    case 2: {
+      // State is (q, v). Input is a.
+      const int kNumStates{2 * num_positions()};
+      const int kNumSpatialVelocityInputs(
+          6 * placeholder_spatial_velocity_vars_.size());
+      const int kNumInputs(num_velocities() + kNumSpatialVelocityInputs);
+      const int kNumOutputs{0};
+
+      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
+      const MatrixXd kIdentity{
+          MatrixXd::Identity(num_positions(), num_positions())};
+
+      A.resize(kNumStates, kNumStates);
+      A << kZero, kIdentity, kZero, kZero;
+
+      B.resize(kNumStates, kNumInputs);
+      B.setZero();
+      B.block(num_positions(), 0, num_velocities(), num_velocities()) =
+          kIdentity;
+
+      C.resize(kNumOutputs, kNumStates);
+      D.resize(kNumOutputs, kNumInputs);
+    } break;
+    case 3: {
+      const int kNumStates{3 * num_positions()};
+      const int kNumSpatialVelocityInputs(
+          6 * placeholder_spatial_velocity_vars_.size());
+      const int kNumInputs(num_positions() + kNumSpatialVelocityInputs);
+      const int kNumOutputs{0};
+
+      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
+      const MatrixXd kIdentity{
+          MatrixXd::Identity(num_positions(), num_positions())};
+
+      A.resize(kNumStates, kNumStates);
+      A << kZero, kIdentity, kZero, kZero, kZero, kIdentity, kZero, kZero,
+          kZero;
+
+      B.resize(kNumStates, kNumInputs);
+      B.setZero();
+      B.block(num_positions() + num_velocities(), 0, num_velocities(),
+              num_velocities()) = kIdentity;
+
+      C.resize(kNumOutputs, kNumStates);
+      D.resize(kNumOutputs, kNumInputs);
+    } break;
+    default: { DRAKE_THROW_UNLESS(false); } break;
+  }
 
   return std::make_unique<LinearSystem<double>>(A, B, C, D);
 }
@@ -316,82 +369,122 @@ KinematicTrajectoryOptimization::CreateMathematicalProgram() const {
 }
 
 const solvers::VectorXDecisionVariable
-KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
-    const MultipleShooting& prog) const {
-  return prog.state().head(num_positions());
+KinematicTrajectoryOptimization::GetStateVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  if (index < 0) {
+    return prog.state();
+  } else {
+    return prog.state(index);
+  }
+}
+
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetInputVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  if (index < 0) {
+    return prog.input();
+  } else {
+    return prog.input(index);
+  }
 }
 
 const solvers::VectorXDecisionVariable
 KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
     const MultipleShooting& prog, int index) const {
-  return prog.state(index).head(num_positions());
+  // Position variables are always at the head of the state.
+  return GetStateVariablesFromProgram(prog, index).head(num_positions());
 }
 
-symbolic::Substitution
-KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
-    const MultipleShooting& prog) const {
-  symbolic::Substitution sub;
-  sub.emplace(placeholder_t_var_(0), prog.time()(0));
-  for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_q_vars_(i), prog.state()(i));
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetVelocityVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  // For first-order systems, velocity variables are the first inputs. For all
+  // others, they follow the position variables in the state.
+  if (system_order_ < 2) {
+    return GetInputVariablesFromProgram(prog, index).head(num_velocities());
+  } else {
+    return GetStateVariablesFromProgram(prog, index).segment(num_positions(),
+        num_velocities());
   }
-  for (int i = 0; i < num_velocities(); ++i) {
-    sub.emplace(placeholder_v_vars_(i), prog.state()(num_positions() + i));
+}
+
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetAccelerationVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  // For first-order systems, acceleration variables are ignored. For
+  // second-order systems, they are the first inputs. For all others, they
+  // follow the velocity variables in the state.
+  if (system_order_ < 2) {
+    return placeholder_a_vars_;
+  } else if (system_order_ < 3) {
+    return GetInputVariablesFromProgram(prog, index).head(num_velocities());
+  } else {
+    return GetStateVariablesFromProgram(prog, index).segment(
+        num_positions() + num_velocities(), num_velocities());
   }
-  for (int i = 0; i < num_velocities(); ++i) {
-    sub.emplace(placeholder_a_vars_(i), prog.state()(num_positions() + num_velocities() + i));
+}
+
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetJerkVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  // For less-than-third-order systems, jerk variables are ignored. For
+  // third-order systems, they are the first inputs.
+  if (system_order_ < 3) {
+    return placeholder_j_vars_;
+  } else {
+    return GetInputVariablesFromProgram(prog, index).head(num_velocities());
   }
-  for (int i = 0; i < num_velocities(); ++i) {
-    sub.emplace(placeholder_j_vars_(i), prog.input()(i));
-  }
-  int input_index = num_velocities();
-  for (auto& placeholder_vars : placeholder_spatial_velocity_vars_) {
-    for (int i = 0; i < 6; ++i) {
-      sub.emplace(placeholder_vars.second(i), prog.input()(input_index));
-      ++input_index;
-    }
-  }
-  return sub;
+}
+
+const solvers::VectorXDecisionVariable
+KinematicTrajectoryOptimization::GetBodySpatialVelocityVariablesFromProgram(
+    const MultipleShooting& prog, int index) const {
+  // For {first, second, third}-order systems, the body spatial velocity
+  // variables come after the {velocity, acceleration, jerk} variables in the
+  // input.
+  return GetInputVariablesFromProgram(prog, index).segment(
+      num_velocities(), num_body_spatial_velocity_variables());
 }
 
 symbolic::Substitution
 KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
     const MultipleShooting& prog, int index) const {
   symbolic::Substitution sub;
+  if (index < 0) {
+    sub.emplace(placeholder_t_var_(0), prog.time()(0));
+  }
+  // Get the actual decision variables from the mathematical program.
+  VectorXDecisionVariable program_q_vars{
+      GetPositionVariablesFromProgram(prog, index)};
+  VectorXDecisionVariable program_v_vars{
+      GetVelocityVariablesFromProgram(prog, index)};
+  VectorXDecisionVariable program_a_vars{
+      GetAccelerationVariablesFromProgram(prog, index)};
+  VectorXDecisionVariable program_j_vars{
+      GetJerkVariablesFromProgram(prog, index)};
+  VectorXDecisionVariable program_body_spatial_velocity_vars{
+      GetBodySpatialVelocityVariablesFromProgram(prog, index)};
   for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_q_vars_(i), prog.state(index)(i));
+    sub.emplace(placeholder_q_vars_(i), program_q_vars(i));
   }
   for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_v_vars_(i), prog.state(index)(num_positions() + i));
+    sub.emplace(placeholder_v_vars_(i), program_v_vars(i));
   }
   for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_a_vars_(i), prog.state(index)(num_positions() + num_velocities() + i));
+    sub.emplace(placeholder_a_vars_(i), program_a_vars(i));
   }
   for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_j_vars_(i), prog.input(index)(i));
+    sub.emplace(placeholder_j_vars_(i), program_j_vars(i));
   }
-  int input_index = num_velocities();
+  int input_index = 0;
   for (auto& placeholder_vars : placeholder_spatial_velocity_vars_) {
     for (int i = 0; i < 6; ++i) {
-      sub.emplace(placeholder_vars.second(i), prog.input(index)(input_index));
+      sub.emplace(placeholder_vars.second(i),
+                  program_body_spatial_velocity_vars(input_index));
       ++input_index;
     }
   }
   return sub;
-}
-
-solvers::VectorXDecisionVariable KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
-    const solvers::VectorXDecisionVariable& vars,
-    const systems::trajectory_optimization::MultipleShooting& prog) {
-  VectorXDecisionVariable vars_out{vars.size()};
-  for (int i = 0; i < vars.size(); ++i) {
-    vars_out(i) =
-        *vars.cast<symbolic::Expression>()(i)
-             .Substitute(ConstructPlaceholderVariableSubstitution(prog))
-             .GetVariables()
-             .begin();
-  }
-  return vars_out;
 }
 
 solvers::VectorXDecisionVariable KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
@@ -416,8 +509,8 @@ Formula KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
 
 Expression KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
     const Expression& g,
-    const systems::trajectory_optimization::MultipleShooting& prog) {
-  return g.Substitute(ConstructPlaceholderVariableSubstitution(prog));
+    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+  return g.Substitute(ConstructPlaceholderVariableSubstitution(prog, index));
 }
 
 std::vector<int> KinematicTrajectoryOptimization::ActiveKnotsForPlanInterval(
@@ -492,31 +585,70 @@ void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
   const std::vector<double> t_values{
       initial_position_trajectory_.getSegmentTimes()};
   const int kNumTimeSamplesInit(t_values.size());
+  const VectorX<Expression> x_expression{prog->state()};
+  const VectorX<Expression> u_expression{prog->input()};
+  std::vector<MatrixXd> u_values(kNumTimeSamplesInit);
   std::vector<MatrixXd> x_values(kNumTimeSamplesInit);
   std::vector<MatrixXd> xdot_values(kNumTimeSamplesInit);
   drake::log()->debug("x_values.size() = {}", x_values.size());
   drake::log()->debug("t_values.size() = {}", t_values.size());
-  // Third-order case
-  PiecewisePolynomial<double> traj_init_u{initial_position_trajectory_.derivative(3)};
   for (int i = 0; i < kNumTimeSamplesInit; ++i) {
-    x_values[i].resize(num_positions() + 2 * num_velocities(), 1);
-    xdot_values[i].resize(num_positions() + 2 * num_velocities(), 1);
+    symbolic::Environment x_environment;
+    symbolic::Environment xdot_environment;
+    const VectorX<double> position{
+        initial_position_trajectory_.value(t_values[i])};
+    const VectorX<double> velocity{
+        initial_position_trajectory_.derivative(1).value(t_values[i])};
+    const VectorX<double> acceleration{
+        initial_position_trajectory_.derivative(2).value(t_values[i])};
+    const VectorX<double> jerk{
+        initial_position_trajectory_.derivative(3).value(t_values[i])};
+    // TODO(avalenzu) Actually compute the spatial velocities and accelerations.
+    const VectorX<double> body_spatial_velocity {
+      VectorX<double>::Zero(num_body_spatial_velocity_variables())};
+    const VectorX<double> body_spatial_acceleration {
+      VectorX<double>::Zero(num_body_spatial_velocity_variables())};
+    // TODO(avalenzu) Remove assumption that num_positions() == num_velocities()
+    for (int j = 0; j < num_positions(); ++j) {
+      x_environment.insert(GetPositionVariablesFromProgram(*prog)(j),
+                         position(j));
+      xdot_environment.insert(GetPositionVariablesFromProgram(*prog)(j),
+                         velocity(j));
+    }
+    for (int j = 0; j < num_velocities(); ++j) {
+      x_environment.insert(GetVelocityVariablesFromProgram(*prog)(j),
+                         velocity(j));
+      x_environment.insert(GetAccelerationVariablesFromProgram(*prog)(j),
+                         acceleration(j));
+      x_environment.insert(GetJerkVariablesFromProgram(*prog)(j), jerk(j));
 
-    x_values[i].topRows(num_positions()) = initial_position_trajectory_.value(t_values[i]);
-    x_values[i].middleRows(num_positions(), num_velocities()) =
-        initial_position_trajectory_.derivative(1).value(t_values[i]);
-    x_values[i].middleRows(num_positions() + num_velocities(), num_velocities()) =
-        initial_position_trajectory_.derivative(2).value(t_values[i]);
-
-    xdot_values[i].topRows(num_positions()) =
-        initial_position_trajectory_.derivative(1).value(t_values[i]);
-    xdot_values[i].middleRows(num_positions(), num_velocities()) =
-        initial_position_trajectory_.derivative(2).value(t_values[i]);
-    xdot_values[i].middleRows(num_positions() + num_velocities(), num_velocities()) =
-        initial_position_trajectory_.derivative(3).value(t_values[i]);
+      xdot_environment.insert(GetVelocityVariablesFromProgram(*prog)(j),
+                         acceleration(j));
+      xdot_environment.insert(GetAccelerationVariablesFromProgram(*prog)(j),
+                         jerk(j));
+    }
+    for (int j = 0; j < num_body_spatial_velocity_variables(); ++j) {
+      x_environment.insert(GetBodySpatialVelocityVariablesFromProgram(*prog)(j),
+                         body_spatial_velocity(i));
+      xdot_environment.insert(GetBodySpatialVelocityVariablesFromProgram(*prog)(j),
+                         body_spatial_acceleration(i));
+    }
+    u_values[i].resizeLike(u_expression);
+    x_values[i].resizeLike(x_expression);
+    xdot_values[i].resizeLike(x_expression);
+    for (int j = 0; j < static_cast<int>(u_expression.size()); ++j) {
+      u_values[i](j) = u_expression(j).Evaluate(x_environment);
+    }
+    for (int j = 0; j < static_cast<int>(x_expression.size()); ++j) {
+      x_values[i](j) = x_expression(j).Evaluate(x_environment);
+      xdot_values[i](j) = x_expression(j).Evaluate(xdot_environment);
+    }
   }
+  PiecewisePolynomial<double> traj_init_u =
+      PiecewisePolynomial<double>::FirstOrderHold(t_values, u_values);
   PiecewisePolynomial<double> traj_init_x =
       PiecewisePolynomial<double>::Cubic(t_values, x_values, xdot_values);
+  prog->SetInitialTrajectory(traj_init_u, traj_init_x);
 }
 
 SolutionResult KinematicTrajectoryOptimization::Solve() {
@@ -550,6 +682,8 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
 
   SetInitialTrajectoryOnProgram(prog.get());
 
+  drake::log()->debug("Solving MathematicalProgram with {} decision variables.",
+                      prog->decision_variables().size());
   SolutionResult result{prog->Solve()};
 
   UpdatePositionTrajectory(*prog);
@@ -565,9 +699,9 @@ void KinematicTrajectoryOptimization::UpdatePositionTrajectory(
   std::vector<MatrixX<double>> velocities(num_time_samples_);
   for (int i = 0; i < num_time_samples_; ++i) {
     times_vec[i] = times(i);
-    positions[i] = prog.GetSolution(prog.state(i).head(num_positions()));
-    velocities[i] = prog.GetSolution(
-        prog.state(i).segment(num_positions(), num_velocities()));
+    positions[i] = prog.GetSolution(GetPositionVariablesFromProgram(prog, i));
+    velocities[i] =
+        prog.GetSolution(GetVelocityVariablesFromProgram(prog, i));
   }
   position_trajectory_ = PiecewisePolynomialTrajectory(
       PiecewisePolynomial<double>::Cubic(times_vec, positions, velocities));
