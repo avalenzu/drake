@@ -216,7 +216,7 @@ int DoMain() {
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
   if (kCollisionAvoidanceThreshold > 0) {
-    kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
+    kin_traj_opt.AddCollisionAvoidanceConstraint(1.5*kCollisionAvoidanceThreshold);
   }
 
   SolutionResult result{drake::solvers::kUnknownError};
@@ -233,6 +233,8 @@ int DoMain() {
   kin_traj_opt.SetInitialTrajectory(PiecewisePolynomial<double>::Cubic(
       t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
       VectorX<double>::Zero(kNumPositions)));
+
+  // Solve with the initial number of knots
   result = kin_traj_opt.Solve();
   drake::log()->info(
       "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
@@ -252,6 +254,11 @@ int DoMain() {
         kin_traj_opt.system_order(),
         kin_traj_opt.num_time_samples(), result,
         kin_traj_opt.GetPositionTrajectory().get_end_time());
+    if (result == drake::solvers::kSolutionFound &&
+        kin_traj_opt.IsPositionTrajectoryCollisionFree(
+            kCollisionAvoidanceThreshold)) {
+      break;
+    }
   }
 
   // Add spatial velocity cost
