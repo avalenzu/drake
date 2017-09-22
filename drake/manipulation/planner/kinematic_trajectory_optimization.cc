@@ -486,35 +486,8 @@ void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
   }
 }
 
-SolutionResult KinematicTrajectoryOptimization::Solve() {
-  system_ = CreateSystem();
-  std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
-  auto position_variables{GetPositionVariablesFromProgram(*prog)};
-  prog->AddConstraintToAllKnotPoints(position_variables >=
-                                     tree_->joint_limit_min);
-  prog->AddConstraintToAllKnotPoints(position_variables <=
-                                     tree_->joint_limit_max);
-  if (has_equal_time_intervals_) {
-    prog->AddEqualTimeIntervalsConstraints();
-  }
-  prog->AddDurationBounds(duration_lower_bound_, duration_upper_bound_);
-
-  for (const auto& constraint : object_constraints_) {
-    AddConstraintToProgram(*constraint, prog.get());
-  }
-  for (const auto& constraint : formula_linear_constraints_) {
-    AddLinearConstraintToProgram(*constraint, prog.get());
-  }
-  for (const auto& cost : running_cost_objects_) {
-    AddCostToProgram(*cost, prog.get());
-  }
-  for (const auto& cost : running_cost_expressions_) {
-    AddRunningCostToProgram(*cost, prog.get());
-  }
-  for (const auto& cost : final_cost_expressions_) {
-    AddFinalCostToProgram(*cost, prog.get());
-  }
-
+void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
+    MultipleShooting* prog) {
   // Set initial guess
   const std::vector<double> t_values{
       initial_position_trajectory_.getSegmentTimes()};
@@ -544,8 +517,38 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
   }
   PiecewisePolynomial<double> traj_init_x =
       PiecewisePolynomial<double>::Cubic(t_values, x_values, xdot_values);
+}
 
-  prog->SetInitialTrajectory(traj_init_u, traj_init_x);
+SolutionResult KinematicTrajectoryOptimization::Solve() {
+  system_ = CreateSystem();
+  std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
+  auto position_variables{GetPositionVariablesFromProgram(*prog)};
+  prog->AddConstraintToAllKnotPoints(position_variables >=
+                                     tree_->joint_limit_min);
+  prog->AddConstraintToAllKnotPoints(position_variables <=
+                                     tree_->joint_limit_max);
+  if (has_equal_time_intervals_) {
+    prog->AddEqualTimeIntervalsConstraints();
+  }
+  prog->AddDurationBounds(duration_lower_bound_, duration_upper_bound_);
+
+  for (const auto& constraint : object_constraints_) {
+    AddConstraintToProgram(*constraint, prog.get());
+  }
+  for (const auto& constraint : formula_linear_constraints_) {
+    AddLinearConstraintToProgram(*constraint, prog.get());
+  }
+  for (const auto& cost : running_cost_objects_) {
+    AddCostToProgram(*cost, prog.get());
+  }
+  for (const auto& cost : running_cost_expressions_) {
+    AddRunningCostToProgram(*cost, prog.get());
+  }
+  for (const auto& cost : final_cost_expressions_) {
+    AddFinalCostToProgram(*cost, prog.get());
+  }
+
+  SetInitialTrajectoryOnProgram(prog.get());
 
   SolutionResult result{prog->Solve()};
 

@@ -222,6 +222,9 @@ class KinematicTrajectoryOptimization {
       const CostWrapper&,
       systems::trajectory_optimization::MultipleShooting* prog);
 
+  void SetInitialTrajectoryOnProgram(
+      systems::trajectory_optimization::MultipleShooting* prog);
+
   std::unique_ptr<systems::System<double>> CreateSystem() const;
 
   std::unique_ptr<systems::trajectory_optimization::MultipleShooting>
