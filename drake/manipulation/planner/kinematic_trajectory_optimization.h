@@ -85,7 +85,12 @@ class KinematicTrajectoryOptimization {
     return placeholder_spatial_velocity_vars_.at(body_name);
   }
 
-  int num_time_samples() { return num_time_samples_; };
+  int num_time_samples() const { return num_time_samples_; };
+
+  void set_num_time_samples(int num_time_samples) {
+    DRAKE_DEMAND(num_time_samples >= 2);
+    num_time_samples_ = num_time_samples;
+  };
 
   const RigidBodyTree<double>& tree() { return *tree_; };
 
