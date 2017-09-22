@@ -243,6 +243,11 @@ int DoMain() {
     drake::log()->info("Attempt {}: Solver returns {}.", k, result);
     if (result == drake::solvers::kSolutionFound) break;
   }
+  kin_traj_opt.SetInitialTrajectory(
+      kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+  kin_traj_opt.set_num_time_samples(1.5*kNumKnots);
+  result = kin_traj_opt.Solve();
+  drake::log()->info("Re-solved with {} knots: Solver returns {}.", kin_traj_opt.num_time_samples(), result);
 
   auto q_sol = kin_traj_opt.GetPositionTrajectory();
   std::vector<double> breaks{
