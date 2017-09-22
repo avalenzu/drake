@@ -256,6 +256,8 @@ class KinematicTrajectoryOptimization {
   const solvers::VectorXDecisionVariable GetBodySpatialVelocityVariablesFromProgram(
       const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
 
+  bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
+
   static bool IsValidPlanInterval(const Vector2<double>&);
 
   std::vector<int> ActiveKnotsForPlanInterval(
