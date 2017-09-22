@@ -534,6 +534,38 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
     AddFinalCostToProgram(*cost, prog.get());
   }
 
+  // Set initial guess
+  const std::vector<double> t_values{
+      initial_position_trajectory_.getSegmentTimes()};
+  const int kNumTimeSamplesInit(t_values.size());
+  std::vector<MatrixXd> x_values(kNumTimeSamplesInit);
+  std::vector<MatrixXd> xdot_values(kNumTimeSamplesInit);
+  drake::log()->debug("x_values.size() = {}", x_values.size());
+  drake::log()->debug("t_values.size() = {}", t_values.size());
+  // Third-order case
+  PiecewisePolynomial<double> traj_init_u{initial_position_trajectory_.derivative(3)};
+  for (int i = 0; i < kNumTimeSamplesInit; ++i) {
+    x_values[i].resize(num_positions() + 2 * num_velocities(), 1);
+    xdot_values[i].resize(num_positions() + 2 * num_velocities(), 1);
+
+    x_values[i].topRows(num_positions()) = initial_position_trajectory_.value(t_values[i]);
+    x_values[i].middleRows(num_positions(), num_velocities()) =
+        initial_position_trajectory_.derivative(1).value(t_values[i]);
+    x_values[i].middleRows(num_positions() + num_velocities(), num_velocities()) =
+        initial_position_trajectory_.derivative(2).value(t_values[i]);
+
+    xdot_values[i].topRows(num_positions()) =
+        initial_position_trajectory_.derivative(1).value(t_values[i]);
+    xdot_values[i].middleRows(num_positions(), num_velocities()) =
+        initial_position_trajectory_.derivative(2).value(t_values[i]);
+    xdot_values[i].middleRows(num_positions() + num_velocities(), num_velocities()) =
+        initial_position_trajectory_.derivative(3).value(t_values[i]);
+  }
+  PiecewisePolynomial<double> traj_init_x =
+      PiecewisePolynomial<double>::Cubic(t_values, x_values, xdot_values);
+
+  prog->SetInitialTrajectory(traj_init_u, traj_init_x);
+
   SolutionResult result{prog->Solve()};
 
   UpdatePositionTrajectory(*prog);
