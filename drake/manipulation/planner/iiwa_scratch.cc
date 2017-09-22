@@ -47,9 +47,7 @@ DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
-DEFINE_bool(use_random_seed, false, "If true, seed with a random trajectory.");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
-DEFINE_int32(num_restarts, 0, "Number of random restarts allowed");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 DEFINE_int32(num_knots, 15, "Number of knot points.");
 
@@ -100,11 +98,12 @@ int DoMain() {
   const double kDuration{FLAGS_duration};
   const double kMinimumTimestep{FLAGS_min_timestep};
   const double kMaximumTimestep{FLAGS_max_timestep};
-  const int kNumKnots{FLAGS_num_knots};
-  drake::log()->info("Number of knots: {}", kNumKnots);
+  const int kFinalNumKnots{FLAGS_num_knots};
+  int num_knots{3};
+  drake::log()->info("Number of knots: {}", num_knots);
 
   KinematicTrajectoryOptimization kin_traj_opt{
-      std::move(iiwa), kNumKnots, kMinimumTimestep, kMaximumTimestep};
+      std::move(iiwa), num_knots, kMinimumTimestep, kMaximumTimestep};
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
@@ -221,33 +220,39 @@ int DoMain() {
     kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
   }
 
-  std::default_random_engine rand_generator{1234};
   SolutionResult result{drake::solvers::kUnknownError};
-  for (int k = 0; k < FLAGS_num_restarts + 1; ++k) {
-    std::vector<double> t_seed;
-    std::vector<MatrixX<double>> q_seed;
-    for (int i = 0; i < kNumKnots; ++i) {
-      t_seed.push_back(kMinDuration*static_cast<double>(i)/static_cast<double>(kNumKnots-1));
-      if (FLAGS_use_random_seed) {
-        q_seed.push_back(
-            kin_traj_opt.tree().getRandomConfiguration(rand_generator));
-      } else {
-        q_seed.push_back(
-            kin_traj_opt.tree().getZeroConfiguration());
-      }
-    }
-    kin_traj_opt.SetInitialTrajectory(PiecewisePolynomial<double>::Cubic(
-        t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
-        VectorX<double>::Zero(kNumPositions)));
-    result = kin_traj_opt.Solve();
-    drake::log()->info("Attempt {}: Solver returns {}.", k, result);
-    if (result == drake::solvers::kSolutionFound) break;
+  const int kNumSeedKnots{2};
+  std::vector<double> t_seed(kNumSeedKnots);
+  std::vector<MatrixX<double>> q_seed{kNumSeedKnots};
+  q_seed[0] = kin_traj_opt.tree().getZeroConfiguration();
+  t_seed[0] = 0;
+  for (int i = 1; i < kNumSeedKnots; ++i) {
+    t_seed[i] = kMinDuration * static_cast<double>(i) /
+                static_cast<double>(kNumSeedKnots - 1);
+    q_seed[i] = q_seed[0];
   }
-  kin_traj_opt.SetInitialTrajectory(
-      kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-  kin_traj_opt.set_num_time_samples(1.5*kNumKnots);
+  kin_traj_opt.SetInitialTrajectory(PiecewisePolynomial<double>::Cubic(
+      t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
+      VectorX<double>::Zero(kNumPositions)));
   result = kin_traj_opt.Solve();
-  drake::log()->info("Re-solved with {} knots: Solver returns {}.", kin_traj_opt.num_time_samples(), result);
+  drake::log()->info(
+      "Solved with {} knots: Solver returned {}. Trajectory Duration = {} s",
+      kin_traj_opt.num_time_samples(), result,
+      kin_traj_opt.GetPositionTrajectory().get_end_time());
+  while (num_knots < kFinalNumKnots) {
+    if (result == drake::solvers::kSolutionFound) {
+      kin_traj_opt.SetInitialTrajectory(
+          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    }
+    // num_knots = std::min(kFinalNumKnots, 2 * (num_knots-1) + 1);
+    num_knots = std::min(kFinalNumKnots, num_knots + 4);
+    kin_traj_opt.set_num_time_samples(num_knots);
+    result = kin_traj_opt.Solve();
+    drake::log()->info(
+        "Solved with {} knots: Solver returned {}. Trajectory Duration = {} s",
+        kin_traj_opt.num_time_samples(), result,
+        kin_traj_opt.GetPositionTrajectory().get_end_time());
+  }
 
   auto q_sol = kin_traj_opt.GetPositionTrajectory();
   std::vector<double> breaks{
