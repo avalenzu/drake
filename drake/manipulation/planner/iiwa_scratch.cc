@@ -52,7 +52,6 @@ DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 DEFINE_int32(num_knots, 15, "Number of knot points.");
 DEFINE_int32(initial_num_knots, 15, "Number of knot points.");
 DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
-DEFINE_int32(initial_system_order, 3, "Order of the dynamics model for the system.");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -107,7 +106,7 @@ int DoMain() {
 
   KinematicTrajectoryOptimization kin_traj_opt{
       std::move(iiwa), num_knots, kMinimumTimestep, kMaximumTimestep};
-  kin_traj_opt.set_system_order(FLAGS_initial_system_order);
+  kin_traj_opt.set_system_order(FLAGS_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
 
@@ -260,21 +259,6 @@ int DoMain() {
             kCollisionAvoidanceThreshold)) {
       break;
     }
-  }
-
-  // Step up to final system order
-  for (int i = FLAGS_initial_system_order + 1; i <= FLAGS_system_order; ++i) {
-    kin_traj_opt.set_system_order(i);
-    if (result == drake::solvers::kSolutionFound) {
-      kin_traj_opt.SetInitialTrajectory(
-          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-    }
-    result = kin_traj_opt.Solve();
-    drake::log()->info(
-        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
-        kin_traj_opt.system_order(),
-        kin_traj_opt.num_time_samples(), result,
-        kin_traj_opt.GetPositionTrajectory().get_end_time());
   }
 
   auto q_sol = kin_traj_opt.GetPositionTrajectory();
