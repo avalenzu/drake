@@ -177,6 +177,12 @@ int DoMain() {
     kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
   }
 
+  // Add spatial velocity cost
+  if (FLAGS_spatial_velocity_weight > 0) {
+    kin_traj_opt.AddSpatialVelocityCost(FLAGS_velocity_cost_body,
+                                        FLAGS_spatial_velocity_weight);
+  }
+
   // Add middle and final pose constraints
   Isometry3<double> X_WF0{Isometry3<double>::Identity()};
   Isometry3<double> X_WFf{Isometry3<double>::Identity()};
@@ -254,27 +260,6 @@ int DoMain() {
             kCollisionAvoidanceThreshold)) {
       break;
     }
-  }
-
-  // Add spatial velocity cost
-  if (FLAGS_spatial_velocity_weight > 0) {
-    kin_traj_opt.TrackSpatialVelocityOfBody(FLAGS_velocity_cost_body);
-    auto spatial_velocity_vars =
-        kin_traj_opt.spatial_velocity_of_body(FLAGS_velocity_cost_body);
-    kin_traj_opt.AddRunningCost(FLAGS_spatial_velocity_weight *
-                                spatial_velocity_vars.transpose() *
-                                spatial_velocity_vars);
-    if (result == drake::solvers::kSolutionFound) {
-      kin_traj_opt.SetInitialTrajectory(
-          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-    }
-    drake::log()->info("Adding spatial velocity cost");
-    result = kin_traj_opt.Solve();
-    drake::log()->info(
-        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
-        kin_traj_opt.system_order(),
-        kin_traj_opt.num_time_samples(), result,
-        kin_traj_opt.GetPositionTrajectory().get_end_time());
   }
 
   // Step up to final system order
