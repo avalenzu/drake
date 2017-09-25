@@ -310,6 +310,9 @@ class KinematicTrajectoryOptimization {
   PiecewisePolynomialTrajectory position_trajectory_;
 
   solvers::MathematicalProgram solver_options_container_;
+  std::vector<solvers::SolverId> solver_options_solver_ids_;
+
+  double spatial_velocity_tolerance_{1e-6};
 };
 
 }  // namespace planner

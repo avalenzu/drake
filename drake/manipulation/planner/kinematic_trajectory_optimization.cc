@@ -718,6 +718,20 @@ void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
 SolutionResult KinematicTrajectoryOptimization::Solve() {
   system_ = CreateSystem();
   std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
+  for (const auto& solver_id : solver_options_solver_ids_) {
+    for (const auto& option_pair :
+         solver_options_container_.GetSolverOptionsInt(solver_id)) {
+      prog->SetSolverOption(solver_id, option_pair.first, option_pair.second);
+    }
+    for (const auto& option_pair :
+         solver_options_container_.GetSolverOptionsStr(solver_id)) {
+      prog->SetSolverOption(solver_id, option_pair.first, option_pair.second);
+    }
+    for (const auto& option_pair :
+         solver_options_container_.GetSolverOptionsDouble(solver_id)) {
+      prog->SetSolverOption(solver_id, option_pair.first, option_pair.second);
+    }
+  }
   auto position_variables{GetPositionVariablesFromProgram(*prog)};
   prog->AddConstraintToAllKnotPoints(position_variables >=
                                      tree_->joint_limit_min);
@@ -780,6 +794,7 @@ template <typename T>
 void KinematicTrajectoryOptimization::SetSolverOption(
     const solvers::SolverId& solver_id, const std::string& solver_option,
     T option_value) {
+  solver_options_solver_ids_.push_back(solver_id);
   solver_options_container_.SetSolverOption(solver_id, solver_option,
                                             option_value);
 }
