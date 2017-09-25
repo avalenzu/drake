@@ -110,9 +110,6 @@ int DoMain() {
   kin_traj_opt.set_system_order(FLAGS_initial_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
-  kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
-                        "Major optimality tolerance",
-                        100*FLAGS_optimality_tolerance);
 
   lcm::DrakeLcm lcm;
   lcm.StartReceiveThread();
