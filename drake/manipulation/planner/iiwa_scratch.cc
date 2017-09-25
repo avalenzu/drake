@@ -46,8 +46,14 @@ DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
 DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
 DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
-DEFINE_string(obstacle_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
-DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_0_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_0_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_1_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_1_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_2_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_2_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_3_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_3_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
@@ -80,28 +86,6 @@ int DoMain() {
     drake::multibody::AddFlatTerrainToWorld(iiwa.get());
   }
 
-  // Add an obstacle to the world
-  std::istringstream iss_obstacle_position{FLAGS_obstacle_position};
-  std::istringstream iss_obstacle_size{FLAGS_obstacle_size};
-  Vector3<double> obstacle_size;
-  Isometry3<double> X_WO{Isometry3<double>::Identity()};
-  for (int i = 0; i < 3; ++i) {
-    iss_obstacle_size >> obstacle_size(i);
-    DRAKE_THROW_UNLESS(!iss_obstacle_size.fail());
-    iss_obstacle_position >> X_WO.translation()(i);
-    DRAKE_THROW_UNLESS(!iss_obstacle_position.fail());
-  }
-  // Move the obstacle up to sit on the ground plane
-  X_WO.translation().z() += obstacle_size.z() / 2;
-  DrakeShapes::Box geom(obstacle_size);
-  RigidBody<double>& world = iiwa->world();
-  Eigen::Vector4d color;
-  color << 0.5, 0.5, 0.5, 1;
-  world.AddVisualElement(DrakeShapes::VisualElement(geom, X_WO, color));
-  iiwa->addCollisionElement(
-      drake::multibody::collision::Element(geom, X_WO, &world), world,
-      "terrain");
-  iiwa->compile();
 
   const double kDuration{FLAGS_duration};
   const double kMinimumTimestep{FLAGS_min_timestep};
@@ -118,6 +102,67 @@ int DoMain() {
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                                "Major optimality tolerance",
                                FLAGS_optimality_tolerance);
+
+  // Add obstacles to the world
+  std::istringstream iss_obstacle_0_position{FLAGS_obstacle_0_position};
+  std::istringstream iss_obstacle_0_size{FLAGS_obstacle_0_size};
+  Vector3<double> obstacle_0_size;
+  Isometry3<double> X_WO_0{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_0_size >> obstacle_0_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_0_size.fail());
+    iss_obstacle_0_position >> X_WO_0.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_0_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_0.translation().z() += obstacle_0_size.z() / 2;
+
+  kin_traj_opt.AddFixedBoxToWorld(obstacle_0_size, X_WO_0);
+
+  std::istringstream iss_obstacle_1_position{FLAGS_obstacle_1_position};
+  std::istringstream iss_obstacle_1_size{FLAGS_obstacle_1_size};
+  Vector3<double> obstacle_1_size;
+  Isometry3<double> X_WO_1{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_1_size >> obstacle_1_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_1_size.fail());
+    iss_obstacle_1_position >> X_WO_1.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_1_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_1.translation().z() += obstacle_1_size.z() / 2;
+
+  kin_traj_opt.AddFixedBoxToWorld(obstacle_1_size, X_WO_1);
+
+  std::istringstream iss_obstacle_2_position{FLAGS_obstacle_2_position};
+  std::istringstream iss_obstacle_2_size{FLAGS_obstacle_2_size};
+  Vector3<double> obstacle_2_size;
+  Isometry3<double> X_WO_2{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_2_size >> obstacle_2_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_2_size.fail());
+    iss_obstacle_2_position >> X_WO_2.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_2_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_2.translation().z() += obstacle_2_size.z() / 2;
+
+  kin_traj_opt.AddFixedBoxToWorld(obstacle_2_size, X_WO_2);
+
+  std::istringstream iss_obstacle_3_position{FLAGS_obstacle_3_position};
+  std::istringstream iss_obstacle_3_size{FLAGS_obstacle_3_size};
+  Vector3<double> obstacle_3_size;
+  Isometry3<double> X_WO_3{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_3_size >> obstacle_3_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_3_size.fail());
+    iss_obstacle_3_position >> X_WO_3.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_3_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_3.translation().z() += obstacle_3_size.z() / 2;
+
+  kin_traj_opt.AddFixedBoxToWorld(obstacle_3_size, X_WO_3);
 
   lcm::DrakeLcm lcm;
   lcm.StartReceiveThread();
@@ -245,6 +290,30 @@ int DoMain() {
       t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
       VectorX<double>::Zero(kNumPositions)));
 
+  kin_traj_opt.set_system_order(1);
+  while (num_knots < kFinalNumKnots) {
+    result = kin_traj_opt.Solve();
+    drake::log()->info(
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory "
+        "Duration = {} s",
+        kin_traj_opt.system_order(), kin_traj_opt.num_time_samples(), result,
+        kin_traj_opt.GetPositionTrajectory().get_end_time());
+    if (result == drake::solvers::kSolutionFound &&
+        kin_traj_opt.IsPositionTrajectoryCollisionFree(
+            kCollisionAvoidanceThreshold)) {
+      break;
+    }
+    drake::log()->info("Refining trajectory ...");
+    kin_traj_opt.SetInitialTrajectory(
+        kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    num_knots = num_knots + (num_knots-1);
+    kin_traj_opt.set_num_time_samples(num_knots);
+  }
+
+  drake::log()->info("Refining trajectory ...");
+  kin_traj_opt.SetInitialTrajectory(
+      kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+  kin_traj_opt.set_system_order(3);
   while (num_knots < kFinalNumKnots) {
     result = kin_traj_opt.Solve();
     drake::log()->info(
