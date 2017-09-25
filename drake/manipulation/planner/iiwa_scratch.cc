@@ -234,31 +234,23 @@ int DoMain() {
       t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
       VectorX<double>::Zero(kNumPositions)));
 
-  // Solve with the initial number of knots
-  result = kin_traj_opt.Solve();
-  drake::log()->info(
-      "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
-      kin_traj_opt.system_order(),
-      kin_traj_opt.num_time_samples(), result,
-      kin_traj_opt.GetPositionTrajectory().get_end_time());
   while (num_knots < kFinalNumKnots) {
-    if (result == drake::solvers::kSolutionFound) {
-      kin_traj_opt.SetInitialTrajectory(
-          kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-    }
-    num_knots = num_knots + (num_knots-1);
-    kin_traj_opt.set_num_time_samples(num_knots);
     result = kin_traj_opt.Solve();
     drake::log()->info(
-        "Solved {}-order model with {} knots: Solver returned {}. Trajectory Duration = {} s",
-        kin_traj_opt.system_order(),
-        kin_traj_opt.num_time_samples(), result,
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory "
+        "Duration = {} s",
+        kin_traj_opt.system_order(), kin_traj_opt.num_time_samples(), result,
         kin_traj_opt.GetPositionTrajectory().get_end_time());
     if (result == drake::solvers::kSolutionFound &&
         kin_traj_opt.IsPositionTrajectoryCollisionFree(
             kCollisionAvoidanceThreshold)) {
       break;
     }
+    drake::log()->info("Refining trajectory ...");
+    kin_traj_opt.SetInitialTrajectory(
+        kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    num_knots = num_knots + (num_knots-1);
+    kin_traj_opt.set_num_time_samples(num_knots);
   }
 
   auto q_sol = kin_traj_opt.GetPositionTrajectory();
