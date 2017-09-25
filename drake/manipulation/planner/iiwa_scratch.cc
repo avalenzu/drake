@@ -23,20 +23,23 @@
 DEFINE_double(duration, 10, "Maximum duration of trajectory.");
 DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
 DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
-DEFINE_double(spatial_velocity_weight, 0e0,
+DEFINE_double(spatial_velocity_weight, 1e0,
               "Relative weight of end-effector spatial velocity cost");
 DEFINE_double(velocity_weight, 0e0,
               "Relative weight of velocity-squared cost");
 DEFINE_double(acceleration_weight, 0e0,
               "Relative weight of acceleration-squared cost");
-DEFINE_double(jerk_weight, 1e-1,
+DEFINE_double(jerk_weight, 1e0,
               "Relative weight of jerk-squared cost");
 DEFINE_double(tfinal_weight, 1e1,
               "Relative weight of final-time cost");
 DEFINE_double(orientation_tolerance, 1.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.001, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
-DEFINE_double(collision_avoidance_threshold, 0.1, "Minimum distance to obstacles at knot points");
+DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at all points.");
+DEFINE_double(collision_avoidance_knot_threshold, 0.1,
+              "Minimum distance to obstacles at knot points. Should be greater "
+              "than collsion_avoidance_threshold.");
 DEFINE_double(max_velocity, 1.5, "Maximum joint-velocity for all joints");
 DEFINE_double(optimality_tolerance, 1e-6, "Major optimality tolerance for solver");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
@@ -48,9 +51,10 @@ DEFINE_string(obstacle_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
 DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
+DEFINE_bool(flat_terrain, true, "If true, add flat terrain to the world.");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
-DEFINE_int32(num_knots, 15, "Number of knot points.");
-DEFINE_int32(initial_num_knots, 15, "Number of knot points.");
+DEFINE_int32(num_knots, 100, "Number of knot points.");
+DEFINE_int32(initial_num_knots, 2, "Number of knot points.");
 DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
 
 using drake::solvers::SolutionResult;
@@ -72,7 +76,9 @@ int DoMain() {
   auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
       kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
-  drake::multibody::AddFlatTerrainToWorld(iiwa.get());
+  if (FLAGS_flat_terrain) {
+    drake::multibody::AddFlatTerrainToWorld(iiwa.get());
+  }
 
   // Add an obstacle to the world
   std::istringstream iss_obstacle_position{FLAGS_obstacle_position};
@@ -109,6 +115,9 @@ int DoMain() {
   kin_traj_opt.set_system_order(FLAGS_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
+  kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
+                               "Major optimality tolerance",
+                               FLAGS_optimality_tolerance);
 
   lcm::DrakeLcm lcm;
   lcm.StartReceiveThread();
@@ -215,8 +224,10 @@ int DoMain() {
 
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
+  double kCollisionAvoidanceKnotThreshold{FLAGS_collision_avoidance_knot_threshold};
+  DRAKE_THROW_UNLESS(kCollisionAvoidanceThreshold <= kCollisionAvoidanceKnotThreshold);
   if (kCollisionAvoidanceThreshold > 0) {
-    kin_traj_opt.AddCollisionAvoidanceConstraint(1.5*kCollisionAvoidanceThreshold);
+    kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceKnotThreshold);
   }
 
   SolutionResult result{drake::solvers::kUnknownError};
