@@ -262,6 +262,14 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
                         position_tolerance, X_BF);
 }
 
+void KinematicTrajectoryOptimization::AddSpatialVelocityCost(
+    const std::string& body_name, double weight) {
+  TrackSpatialVelocityOfBody(body_name);
+  auto spatial_velocity_vars = spatial_velocity_of_body(body_name);
+  AddRunningCost(weight * spatial_velocity_vars.transpose() *
+                 spatial_velocity_vars);
+}
+
 bool KinematicTrajectoryOptimization::IsValidPlanInterval(
     const Vector2<double>& plan_interval) {
   return 0 <= plan_interval(0) && plan_interval(0) <= 1 &&
