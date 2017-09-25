@@ -24,6 +24,8 @@ class KinematicTrajectoryOptimization {
                                   int num_time_samples, double minimum_timestep,
                                   double maximum_timestep);
 
+  void AddFixedBoxToWorld(Vector3<double> size, Isometry3<double> X_WB);
+
   /// Returns a placeholder decision variable (not actually declared as a
   /// decision variable in the MathematicalProgram) associated with the time, t.
   /// This variable will be substituted for real decision variables at

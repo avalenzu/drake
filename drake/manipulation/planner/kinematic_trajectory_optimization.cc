@@ -226,6 +226,19 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
           PiecewisePolynomialTrajectory(initial_position_trajectory_)){
       };
 
+void KinematicTrajectoryOptimization::AddFixedBoxToWorld(
+    Vector3<double> size, Isometry3<double> X_WB) {
+  DrakeShapes::Box geom(size);
+  RigidBody<double>& world = tree_->world();
+  Eigen::Vector4d color;
+  color << 0.5, 0.5, 0.5, 1;
+  world.AddVisualElement(DrakeShapes::VisualElement(geom, X_WB, color));
+  tree_->addCollisionElement(
+      drake::multibody::collision::Element(geom, X_WB, &world), world,
+      "terrain");
+  tree_->compile();
+}
+
 void KinematicTrajectoryOptimization::AddFinalCost(const symbolic::Expression& g) {
   final_cost_expressions_.emplace_back(new symbolic::Expression(g));
 }
