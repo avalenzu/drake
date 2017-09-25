@@ -652,9 +652,14 @@ void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
         initial_position_trajectory_.derivative(2).value(t_values[i])};
     const VectorX<double> jerk{
         initial_position_trajectory_.derivative(3).value(t_values[i])};
-    // TODO(avalenzu) Actually compute the spatial velocities and accelerations.
-    const VectorX<double> body_spatial_velocity {
-      VectorX<double>::Zero(num_body_spatial_velocity_variables())};
+    // TODO(avalenzu) Actually compute the spatial accelerations.
+    KinematicsCache<double> cache = tree_->doKinematics(position, velocity);
+    std::map<std::string, VectorX<double>> body_spatial_velocity;
+    for (const auto& pair : placeholder_spatial_velocity_vars_) {
+      body_spatial_velocity.emplace(pair.first,
+                                    tree_->CalcBodySpatialVelocityInWorldFrame(
+                                        cache, *tree_->FindBody(pair.first)));
+    }
     const VectorX<double> body_spatial_acceleration {
       VectorX<double>::Zero(num_body_spatial_velocity_variables())};
     // TODO(avalenzu) Remove assumption that num_positions() == num_velocities()
@@ -676,11 +681,18 @@ void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
       xdot_environment.insert(GetAccelerationVariablesFromProgram(*prog)(j),
                          jerk(j));
     }
-    for (int j = 0; j < num_body_spatial_velocity_variables(); ++j) {
-      x_environment.insert(GetBodySpatialVelocityVariablesFromProgram(*prog)(j),
-                         body_spatial_velocity(i));
-      xdot_environment.insert(GetBodySpatialVelocityVariablesFromProgram(*prog)(j),
-                         body_spatial_acceleration(i));
+    int spatial_velocity_index{0};
+    for (const auto& pair : placeholder_spatial_velocity_vars_) {
+      const VectorX<double> spatial_velocity{body_spatial_velocity.at(pair.first)};
+      for (int j = 0; j < 6; ++j) {
+        x_environment.insert(GetBodySpatialVelocityVariablesFromProgram(*prog)(
+                                 spatial_velocity_index),
+                             spatial_velocity(j));
+        xdot_environment.insert(GetBodySpatialVelocityVariablesFromProgram(
+                                    *prog)(spatial_velocity_index),
+                                0.0);
+        spatial_velocity_index++;
+      }
     }
     u_values[i].resizeLike(u_expression);
     x_values[i].resizeLike(x_expression);
