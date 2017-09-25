@@ -92,6 +92,14 @@ class KinematicTrajectoryOptimization {
     num_time_samples_ = num_time_samples;
   };
 
+  double spatial_velocity_tolerance() const {
+    return spatial_velocity_tolerance_;
+  };
+
+  void set_spatial_velocity_tolerance(double spatial_velocity_tolerance) {
+    spatial_velocity_tolerance_ = spatial_velocity_tolerance;
+  }
+
   int system_order() const { return system_order_; };
   void set_system_order(int system_order) {
     DRAKE_THROW_UNLESS(1 <= system_order && system_order <= 3);
@@ -134,7 +142,7 @@ class KinematicTrajectoryOptimization {
     AddRunningCost(g(0,0));
   }
 
-  void TrackSpatialVelocityOfBody(const std::string& body_name);
+  void TrackSpatialVelocityOfBody(const std::string& body_name, double tolerance = 0);
 
   void AddSpatialVelocityCost(const std::string& body_name, double weight);
 

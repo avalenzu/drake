@@ -23,9 +23,10 @@ namespace {
 class SpatialVelocityConstraint : public Constraint {
  public:
   SpatialVelocityConstraint(const RigidBodyTree<double>& tree,
-                            const RigidBody<double>& body)
+                            const RigidBody<double>& body, double tolerance)
       : Constraint(6, tree.get_num_positions() + tree.get_num_velocities() + 6,
-                   Vector6<double>::Zero(), Vector6<double>::Zero()),
+                   -tolerance * Vector6<double>::Ones(),
+                   tolerance * Vector6<double>::Ones()),
         tree_(tree),
         body_(body) {}
 
@@ -240,7 +241,7 @@ void KinematicTrajectoryOptimization::AddDurationBounds(double lower_bound,
 };
 
 void KinematicTrajectoryOptimization::TrackSpatialVelocityOfBody(
-    const std::string& body_name) {
+    const std::string& body_name, double tolerance) {
   VectorXDecisionVariable vars{num_positions() + num_velocities() + 6};
   vars.head(num_positions()) = position();
   vars.segment(num_positions(), num_velocities()) = velocity();
@@ -250,8 +251,10 @@ void KinematicTrajectoryOptimization::TrackSpatialVelocityOfBody(
                    MakeNamedVariables(body_name + "_spatial_velocity", 6))
           .first->second;
   const RigidBody<double>* body = tree_->FindBody(body_name);
-  object_constraints_.emplace_back(new ConstraintWrapper({std::make_shared<SpatialVelocityConstraint>(
-      *tree_, *body), vars, {0,1}}));
+  object_constraints_.emplace_back(new ConstraintWrapper(
+      {std::make_shared<SpatialVelocityConstraint>(*tree_, *body, tolerance),
+       vars,
+       {0, 1}}));
 }
 
 void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
@@ -264,7 +267,7 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
 
 void KinematicTrajectoryOptimization::AddSpatialVelocityCost(
     const std::string& body_name, double weight) {
-  TrackSpatialVelocityOfBody(body_name);
+  TrackSpatialVelocityOfBody(body_name, spatial_velocity_tolerance_);
   auto spatial_velocity_vars = spatial_velocity_of_body(body_name);
   AddRunningCost(weight * spatial_velocity_vars.transpose() *
                  spatial_velocity_vars);
