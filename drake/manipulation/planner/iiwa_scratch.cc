@@ -51,7 +51,6 @@ DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 DEFINE_int32(num_knots, 15, "Number of knot points.");
 DEFINE_int32(initial_num_knots, 15, "Number of knot points.");
-DEFINE_int32(num_knots_increment, 4, "Number of knot points.");
 DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
 DEFINE_int32(initial_system_order, 3, "Order of the dynamics model for the system.");
 
@@ -103,7 +102,6 @@ int DoMain() {
   const double kMinimumTimestep{FLAGS_min_timestep};
   const double kMaximumTimestep{FLAGS_max_timestep};
   const int kFinalNumKnots{FLAGS_num_knots};
-  const int kNumKnotsIncrement{FLAGS_num_knots_increment};
   int num_knots{FLAGS_initial_num_knots};
   drake::log()->info("Number of knots: {}", num_knots);
 
@@ -246,7 +244,7 @@ int DoMain() {
       kin_traj_opt.SetInitialTrajectory(
           kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
     }
-    num_knots = std::min(kFinalNumKnots, num_knots + kNumKnotsIncrement);
+    num_knots = num_knots + (num_knots-1);
     kin_traj_opt.set_num_time_samples(num_knots);
     result = kin_traj_opt.Solve();
     drake::log()->info(
