@@ -155,8 +155,20 @@ class KinematicTrajectoryOptimization {
 
   void AddBodyPoseConstraint(
       Vector2<double> plan_interval, const std::string& body_name,
-      const Isometry3<double>& X_WFd, double position_tolerance = 0.0,
-      double orientation_tolerance = 0.0,
+      const Isometry3<double>& X_WFd, double orientation_tolerance = 0.0,
+      double position_tolerance = 0.0,
+      const Isometry3<double>& X_BF = Isometry3<double>::Identity());
+
+  void AddBodyPoseCost(
+      double time, const std::string& body_name, const Isometry3<double>& X_WFd,
+      double orientation_weight = 1.0,
+      Vector3<double> position_weight = Vector3<double>::Ones(),
+      const Isometry3<double>& X_BF = Isometry3<double>::Identity());
+
+  void AddBodyPoseCost(
+      Vector2<double> plan_interval, const std::string& body_name,
+      const Isometry3<double>& X_WFd, double orientation_weight = 1.0,
+      Vector3<double> position_weight = Vector3<double>::Ones(),
       const Isometry3<double>& X_BF = Isometry3<double>::Identity());
 
   void AddCollisionAvoidanceConstraint(Vector2<double> plan_interval,
@@ -294,7 +306,7 @@ class KinematicTrajectoryOptimization {
       placeholder_spatial_velocity_vars_;
 
   std::vector<std::unique_ptr<const symbolic::Expression>> running_cost_expressions_;
-  std::vector<std::unique_ptr<const CostWrapper>> running_cost_objects_;
+  std::vector<std::unique_ptr<const CostWrapper>> cost_objects_;
   std::vector<std::unique_ptr<const symbolic::Expression>> final_cost_expressions_;
   std::vector<std::unique_ptr<const FormulaWrapper>> formula_linear_constraints_;
   std::vector<std::unique_ptr<const ConstraintWrapper>> object_constraints_;

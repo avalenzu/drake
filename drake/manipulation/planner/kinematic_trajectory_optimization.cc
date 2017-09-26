@@ -65,6 +65,57 @@ class SpatialVelocityConstraint : public Constraint {
   const RigidBody<double>& body_;
 };
 
+class BodyPoseCost : public Cost {
+ public:
+  BodyPoseCost(const RigidBodyTree<double>& tree, const RigidBody<double>& body,
+               const Isometry3<double>& X_WFd, double orientation_weight,
+               Vector3<double> position_weight,
+               Isometry3<double> X_BF = Isometry3<double>::Identity())
+      : Cost(tree.get_num_positions()),
+        tree_(tree),
+        body_(body),
+        X_WFd_(X_WFd),
+        X_BF_(X_BF),
+        orientation_weight_(orientation_weight),
+        position_weight_(position_weight) {}
+
+  virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      Eigen::VectorXd& y) const {
+    AutoDiffVecXd y_t;
+    Eval(math::initializeAutoDiff(x), y_t);
+    y = math::autoDiffToValueMatrix(y_t);
+  }
+
+  virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      AutoDiffVecXd& y) const {
+    const AutoDiffVecXd q = x.head(tree_.get_num_positions());
+
+    KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
+    const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(
+        cache, body_, X_BF_.cast<AutoDiffXd>())};
+    Isometry3<AutoDiffXd> X_FdF = X_WFd_.inverse().cast<AutoDiffXd>() * X_WF;
+
+    AutoDiffXd prod{Quaternion<AutoDiffXd>(X_FdF.linear())
+                        .coeffs()
+                        .dot(Quaternion<AutoDiffXd>::Identity().coeffs())};
+    y(0) = orientation_weight_ * (-prod * prod + 1);
+    y(0) += (X_FdF.translation().transpose() * position_weight_ *
+            X_FdF.translation())(0);
+  }
+
+  int numOutputs() const { return 2; };
+
+ private:
+  const RigidBodyTree<double>& tree_;
+  const RigidBody<double>& body_;
+  const Isometry3<double> X_WFd_;
+  const Isometry3<double> X_BF_;
+  const double orientation_weight_;
+  const Eigen::DiagonalMatrix<double,3> position_weight_;
+};
+
 class BodyPoseConstraint : public Constraint {
  public:
   BodyPoseConstraint(const RigidBodyTree<double>& tree,
@@ -303,6 +354,28 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
   vars.head(num_positions()) = position();
   object_constraints_.emplace_back(new ConstraintWrapper({std::make_shared<BodyPoseConstraint>(
       *tree_, *body, X_WFd, orientation_tolerance, position_tolerance, X_BF), vars, plan_interval}));
+}
+
+void KinematicTrajectoryOptimization::AddBodyPoseCost(
+    double time, const std::string& body_name,
+    const Isometry3<double>& X_WFd, double orientation_weight,
+    Vector3<double> position_weight, const Isometry3<double>& X_BF) {
+  AddBodyPoseCost({time, time}, body_name, X_WFd, orientation_weight,
+                  position_weight, X_BF);
+}
+
+void KinematicTrajectoryOptimization::AddBodyPoseCost(
+    Vector2<double> plan_interval, const std::string& body_name,
+    const Isometry3<double>& X_WFd, double orientation_weight,
+    Vector3<double> position_weight, const Isometry3<double>& X_BF) {
+  DRAKE_THROW_UNLESS(IsValidPlanInterval(plan_interval));
+  const RigidBody<double>* body = tree_->FindBody(body_name);
+  VectorXDecisionVariable vars{num_positions()};
+  vars.head(num_positions()) = position();
+  cost_objects_.emplace_back(new CostWrapper(
+      {std::make_shared<BodyPoseCost>(*tree_, *body, X_WFd, orientation_weight,
+                                      position_weight, X_BF),
+       vars, plan_interval}));
 }
 
 void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
@@ -639,6 +712,7 @@ void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
   std::vector<int> active_knots{
       ActiveKnotsForPlanInterval(*prog, cost.plan_interval)};
   for (int index : active_knots) {
+    drake::log()->debug("Adding cost from cost object at knot {}", index);
     prog->AddCost(cost.cost,
                   SubstitutePlaceholderVariables(cost.vars, *prog, index));
   }
@@ -761,7 +835,7 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
   for (const auto& constraint : formula_linear_constraints_) {
     AddLinearConstraintToProgram(*constraint, prog.get());
   }
-  for (const auto& cost : running_cost_objects_) {
+  for (const auto& cost : cost_objects_) {
     AddCostToProgram(*cost, prog.get());
   }
   for (const auto& cost : running_cost_expressions_) {
