@@ -35,6 +35,8 @@ DEFINE_double(tfinal_weight, 1e1,
               "Relative weight of final-time cost");
 DEFINE_double(orientation_tolerance, 1.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.001, "Position tolerance");
+DEFINE_double(orientation_weight, 1e2, "Orientation weight");
+DEFINE_double(position_weight, 1e2, "Position weight");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
 DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at all points.");
 DEFINE_double(collision_avoidance_knot_threshold, 0.1,
@@ -56,6 +58,7 @@ DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
 DEFINE_int32(num_knots, 100, "Number of knot points.");
 DEFINE_int32(initial_num_knots, 2, "Number of knot points.");
 DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
+DEFINE_int32(initial_system_order, 1, "Order of the dynamics model for the system.");
 
 using drake::solvers::SolutionResult;
 using drake::systems::trajectory_optimization::MultipleShooting;
@@ -112,7 +115,6 @@ int DoMain() {
 
   KinematicTrajectoryOptimization kin_traj_opt{
       std::move(iiwa), num_knots, kMinimumTimestep, kMaximumTimestep};
-  kin_traj_opt.set_system_order(FLAGS_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                         "Major iterations limit", FLAGS_iteration_limit);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
@@ -215,12 +217,16 @@ int DoMain() {
 
   const double kOrientationTolerance{FLAGS_orientation_tolerance*M_PI/180};
 
+
   kin_traj_opt.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
   kin_traj_opt.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
                                      kOrientationTolerance,
                                      FLAGS_position_tolerance);
+  kin_traj_opt.AddBodyPoseCost(
+      {0.5, 1}, "iiwa_link_ee", X_WF0, FLAGS_orientation_weight,
+      {FLAGS_position_weight, 0.0, FLAGS_position_weight});
 
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
@@ -245,6 +251,30 @@ int DoMain() {
       t_seed, q_seed, VectorX<double>::Zero(kNumPositions),
       VectorX<double>::Zero(kNumPositions)));
 
+  kin_traj_opt.set_system_order(FLAGS_initial_system_order);
+  while (num_knots < kFinalNumKnots) {
+    result = kin_traj_opt.Solve();
+    drake::log()->info(
+        "Solved {}-order model with {} knots: Solver returned {}. Trajectory "
+        "Duration = {} s",
+        kin_traj_opt.system_order(), kin_traj_opt.num_time_samples(), result,
+        kin_traj_opt.GetPositionTrajectory().get_end_time());
+    if (result == drake::solvers::kSolutionFound &&
+        kin_traj_opt.IsPositionTrajectoryCollisionFree(
+            kCollisionAvoidanceThreshold)) {
+      break;
+    }
+    drake::log()->info("Refining trajectory ...");
+    kin_traj_opt.SetInitialTrajectory(
+        kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
+    num_knots = num_knots + (num_knots-1);
+    kin_traj_opt.set_num_time_samples(num_knots);
+  }
+
+  kin_traj_opt.set_system_order(FLAGS_system_order);
+  drake::log()->info("Refining trajectory ...");
+  kin_traj_opt.SetInitialTrajectory(
+      kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
   while (num_knots < kFinalNumKnots) {
     result = kin_traj_opt.Solve();
     drake::log()->info(
