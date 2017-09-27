@@ -13,6 +13,19 @@ package(
 )
 
 drake_cc_library(
+    name = "kinematic_planning_problem",
+    srcs = ["kinematic_planning_problem.cc"],
+    hdrs = ["kinematic_planning_problem.h"],
+    deps = [
+        "//drake/multibody:rigid_body_tree",
+        "//drake/solvers:binding",
+        "//drake/solvers:constraint",
+        "//drake/solvers:cost",
+        "//drake/solvers:decision_variable",
+    ],
+)
+
+drake_cc_library(
     name = "constraint_relaxing_ik",
     srcs = ["constraint_relaxing_ik.cc"],
     hdrs = ["constraint_relaxing_ik.h"],
