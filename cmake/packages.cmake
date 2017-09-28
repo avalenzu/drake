@@ -136,7 +136,7 @@ macro(drake_find_packages)
     INTERFACE_COMPILE_DEFINITIONS EIGEN_MPL2_ONLY)  # Per #4065.
 
   drake_find_package(fmt CONFIG REQUIRED)
-  drake_find_package(gflags CONFIG REQUIRED)
+  #drake_find_package(gflags CONFIG REQUIRED)
 
   set(GTEST_DEFINITIONS
     GTEST_DONT_DEFINE_FAIL=1
@@ -150,22 +150,22 @@ macro(drake_find_packages)
     INTERFACE_COMPILE_DEFINITIONS ${GTEST_DEFINITIONS})
 
   drake_find_package(Protobuf MODULE REQUIRED)
-  drake_find_package(tinyobjloader CONFIG REQUIRED)
+  #drake_find_package(tinyobjloader CONFIG REQUIRED)
 
   # END required packages
   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # BEGIN optional packages
 
-  drake_find_package(bot2-core CONFIG)
-  drake_find_package(bot2-lcmgl-client PKG_CONFIG)
-  drake_find_package(Bullet MODULE)
-  drake_find_package(ipopt PKG_CONFIG)
-  drake_find_package(lcm CONFIG)
-  drake_find_package(NLopt CONFIG)
-  drake_find_package(pybind11 CONFIG COMPONENTS NumPy)
-  drake_find_package(robotlocomotion-lcmtypes CONFIG)
-  drake_find_package(spdlog CONFIG)
-  drake_find_package(yaml-cpp CONFIG)
+  #drake_find_package(bot2-core CONFIG)
+  #drake_find_package(bot2-lcmgl-client PKG_CONFIG)
+  #drake_find_package(Bullet MODULE)
+  #drake_find_package(ipopt PKG_CONFIG)
+  #drake_find_package(lcm CONFIG)
+  #drake_find_package(NLopt CONFIG)
+  #drake_find_package(pybind11 CONFIG COMPONENTS NumPy)
+  #drake_find_package(robotlocomotion-lcmtypes CONFIG)
+  #drake_find_package(spdlog CONFIG)
+  #drake_find_package(yaml-cpp CONFIG)
 
   # END optional packages
   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

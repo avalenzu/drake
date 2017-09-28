@@ -15,7 +15,7 @@ drake_setup_options()
 # BEGIN external projects
 
 # External projects in order of dependencies; 'trivial' ones first
-drake_add_external(qt_property_browser CMAKE QT)
+#drake_add_external(qt_property_browser CMAKE QT)
 
 # eigen
 # N.B. See #5785; do your best not to have to bump this to a newer commit.
@@ -27,24 +27,24 @@ drake_add_external(eigen PUBLIC CMAKE
     -DEIGEN_TEST_NOQT=ON)
 
 # spdlog
-drake_add_external(spdlog PUBLIC CMAKE
-  DEPENDS fmt)
+#drake_add_external(spdlog PUBLIC CMAKE
+  #DEPENDS fmt)
 
 # bullet
-drake_add_external(bullet PUBLIC CMAKE
-  CMAKE_ARGS
-    -DBUILD_SHARED_LIBS=ON
-    -DBUILD_BULLET2_DEMOS=OFF
-    -DBUILD_CPU_DEMOS=OFF
-    -DBUILD_EXTRAS=OFF
-    -DBUILD_OPENGL3_DEMOS=OFF
-    -DBUILD_UNIT_TESTS=OFF
-    -DCMAKE_DEBUG_POSTFIX=
-    -DCMAKE_MINSIZEREL_POSTFIX=
-    -DCMAKE_RELWITHDEBINFO_POSTFIX=
-    -DINSTALL_LIBS=ON
-    -DPKGCONFIG_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/lib/pkgconfig
-    -DUSE_DOUBLE_PRECISION=ON)
+#drake_add_external(bullet PUBLIC CMAKE
+  #CMAKE_ARGS
+    #-DBUILD_SHARED_LIBS=ON
+    #-DBUILD_BULLET2_DEMOS=OFF
+    #-DBUILD_CPU_DEMOS=OFF
+    #-DBUILD_EXTRAS=OFF
+    #-DBUILD_OPENGL3_DEMOS=OFF
+    #-DBUILD_UNIT_TESTS=OFF
+    #-DCMAKE_DEBUG_POSTFIX=
+    #-DCMAKE_MINSIZEREL_POSTFIX=
+    #-DCMAKE_RELWITHDEBINFO_POSTFIX=
+    #-DINSTALL_LIBS=ON
+    #-DPKGCONFIG_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/lib/pkgconfig
+    #-DUSE_DOUBLE_PRECISION=ON)
 
 # fmt
 drake_add_external(fmt PUBLIC CMAKE ALWAYS
@@ -53,10 +53,10 @@ drake_add_external(fmt PUBLIC CMAKE ALWAYS
     -DFMT_TEST=OFF)
 
 # gflags
-drake_add_external(gflags PUBLIC CMAKE
-  CMAKE_ARGS
-    -DBUILD_SHARED_LIBS=ON
-    -DGFLAGS_BUILD_gflags_nothreads_LIB=OFF)
+#drake_add_external(gflags PUBLIC CMAKE
+  #CMAKE_ARGS
+    #-DBUILD_SHARED_LIBS=ON
+    #-DGFLAGS_BUILD_gflags_nothreads_LIB=OFF)
 
 # googletest
 drake_add_external(googletest PUBLIC CMAKE
@@ -65,36 +65,36 @@ drake_add_external(googletest PUBLIC CMAKE
     -DCMAKE_INSTALL_NAME_DIR=${CMAKE_INSTALL_PREFIX}/lib)
 
 # ipopt
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+#if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # Work around horrific clang* = clang, */cl* = msvc bug in BuildTools/coin.m4
-  get_filename_component(IPOPT_C_COMPILER "${CMAKE_C_COMPILER}" NAME)
-  get_filename_component(IPOPT_CXX_COMPILER "${CMAKE_CXX_COMPILER}" NAME)
-else()
-  set(IPOPT_C_COMPILER "${CMAKE_C_COMPILER}")
-  set(IPOPT_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
-endif()
+  #get_filename_component(IPOPT_C_COMPILER "${CMAKE_C_COMPILER}" NAME)
+  #get_filename_component(IPOPT_CXX_COMPILER "${CMAKE_CXX_COMPILER}" NAME)
+#else()
+  #set(IPOPT_C_COMPILER "${CMAKE_C_COMPILER}")
+  #set(IPOPT_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
+#endif()
 
-drake_add_external(ipopt PUBLIC AUTOTOOLS FORTRAN
-  AUTOTOOLS_ENV
-    CC=${IPOPT_C_COMPILER}
-    CXX=${IPOPT_CXX_COMPILER}
-  AUTOTOOLS_CONFIGURE_ARGS
-    --disable-shared
-    --includedir=${CMAKE_INSTALL_PREFIX}/include/ipopt
-    --with-blas=BUILD
-    --with-lapack=BUILD
-    --with-pic)
+#drake_add_external(ipopt PUBLIC AUTOTOOLS FORTRAN
+  #AUTOTOOLS_ENV
+    #CC=${IPOPT_C_COMPILER}
+    #CXX=${IPOPT_CXX_COMPILER}
+  #AUTOTOOLS_CONFIGURE_ARGS
+    #--disable-shared
+    #--includedir=${CMAKE_INSTALL_PREFIX}/include/ipopt
+    #--with-blas=BUILD
+    #--with-lapack=BUILD
+    #--with-pic)
 
 # nlopt
-drake_add_external(nlopt PUBLIC CMAKE
-  CMAKE_ARGS
-    -DBUILD_SHARED_LIBS=ON
-    -DBUILD_PYTHON=OFF
-    -DBUILD_OCTAVE=OFF
-    -DBUILD_MATLAB=OFF
-    -DBUILD_GUILE=OFF
-    -DINSTALL_INCLUDE_DIR=${CMAKE_INSTALL_PREFIX}/include/nlopt
-    -DUSE_SWIG=OFF)
+#drake_add_external(nlopt PUBLIC CMAKE
+  #CMAKE_ARGS
+    #-DBUILD_SHARED_LIBS=ON
+    #-DBUILD_PYTHON=OFF
+    #-DBUILD_OCTAVE=OFF
+    #-DBUILD_MATLAB=OFF
+    #-DBUILD_GUILE=OFF
+    #-DINSTALL_INCLUDE_DIR=${CMAKE_INSTALL_PREFIX}/include/nlopt
+    #-DUSE_SWIG=OFF)
 
 # protobuf
 drake_add_external(protobuf PUBLIC CMAKE ALWAYS
@@ -105,56 +105,56 @@ drake_add_external(protobuf PUBLIC CMAKE ALWAYS
     -Dprotobuf_MODULE_COMPATIBLE=ON)
 
 # pybind11
-drake_add_external(pybind11 CMAKE
-  CMAKE_ARGS
-    -DPYBIND11_PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}
-    -DPYBIND11_TEST=OFF)
+#drake_add_external(pybind11 CMAKE
+  #CMAKE_ARGS
+    #-DPYBIND11_PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}
+    #-DPYBIND11_TEST=OFF)
 
 # pythonqt
-drake_add_external(pythonqt CMAKE PYTHON QT
-  CMAKE_ARGS
-    -DPythonQt_Wrap_Qtcore:BOOL=ON
-    -DPythonQt_Wrap_Qtgui:BOOL=ON
-    -DPythonQt_Wrap_Qtuitools:BOOL=ON
-)
+#drake_add_external(pythonqt CMAKE PYTHON QT
+  #CMAKE_ARGS
+    #-DPythonQt_Wrap_Qtcore:BOOL=ON
+    #-DPythonQt_Wrap_Qtgui:BOOL=ON
+    #-DPythonQt_Wrap_Qtuitools:BOOL=ON
+#)
 
 # tinyobjloader
-drake_add_external(tinyobjloader PUBLIC CMAKE
-  CMAKE_ARGS
-    -DTINYOBJLOADER_COMPILATION_SHARED=ON
-  )
+#drake_add_external(tinyobjloader PUBLIC CMAKE
+  #CMAKE_ARGS
+    #-DTINYOBJLOADER_COMPILATION_SHARED=ON
+  #)
 
 # yaml_cpp
-drake_add_external(yaml_cpp PUBLIC CMAKE
- CMAKE_ARGS
-   -DBUILD_SHARED_LIBS=ON
-   -DYAML_CPP_BUILD_CONTRIB=OFF
-   -DYAML_CPP_BUILD_TOOLS=OFF)
+#drake_add_external(yaml_cpp PUBLIC CMAKE
+ #CMAKE_ARGS
+   #-DBUILD_SHARED_LIBS=ON
+   #-DYAML_CPP_BUILD_CONTRIB=OFF
+   #-DYAML_CPP_BUILD_TOOLS=OFF)
 
 # ctk_python_console
-drake_add_external(ctk_python_console CMAKE PYTHON QT
-  DEPENDS pythonqt)
+#drake_add_external(ctk_python_console CMAKE PYTHON QT
+  #DEPENDS pythonqt)
 
 # lcm
-drake_add_external(lcm PUBLIC CMAKE PYTHON
-  CMAKE_ARGS
-    -DBUILD_SHARED_LIBS=ON
-    -DLCM_ENABLE_EXAMPLES=OFF
-    -DLCM_ENABLE_LUA=OFF
-    -DLCM_ENABLE_TESTS=OFF
-    -DLCM_INSTALL_M4MACROS=OFF)
+#drake_add_external(lcm PUBLIC CMAKE PYTHON
+  #CMAKE_ARGS
+    #-DBUILD_SHARED_LIBS=ON
+    #-DLCM_ENABLE_EXAMPLES=OFF
+    #-DLCM_ENABLE_LUA=OFF
+    #-DLCM_ENABLE_TESTS=OFF
+    #-DLCM_INSTALL_M4MACROS=OFF)
 
 # libbot
-drake_add_external(libbot PUBLIC CMAKE PYTHON
-  DEPENDS lcm)
+#drake_add_external(libbot PUBLIC CMAKE PYTHON
+  #DEPENDS lcm)
 
 # bot_core_lcmtypes
-drake_add_external(bot_core_lcmtypes PUBLIC CMAKE PYTHON
-  DEPENDS lcm libbot) # Conflicts with libbot; ensure this is built after
+#drake_add_external(bot_core_lcmtypes PUBLIC CMAKE PYTHON
+  #DEPENDS lcm libbot) # Conflicts with libbot; ensure this is built after
 
 # robotlocomotion_lcmtypes
-drake_add_external(robotlocomotion_lcmtypes PUBLIC CMAKE PYTHON
-  DEPENDS bot_core_lcmtypes lcm)
+#drake_add_external(robotlocomotion_lcmtypes PUBLIC CMAKE PYTHON
+  #DEPENDS bot_core_lcmtypes lcm)
 
 # Option to skip building drake proper via the superbuild. This allows the
 # superbuild to build everything BUT drake, which can still be built separately
@@ -191,41 +191,41 @@ drake_add_external(drake LOCAL PUBLIC CMAKE ALWAYS MATLAB PYTHON VTK
     -DWITH_TINYOBJLOADER:BOOL=${WITH_TINYOBJLOADER}
     -DWITH_YAML_CPP:BOOL=${WITH_YAML_CPP}
   DEPENDS
-    bot_core_lcmtypes
-    bullet
+    #bot_core_lcmtypes
+    #bullet
     eigen
     fmt
-    gflags
+    #gflags
     googletest
-    ipopt
-    lcm
-    libbot
-    nlopt
+    #ipopt
+    #lcm
+    #libbot
+    #nlopt
     protobuf
-    pybind11
-    robotlocomotion_lcmtypes
-    spdlog
-    tinyobjloader
-    yaml_cpp
+    #pybind11
+    #robotlocomotion_lcmtypes
+    #spdlog
+    #tinyobjloader
+    #yaml_cpp
 )
 
 # director
-drake_add_external(director PUBLIC CMAKE TEST PYTHON QT VTK
-  CMAKE_ARGS
-    -DENABLE_TESTING=ON
-    -DUSE_DRAKE=ON
-    -DUSE_LCM=${HAVE_LCM}
-    -DUSE_LCMGL=${HAVE_LIBBOT}
-    -DUSE_LIBBOT=OFF
-  DEPENDS
-    bot_core_lcmtypes
-    ctk_python_console
-    drake
-    lcm
-    libbot
-    pythonqt
-    qt_property_browser
-)
+#drake_add_external(director PUBLIC CMAKE TEST PYTHON QT VTK
+  #CMAKE_ARGS
+    #-DENABLE_TESTING=ON
+    #-DUSE_DRAKE=ON
+    #-DUSE_LCM=${HAVE_LCM}
+    #-DUSE_LCMGL=${HAVE_LIBBOT}
+    #-DUSE_LIBBOT=OFF
+  #DEPENDS
+    #bot_core_lcmtypes
+    #ctk_python_console
+    #drake
+    #lcm
+    #libbot
+    #pythonqt
+    #qt_property_browser
+#)
 
 # END external projects
 ###############################################################################

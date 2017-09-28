@@ -11,26 +11,26 @@ configure_file(cmake_project_source_dir.cc.in ${cmake_project_source_dir_cc})
 # List all source files used to build libdrakeCommon.
 set(sources
   ${cmake_project_source_dir_cc}
-  double_overloads.cc
+  #double_overloads.cc
   drake_assert_and_throw.cc
-  drake_path_cmake.cc
-  find_resource.cc
-  nice_type_name.cc
-  polynomial.cc
-  symbolic_environment.cc
-  symbolic_expression.cc
-  symbolic_expression_cell.cc
-  symbolic_expression_cell.h
-  symbolic_decompose.cc
-  symbolic_formula.cc
-  symbolic_formula_cell.cc
-  symbolic_formula_cell.h
-  symbolic_monomial.cc
-  symbolic_monomial_util.cc
-  symbolic_polynomial.cc
-  symbolic_variable.cc
-  symbolic_variables.cc
-  text_logging.cc
+  #drake_path_cmake.cc
+  #find_resource.cc
+  #nice_type_name.cc
+  #polynomial.cc
+  #symbolic_environment.cc
+  #symbolic_expression.cc
+  #symbolic_expression_cell.cc
+  #symbolic_expression_cell.h
+  #symbolic_decompose.cc
+  #symbolic_formula.cc
+  #symbolic_formula_cell.cc
+  #symbolic_formula_cell.h
+  #symbolic_monomial.cc
+  #symbolic_monomial_util.cc
+  #symbolic_polynomial.cc
+  #symbolic_variable.cc
+  #symbolic_variables.cc
+  #text_logging.cc
   )
 
 # List headers that should be installed with Drake so that they
@@ -97,10 +97,10 @@ add_library_with_exports(LIB_NAME drakeCommon
 target_include_directories(drakeCommon PUBLIC)
 target_link_libraries(drakeCommon
   Eigen3::Eigen
-  fmt
-  gflags
-  spruce
-  stx
+  #fmt
+  #gflags
+  #spruce
+  #stx
   Threads::Threads)
 
 set(drakeCommon_CFLAGS)
@@ -131,12 +131,12 @@ drake_install_pkg_config_file(drake-common
     eigen3
     ${drakeCommon_REQUIRES})
 
-add_executable(resource_tool resource_tool.cc)
-target_link_libraries(resource_tool drakeCommon)
+#add_executable(resource_tool resource_tool.cc)
+#target_link_libraries(resource_tool drakeCommon)
 
-if(BUILD_TESTING)
-  add_subdirectory(test)
-endif()
+#if(BUILD_TESTING)
+  #add_subdirectory(test)
+#endif()
 
 add_subdirectory(proto)
-add_subdirectory(trajectories)
+#add_subdirectory(trajectories)
