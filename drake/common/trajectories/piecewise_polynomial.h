@@ -205,6 +205,15 @@ class PiecewisePolynomial final : public PiecewisePolynomialBase {
   static PiecewisePolynomial<CoefficientType> Cubic(
       const std::vector<double>& breaks,
       const std::vector<CoefficientMatrix>& knots);
+  /**
+   * Constructs the @p index-th B-spline of order @p order for the knot sequence
+   * @p knots. The result has the following properties:
+   *    - It is a piecewise polynomial of degree @p order - 1
+   *    - It is zero outside of the interval [@p knots[@p index], @p knots[@p
+   *      index + @p order]]
+   */
+  static PiecewisePolynomial<CoefficientType> BSpline(
+      int index, int order, const std::vector<double>& knots);
 
   /// Takes the derivative of this PiecewisePolynomial.
   /**

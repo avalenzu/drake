@@ -791,6 +791,16 @@ PiecewisePolynomial<CoefficientType>::Cubic(
   return PiecewisePolynomial<CoefficientType>(polynomials, T);
 }
 
+// Makes the `index`-th B-spline of order `order`
+template <typename CoefficientType>
+static PiecewisePolynomial<CoefficientType> BSpline(
+    int index, int order, const std::vector<double>& knots) {
+  if (order == 1) {
+    knots.unique
+  } else {
+  }
+}
+
 // Computes the cubic spline coefficients based on the given values and first
 // derivatives at both end points.
 template <typename CoefficientType>
