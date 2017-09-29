@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "drake/common/drake_assert.h"
+#include "drake/common/drake_throw.h"
 
 using std::runtime_error;
 using std::vector;
@@ -793,11 +794,52 @@ PiecewisePolynomial<CoefficientType>::Cubic(
 
 // Makes the `index`-th B-spline of order `order`
 template <typename CoefficientType>
-static PiecewisePolynomial<CoefficientType> BSpline(
+PiecewisePolynomial<CoefficientType>
+PiecewisePolynomial<CoefficientType>::BSpline(
     int index, int order, const std::vector<double>& knots) {
+  const int kNumKnots(knots.size());
+  DRAKE_THROW_UNLESS(index < kNumKnots);
+  std::vector<double> breaks(kNumKnots, 0);
+  std::vector<CoefficientMatrix> values(kNumKnots,
+      CoefficientMatrix::Zero(1, 1));
+  int breaks_index = 0;
+  for (int i = 0; i < kNumKnots - 1; ++i) {
+    // Add knots[i] to breaks if it is not equal to knots[i+1].
+    if (knots[i + 1] > knots[i] + PiecewiseFunction::kEpsilonTime) {
+      breaks[breaks_index] = knots[i];
+      if (i == index) {
+        values[breaks_index](0) = 1.0;
+      }
+      ++breaks_index;
+    }
+  }
+  breaks[breaks_index] = knots.back();
+  breaks.resize(breaks_index+1);
+  values.resize(breaks_index+1);
   if (order == 1) {
-    knots.unique
+    return ZeroOrderHold(breaks, values);
   } else {
+    const PiecewisePolynomial<CoefficientType> one{
+        ZeroOrderHold(breaks, {breaks.size(), CoefficientMatrix::Ones(1, 1)})};
+    return BSplineOmega(index, order, knots, breaks) * BSpline(index, order - 1, knots);/* +
+           (one - BSplineOmega(index + 1, order, knots, breaks)) *
+               BSpline(index + 1, order - 1, knots);*/
+  }
+}
+
+template <typename CoefficientType>
+PiecewisePolynomial<CoefficientType> PiecewisePolynomial<CoefficientType>::BSplineOmega(
+    int index, int order, const std::vector<double>& knots, const std::vector<double>& breaks) {
+  const PiecewisePolynomial<CoefficientType> zero{
+    ZeroOrderHold(breaks, {breaks.size(), CoefficientMatrix::Zero(1, 1)})};
+  if (knots[index + order - 1] - knots[index] < PiecewiseFunction::kEpsilonTime) {
+    return zero;
+  } else {
+    const Polynomial<CoefficientType> x("x", 1);
+    return PiecewisePolynomial<CoefficientType>(
+        std::vector<Polynomial<double>>(
+          breaks.size()-1, (x - knots[index]) / (knots[index + order - 1] - knots[index])),
+        breaks);
   }
 }
 

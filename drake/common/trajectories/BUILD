@@ -1,7 +1,7 @@
 # -*- python -*-
 # This file contains rules for Bazel; see drake/doc/bazel.rst.
 
-load("//tools:drake.bzl", "drake_cc_googletest", "drake_cc_library")
+load("//tools:drake.bzl", "drake_cc_googletest", "drake_cc_library", "drake_cc_binary")
 load("//tools:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
@@ -40,6 +40,22 @@ drake_cc_library(
         ":piecewise_function",
         "//drake/common:essential",
         "//drake/common:polynomial",
+    ],
+)
+
+drake_cc_binary(
+    name = "bspline_scratch",
+    testonly = 1,
+    srcs = [
+        "bspline_scratch.cc",
+    ],
+    deps = [
+        ":piecewise_polynomial",
+        "//drake/common:text_logging_gflags",
+        "//drake/common",
+        "//drake/common:polynomial",
+        "//drake/common/proto:call_matlab",
+        "@com_github_gflags_gflags//:gflags",
     ],
 )
 
