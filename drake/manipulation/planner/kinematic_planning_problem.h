@@ -47,14 +47,6 @@ class KinematicPlanningProblem {
 
   const solvers::VectorXDecisionVariable& jerk() const;
 
-  /// @returns V_WB
-  const std::map<std::string, solvers::VectorDecisionVariable<6>>&
-  body_spatial_velocites_in_world_frame() const;
-
-  /// @returns X_WB as a 7-element vector: (x, y, z, quat)
-  const std::map<std::string, solvers::VectorDecisionVariable<7>>&
-  body_poses_in_world_frame() const;
-
   int num_positions() const { return num_positions_; };
 
   int num_velocities() const { return num_velocities_; };

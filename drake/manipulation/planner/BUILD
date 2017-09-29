@@ -26,6 +26,17 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "kinematic_trajectory_optimization",
+    srcs = ["kinematic_trajectory_optimization.cc"],
+    hdrs = ["kinematic_trajectory_optimization.h"],
+    deps = [
+        ":kinematic_planning_problem",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/solvers:mathematical_program",
+    ],
+)
+
+drake_cc_library(
     name = "constraint_relaxing_ik",
     srcs = ["constraint_relaxing_ik.cc"],
     hdrs = ["constraint_relaxing_ik.h"],
