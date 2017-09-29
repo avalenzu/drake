@@ -821,9 +821,9 @@ PiecewisePolynomial<CoefficientType>::BSpline(
   } else {
     const PiecewisePolynomial<CoefficientType> one{
         ZeroOrderHold(breaks, {breaks.size(), CoefficientMatrix::Ones(1, 1)})};
-    return BSplineOmega(index, order, knots, breaks) * BSpline(index, order - 1, knots);/* +
+    return BSplineOmega(index, order, knots, breaks) * BSpline(index, order - 1, knots) +
            (one - BSplineOmega(index + 1, order, knots, breaks)) *
-               BSpline(index + 1, order - 1, knots);*/
+               BSpline(index + 1, order - 1, knots);
   }
 }
 
@@ -835,11 +835,12 @@ PiecewisePolynomial<CoefficientType> PiecewisePolynomial<CoefficientType>::BSpli
   if (knots[index + order - 1] - knots[index] < PiecewiseFunction::kEpsilonTime) {
     return zero;
   } else {
-    const Polynomial<CoefficientType> x("x", 1);
-    return PiecewisePolynomial<CoefficientType>(
-        std::vector<Polynomial<double>>(
-          breaks.size()-1, (x - knots[index]) / (knots[index + order - 1] - knots[index])),
-        breaks);
+    std::vector<CoefficientMatrix> values(breaks.size(), CoefficientMatrix(1,1));
+    const int kNumBreaks(breaks.size());
+    for (int i = 0; i < kNumBreaks; ++i) {
+      values[i](0,0) = (breaks[i] - knots[index])/(knots[index + order - 1] - knots[index]);
+    }
+    return PiecewisePolynomial<CoefficientType>::FirstOrderHold(breaks, values);
   }
 }
 
