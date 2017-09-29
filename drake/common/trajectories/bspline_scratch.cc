@@ -11,9 +11,8 @@ using drake::common::CallMatlab;
 using drake::common::CallMatlabSingleOutput;
 
 DEFINE_int32(index, 0, "Index of the B-spline to plot");
-DEFINE_int32(order, 6, "Order of the B-splines");
-DEFINE_int32(num_unique_knots, 11, "Number of unique knot points");
-DEFINE_int32(num_end_point_knots, 6, "Multiplicity of knots at 0 and 1.");
+DEFINE_int32(order, 4, "Order of the B-splines");
+DEFINE_int32(num_control_points, 11, "Number of unique knot points");
 DEFINE_int32(num_plotting_points, 1000, "Number of points to use when plotting.");
 DEFINE_int32(derivatives_to_plot, 0, "Order of derivatives to plot.");
 namespace drake {
@@ -21,14 +20,13 @@ namespace {
 int DoMain() {
   const int kIndex{FLAGS_index};
   const int kOrder = FLAGS_order;
-  const int kNumUniqueKnots = FLAGS_num_unique_knots;
-  const int kNumEndPointKnots = FLAGS_num_end_point_knots;
+  const int kNumControlPoints = FLAGS_num_control_points;
   const int kNumPlottingPoints = FLAGS_num_plotting_points;
-  const int kNumKnots{kNumUniqueKnots + 2 * (kNumEndPointKnots - 1)};
-  const double kKnotInterval{1.0 / static_cast<double>(kNumUniqueKnots-1)};
+  const int kNumKnots{kNumControlPoints + kOrder};
+  const double kKnotInterval{1.0 / static_cast<double>(kNumControlPoints - (kOrder - 1))};
   const int kDerivativesToPlot = FLAGS_derivatives_to_plot;
   std::vector<double> knots(kNumKnots, 0.0);
-  for (int i = kNumEndPointKnots; i < kNumKnots; ++i) {
+  for (int i = kOrder; i < kNumKnots; ++i) {
     knots[i] = std::min(1.0, knots[i - 1] + kKnotInterval);
   }
   PiecewisePolynomial<double> bspline =
