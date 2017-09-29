@@ -216,7 +216,8 @@ class PiecewisePolynomial final : public PiecewisePolynomialBase {
       int index, int order, const std::vector<double>& knots);
 
   static PiecewisePolynomial<CoefficientType> BSplineOmega(
-      int index, int order, const std::vector<double>& knots, const std::vector<double>& breaks);
+      int index, int order, const std::vector<double>& knots,
+      const std::vector<double>& breaks);
 
   /// Takes the derivative of this PiecewisePolynomial.
   /**
