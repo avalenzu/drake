@@ -13,6 +13,18 @@ namespace planner {
 
 class KinematicPlanningProblem {
  public:
+  struct CostWrapper {
+    std::shared_ptr<solvers::Cost> cost;
+    solvers::VectorXDecisionVariable vars;
+    const Vector2<double> plan_interval;
+  };
+
+  struct ConstraintWrapper {
+    std::shared_ptr<solvers::Constraint> constraint;
+    solvers::VectorXDecisionVariable vars;
+    const Vector2<double> plan_interval;
+  };
+
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KinematicPlanningProblem)
 
   KinematicPlanningProblem(const RigidBodyTree<double>& tree);
@@ -51,25 +63,16 @@ class KinematicPlanningProblem {
 
   int num_velocities() const { return num_velocities_; };
 
+  const std::vector<std::unique_ptr<const CostWrapper>>& costs() const {
+    return costs_;
+  };
+
+  const std::vector<std::unique_ptr<const ConstraintWrapper>>& constraints()
+      const {
+    return constraints_;
+  };
+
  private:
-  struct CostWrapper {
-    std::shared_ptr<solvers::Cost> cost;
-    solvers::VectorXDecisionVariable vars;
-    const Vector2<double> plan_interval;
-  };
-
-  struct ConstraintWrapper {
-    std::shared_ptr<solvers::Constraint> constraint;
-    solvers::VectorXDecisionVariable vars;
-    const Vector2<double> plan_interval;
-  };
-
-  struct CollisionAvoidanceWrapper {
-    const double threshold;
-    solvers::VectorXDecisionVariable vars;
-    const Vector2<double> plan_interval;
-  };
-
   const int num_positions_;
   const int num_velocities_;
 
@@ -88,11 +91,9 @@ class KinematicPlanningProblem {
 
   std::vector<std::unique_ptr<const CostWrapper>> costs_;
   std::vector<std::unique_ptr<const ConstraintWrapper>> constraints_;
-  std::vector<std::unique_ptr<const CollisionAvoidanceWrapper>>
-      collision_constraints_;
 
-  std::vector<
-      std::pair<std::unique_ptr<const DrakeShapes::Geometry>, Isometry3<double>>>
+  std::vector<std::pair<std::unique_ptr<const DrakeShapes::Geometry>,
+                        Isometry3<double>>>
       world_geometry_;
 
   double duration_lower_bound_{0};
