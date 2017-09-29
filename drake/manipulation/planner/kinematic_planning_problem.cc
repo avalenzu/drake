@@ -35,15 +35,7 @@ KinematicPlanningProblem::KinematicPlanningProblem(
           MakeNamedVariables("a", tree.get_num_velocities())),
       placeholder_jerk_vars_(
           MakeNamedVariables("j", tree.get_num_velocities()))
-{
-  for (const auto& body : tree.bodies) {
-    const std::string& body_name{body->get_name()};
-    placeholder_body_pose_vars_.emplace(
-        body_name, MakeNamedVariables(body_name + "_pose", 7));
-    placeholder_body_spatial_velocity_vars_.emplace(
-        body_name, MakeNamedVariables(body_name + "_spatial_velocity", 6));
-  }
-}
+{}
 
 void KinematicPlanningProblem::AddFixedBoxToWorld(Vector3<double> size,
                                                   Isometry3<double> X_WB) {
@@ -104,16 +96,6 @@ const VectorXDecisionVariable& KinematicPlanningProblem::acceleration() const {
 
 const VectorXDecisionVariable& KinematicPlanningProblem::jerk() const {
   return placeholder_jerk_vars_;
-}
-
-const std::map<std::string, solvers::VectorDecisionVariable<6>>&
-KinematicPlanningProblem::body_spatial_velocites_in_world_frame() const {
-  return placeholder_body_spatial_velocity_vars_;
-}
-
-const std::map<std::string, solvers::VectorDecisionVariable<7>>&
-KinematicPlanningProblem::body_poses_in_world_frame() const {
-  return placeholder_body_pose_vars_;
 }
 
 }  // namespace planner
