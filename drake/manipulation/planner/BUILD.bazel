@@ -74,6 +74,7 @@ drake_cc_googletest(
     deps = [
         ":kinematic_trajectory_optimization",
         "//drake/common:find_resource",
+        "//drake/common/proto:call_matlab",
     ],
 )
 

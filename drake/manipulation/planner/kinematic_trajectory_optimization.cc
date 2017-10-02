@@ -8,6 +8,7 @@ namespace planner {
 
 using solvers::Constraint;
 using solvers::VectorXDecisionVariable;
+using symbolic::Expression;
 using symbolic::Substitution;
 
 // namespace {
@@ -90,15 +91,25 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
                                                       : num_control_points),
       kOrder_(spline_order),
       kNumKnots_(num_control_points + spline_order),
+      kNumInternalIntervals_(num_control_points - spline_order + 1),
       kNumPositions_(num_positions),
       control_points_(
           NewContinuousVariables(kNumPositions_, kNumControlPoints_, "q")) {
+  DRAKE_DEMAND(kNumControlPoints_ >= kOrder_);
   // Populate the knots vector. The knots vector has the form:
   //
   // 	(t[0] ..., t[kOrder], ..., t[kNumControlPoints], ...,
   //    					t[kNumControlPoints + kOrder])
   // where, t[0] == t[1] == ... == t[kOrder-1] == 0, t[kNumControlPoints
-  knots_.resize(kNumKnots_, 0);
+  const double kInteriorInterval{1.0 / (kNumControlPoints_ - (kOrder_ - 1))};
+  knots_.resize(kNumKnots_, 0.0);
+  for (int i = kOrder_; i < kNumKnots_; ++i) {
+    knots_[i] = std::min(1.0, knots_[i - 1] + kInteriorInterval);
+  }
+  for (int i = 0; i < kNumControlPoints_; ++i) {
+    basis_.emplace_back(PiecewisePolynomial<double>::BSpline(i, kOrder_, knots_));
+    drake::log()->info("B_{},{}(t) = {}", i, kOrder_, basis_.back().getPolynomial(0));
+  }
 }
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
@@ -111,6 +122,37 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   // for (const auto& cost : problem->costs()) {
   // AddCost(cost->cost, cost->plan_interval);
   //}
+}
+
+const VectorX<Expression> KinematicTrajectoryOptimization::position(
+    int evaluation_time) const {
+  DRAKE_DEMAND(0 <= evaluation_time && evaluation_time <= 1);
+  VectorX<Expression> position(kNumPositions_);
+  for (int i = 0; i < kNumPositions_; ++i) {
+    position(i) = Expression::Zero();
+    // TODO(avalenzu): Only do this for the basis functions whose support
+    // interval includes evaluation_time.
+    for (int j = 0; j < kNumControlPoints_; ++j) {
+      position(i) += control_points_(i,j)*basis_[i].value(evaluation_time)(0);
+    }
+    drake::log()->info("position({}) = {}", i, position(i));
+  }
+  return position;
+}
+
+PiecewisePolynomialTrajectory KinematicTrajectoryOptimization::ReconstructPositionTrajectory() const {
+  std::vector<MatrixX<Polynomial<double>>> position_polynomials(kNumInternalIntervals_);
+  for (int i = 0; i < kNumInternalIntervals_; ++i) {
+    position_polynomials[i] = MatrixX<Polynomial<double>>(kNumPositions_, 1);
+    for (int j = 0; j < kNumPositions_; ++j) {
+      // TODO(avalenzu): Only do this for the elements of the basis whose
+      // support includes the i-th interval.
+      for (int k = 0; k < kNumControlPoints_; ++k) {
+        position_polynomials[i](j) = basis_[k].getPolynomial(i, 0, 0) * GetSolution(control_points_(j, k));
+      }
+    }
+  }
+  return PiecewisePolynomialTrajectory(PiecewisePolynomial<double>(position_polynomials, basis_.front().getSegmentTimes()));
 }
 
 // symbolic::Substitution
