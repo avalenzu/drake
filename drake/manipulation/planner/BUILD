@@ -31,6 +31,8 @@ drake_cc_library(
     hdrs = ["kinematic_trajectory_optimization.h"],
     deps = [
         ":kinematic_planning_problem",
+        "//drake/common/trajectories:piecewise_polynomial_trajectory",
+        "//drake/multibody/parsers",
         "//drake/multibody:rigid_body_tree",
         "//drake/solvers:mathematical_program",
     ],
@@ -63,6 +65,18 @@ drake_cc_library(
 )
 
 # === test/ ===
+
+drake_cc_googletest(
+    name = "kinematic_trajectory_optimization_test",
+    srcs = ["test/kinematic_trajectory_optimization_test.cc"],
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
+    ],
+)
 
 drake_cc_googletest(
     name = "constraint_relaxing_ik_test",
