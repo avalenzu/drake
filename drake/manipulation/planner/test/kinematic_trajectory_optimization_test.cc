@@ -38,10 +38,14 @@ class FromKinematicPlanningProblemTest : public ::testing::Test {
 
 GTEST_TEST(KinematicTrajectoryOptimizationTest, UnconstrainedTest) {
   KinematicTrajectoryOptimization program{
-      1 /*num_positions*/, 4 /*num_control_points*/,
-      -1 /*num_evaluation_points*/, 4 /*spine_order*/};
-  program.AddLinearConstraint(program.position(0)(0) == 0);
-  program.AddLinearConstraint(program.position(1)(0) == 3);
+      1 /*num_positions*/, 6 /*num_control_points*/,
+      -1 /*num_evaluation_points*/, 6 /*spine_order*/};
+  program.AddLinearConstraint(program.position(0.0)(0) == 0);
+  program.AddLinearConstraint(program.velocity(0.0)(0) == 0);
+  program.AddLinearConstraint(program.acceleration(0.0)(0) == 0);
+  program.AddLinearConstraint(program.position(1.0)(0) == 3);
+  program.AddLinearConstraint(program.velocity(1.0)(0) == 0);
+  program.AddLinearConstraint(program.acceleration(1.0)(0) == 0);
   solvers::SolutionResult result = program.Solve();
   EXPECT_EQ(result, solvers::kSolutionFound);
 
