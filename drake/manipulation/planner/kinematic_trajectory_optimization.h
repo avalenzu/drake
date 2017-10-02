@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "drake/common/symbolic.h"
 #include "drake/common/trajectories/piecewise_polynomial_trajectory.h"
 #include "drake/manipulation/planner/kinematic_planning_problem.h"
 #include "drake/solvers/mathematical_program.h"
@@ -41,8 +42,9 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
     return control_points_;
   }
 
-  virtual PiecewisePolynomialTrajectory ReconstructPositionTrajectory()
-      const = 0;
+  const VectorX<symbolic::Expression> position(int evaluation_time) const;
+
+  PiecewisePolynomialTrajectory ReconstructPositionTrajectory() const;
 
  private:
   void AddCost(const solvers::Binding<solvers::Cost>& cost,
@@ -52,8 +54,10 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
   const int kNumEvaluationPoints_;
   const int kOrder_;
   const int kNumKnots_;
+  const int kNumInternalIntervals_;
   const int kNumPositions_;
 
+  std::vector<double> evaluation_times_;
   const solvers::MatrixXDecisionVariable control_points_;
 
   std::vector<double> knots_;
