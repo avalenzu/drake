@@ -14,22 +14,20 @@ namespace planner {
 class KinematicPlanningProblem {
  public:
   struct CostWrapper {
-    std::shared_ptr<solvers::Cost> cost;
-    solvers::VectorXDecisionVariable vars;
+    const solvers::Binding<solvers::Cost> cost;
     const Vector2<double> plan_interval;
   };
 
   struct ConstraintWrapper {
-    std::shared_ptr<solvers::Constraint> constraint;
-    solvers::VectorXDecisionVariable vars;
+    const solvers::Binding<solvers::Constraint> constraint;
     const Vector2<double> plan_interval;
   };
 
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KinematicPlanningProblem)
 
-  KinematicPlanningProblem(const RigidBodyTree<double>& tree);
+  KinematicPlanningProblem(std::unique_ptr<RigidBodyTree<double>> tree);
 
-  void AddFixedBoxToWorld(Vector3<double> size, Isometry3<double> X_WB);
+  void AddFixedBoxToWorld(const Vector3<double>& size, const Isometry3<double>& X_WB);
 
   void AddDurationBounds(double lower_bound, double upper_bound);
 
@@ -59,9 +57,15 @@ class KinematicPlanningProblem {
 
   const solvers::VectorXDecisionVariable& jerk() const;
 
-  int num_positions() const { return num_positions_; };
+  const RigidBodyTree<double>& tree() const { return *tree_; };
 
-  int num_velocities() const { return num_velocities_; };
+  int num_positions() const { return tree_->get_num_positions(); };
+
+  int num_velocities() const { return tree_->get_num_velocities(); };
+
+  double duration_lower_bound() const { return duration_lower_bound_; };
+
+  double duration_upper_bound() const { return duration_upper_bound_; };
 
   const std::vector<std::unique_ptr<const CostWrapper>>& costs() const {
     return costs_;
@@ -73,8 +77,11 @@ class KinematicPlanningProblem {
   };
 
  private:
-  const int num_positions_;
-  const int num_velocities_;
+  void AddGeometryToTree(const DrakeShapes::Geometry& geometry, const Isometry3<double>& X_WB);
+
+  static bool IsValidPlanInterval(const Vector2<double>&);
+
+  std::unique_ptr<RigidBodyTree<double>> tree_;
 
   // See description of the public time(), position(), velocity(),
   // acceleration() and jerk() accessor methods
