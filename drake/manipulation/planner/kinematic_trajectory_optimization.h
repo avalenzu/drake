@@ -42,7 +42,13 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
     return control_points_;
   }
 
-  const VectorX<symbolic::Expression> position(int evaluation_time) const;
+  const VectorX<symbolic::Expression> position(double evaluation_time) const;
+
+  const VectorX<symbolic::Expression> velocity(double evaluation_time) const;
+
+  const VectorX<symbolic::Expression> acceleration(double evaluation_time) const;
+
+  const VectorX<symbolic::Expression> jerk(double evaluation_time) const;
 
   PiecewisePolynomialTrajectory ReconstructPositionTrajectory() const;
 
