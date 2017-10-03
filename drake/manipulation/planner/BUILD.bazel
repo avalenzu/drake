@@ -65,6 +65,24 @@ drake_cc_library(
 )
 
 drake_cc_binary(
+    name = "iiwa_scratch",
+    testonly = 1,
+    srcs = ["iiwa_scratch.cc"],
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
+        "//drake/common/proto:call_matlab",
+        "//drake/common:text_logging_gflags",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody/parsers",
+        "@com_github_gflags_gflags//:gflags",
+    ],
+)
+
+drake_cc_binary(
     name = "kinematic_trajectory_optimization_scratch",
     testonly = 1,
     srcs = ["kinematic_trajectory_optimization_scratch.cc"],
