@@ -46,13 +46,16 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
 
   const VectorX<symbolic::Expression> velocity(double evaluation_time) const;
 
-  const VectorX<symbolic::Expression> acceleration(double evaluation_time) const;
+  const VectorX<symbolic::Expression> acceleration(
+      double evaluation_time) const;
 
   const VectorX<symbolic::Expression> jerk(double evaluation_time) const;
 
   PiecewisePolynomialTrajectory ReconstructPositionTrajectory() const;
 
  private:
+  const VectorX<symbolic::Expression> GetSplineVariableExpression(
+      double evaluation_time, int derivative_order) const;
   void AddCost(const solvers::Binding<solvers::Cost>& cost,
                const Vector2<double> plan_interval);
   const KinematicPlanningProblem* problem_;
