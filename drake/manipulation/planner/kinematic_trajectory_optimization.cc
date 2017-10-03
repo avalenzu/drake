@@ -107,8 +107,10 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     knots_[i] = std::min(1.0, knots_[i - 1] + kInteriorInterval);
   }
   for (int i = 0; i < kNumControlPoints_; ++i) {
-    basis_.emplace_back(PiecewisePolynomial<double>::BSpline(i, kOrder_, knots_));
-    drake::log()->debug("B_{},{}(t) = {}", i, kOrder_, basis_.back().getPolynomial(0));
+    basis_.emplace_back(
+        PiecewisePolynomial<double>::BSpline(i, kOrder_, knots_));
+    drake::log()->debug("B_{},{}(t) = {}", i, kOrder_,
+                        basis_.back().getPolynomial(0));
   }
 }
 
@@ -124,83 +126,65 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   //}
 }
 
+const VectorX<Expression>
+KinematicTrajectoryOptimization::GetSplineVariableExpression(
+    double evaluation_time, int derivative_order) const {
+  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
+  VectorX<Expression> expression(kNumPositions_);
+  for (int i = 0; i < kNumPositions_; ++i) {
+    expression(i) = Expression::Zero();
+    for (int j = 0; j < kNumControlPoints_; ++j) {
+      if (knots_[j] <= evaluation_time &&
+          evaluation_time <= knots_[j + kOrder_]) {
+        const double basis_function_value{
+            basis_[j].derivative(derivative_order).value(evaluation_time)(0)};
+        if (std::abs<double>(basis_function_value) > 1e-6) {
+          expression(i) += control_points_(i, j) * basis_function_value;
+        }
+      }
+    }
+  }
+  return expression;
+}
+
 const VectorX<Expression> KinematicTrajectoryOptimization::position(
     double evaluation_time) const {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  VectorX<Expression> position(kNumPositions_);
-  for (int i = 0; i < kNumPositions_; ++i) {
-    position(i) = Expression::Zero();
-    // TODO(avalenzu): Only do this for the basis functions whose support
-    // interval includes evaluation_time.
-    for (int j = 0; j < kNumControlPoints_; ++j) {
-      position(i) += control_points_(i,j)*basis_[j].value(evaluation_time)(0);
-    }
-    drake::log()->debug("position({})[{}] = {}", evaluation_time, i, position(i));
-  }
-  return position;
+  return GetSplineVariableExpression(evaluation_time, 0);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::velocity(
     double evaluation_time) const {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  VectorX<Expression> velocity(kNumPositions_);
-  for (int i = 0; i < kNumPositions_; ++i) {
-    velocity(i) = Expression::Zero();
-    // TODO(avalenzu): Only do this for the basis functions whose support
-    // interval includes evaluation_time.
-    for (int j = 0; j < kNumControlPoints_; ++j) {
-      velocity(i) += control_points_(i,j)*basis_[j].derivative(1).value(evaluation_time)(0);
-    }
-    drake::log()->debug("velocity({})[{}] = {}", evaluation_time, i, velocity(i));
-  }
-  return velocity;
+  return GetSplineVariableExpression(evaluation_time, 1);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::acceleration(
     double evaluation_time) const {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  VectorX<Expression> acceleration(kNumPositions_);
-  for (int i = 0; i < kNumPositions_; ++i) {
-    acceleration(i) = Expression::Zero();
-    // TODO(avalenzu): Only do this for the basis functions whose support
-    // interval includes evaluation_time.
-    for (int j = 0; j < kNumControlPoints_; ++j) {
-      acceleration(i) += control_points_(i,j)*basis_[j].derivative(2).value(evaluation_time)(0);
-    }
-    drake::log()->debug("acceleration({})[{}] = {}", evaluation_time, i, acceleration(i));
-  }
-  return acceleration;
+  return GetSplineVariableExpression(evaluation_time, 2);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::jerk(
     double evaluation_time) const {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  VectorX<Expression> jerk(kNumPositions_);
-  for (int i = 0; i < kNumPositions_; ++i) {
-    jerk(i) = Expression::Zero();
-    // TODO(avalenzu): Only do this for the basis functions whose support
-    // interval includes evaluation_time.
-    for (int j = 0; j < kNumControlPoints_; ++j) {
-      jerk(i) += control_points_(i,j)*basis_[j].derivative(3).value(evaluation_time)(0);
-    }
-    drake::log()->debug("jerk({})[{}] = {}", evaluation_time, i, jerk(i));
-  }
-  return jerk;
+  return GetSplineVariableExpression(evaluation_time, 3);
 }
 
-PiecewisePolynomialTrajectory KinematicTrajectoryOptimization::ReconstructPositionTrajectory() const {
-  std::vector<MatrixX<Polynomial<double>>> position_polynomials(kNumInternalIntervals_);
+PiecewisePolynomialTrajectory
+KinematicTrajectoryOptimization::ReconstructPositionTrajectory() const {
+  std::vector<MatrixX<Polynomial<double>>> position_polynomials(
+      kNumInternalIntervals_);
   for (int i = 0; i < kNumInternalIntervals_; ++i) {
-    position_polynomials[i] = MatrixX<Polynomial<double>>::Zero(kNumPositions_, 1);
+    position_polynomials[i] =
+        MatrixX<Polynomial<double>>::Zero(kNumPositions_, 1);
     for (int j = 0; j < kNumPositions_; ++j) {
       // TODO(avalenzu): Only do this for the elements of the basis whose
       // support includes the i-th interval.
       for (int k = 0; k < kNumControlPoints_; ++k) {
-        position_polynomials[i](j) += basis_[k].getPolynomial(i, 0, 0) * GetSolution(control_points_(j, k));
+        position_polynomials[i](j) += basis_[k].getPolynomial(i, 0, 0) *
+                                      GetSolution(control_points_(j, k));
       }
     }
   }
-  return PiecewisePolynomialTrajectory(PiecewisePolynomial<double>(position_polynomials, basis_.front().getSegmentTimes()));
+  return PiecewisePolynomialTrajectory(PiecewisePolynomial<double>(
+      position_polynomials, basis_.front().getSegmentTimes()));
 }
 
 // symbolic::Substitution
