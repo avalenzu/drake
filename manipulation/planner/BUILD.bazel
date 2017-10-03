@@ -2,6 +2,7 @@
 
 load(
     "//tools:drake.bzl",
+    "drake_cc_binary",
     "drake_cc_library",
     "drake_cc_googletest",
 )
@@ -63,11 +64,10 @@ drake_cc_library(
     ],
 )
 
-# === test/ ===
-
-drake_cc_googletest(
-    name = "kinematic_trajectory_optimization_test",
-    srcs = ["test/kinematic_trajectory_optimization_test.cc"],
+drake_cc_binary(
+    name = "kinematic_trajectory_optimization_scratch",
+    testonly = 1,
+    srcs = ["kinematic_trajectory_optimization_scratch.cc"],
     data = [
         "//drake/manipulation/models/iiwa_description:models",
     ],
@@ -75,8 +75,12 @@ drake_cc_googletest(
         ":kinematic_trajectory_optimization",
         "//drake/common:find_resource",
         "//drake/common/proto:call_matlab",
+        "//drake/common:text_logging_gflags",
+        "@com_github_gflags_gflags//:gflags",
     ],
 )
+
+# === test/ ===
 
 drake_cc_googletest(
     name = "constraint_relaxing_ik_test",
