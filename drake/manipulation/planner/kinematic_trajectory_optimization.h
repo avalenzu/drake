@@ -25,7 +25,7 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
    */
   KinematicTrajectoryOptimization(int num_positions, int num_control_points,
                                   int num_evaluation_points = -1,
-                                  int spline_order = 4);
+                                  int spline_order = 4, double duration = 1);
 
   /**
    * Constructs a mathematical program whose decision variables are the control
@@ -36,7 +36,7 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
   KinematicTrajectoryOptimization(const KinematicPlanningProblem* problem,
                                   int num_control_points,
                                   int num_evaluation_points = -1,
-                                  int spline_order = 4);
+                                  int spline_order = 4, double duration = 1);
 
   const solvers::MatrixXDecisionVariable& control_points() const {
     return control_points_;
@@ -65,6 +65,7 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
   const int kNumKnots_;
   const int kNumInternalIntervals_;
   const int kNumPositions_;
+  const double kDuration_;
 
   std::vector<double> evaluation_times_;
   const solvers::MatrixXDecisionVariable control_points_;

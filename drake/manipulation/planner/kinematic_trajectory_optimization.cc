@@ -85,7 +85,7 @@ using symbolic::Substitution;
 //}  // namespace
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     int num_positions, int num_control_points, int num_evaluation_points,
-    int spline_order)
+    int spline_order, double duration)
     : kNumControlPoints_(num_control_points),
       kNumEvaluationPoints_(num_evaluation_points > 0 ? num_evaluation_points
                                                       : num_control_points),
@@ -93,6 +93,7 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
       kNumKnots_(num_control_points + spline_order),
       kNumInternalIntervals_(num_control_points - spline_order + 1),
       kNumPositions_(num_positions),
+      kDuration_(duration),
       control_points_(
           NewContinuousVariables(kNumPositions_, kNumControlPoints_, "q")) {
   DRAKE_DEMAND(kNumControlPoints_ >= kOrder_);
@@ -101,10 +102,10 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   // 	(t[0] ..., t[kOrder], ..., t[kNumControlPoints], ...,
   //    					t[kNumControlPoints + kOrder])
   // where, t[0] == t[1] == ... == t[kOrder-1] == 0, t[kNumControlPoints
-  const double kInteriorInterval{1.0 / (kNumControlPoints_ - (kOrder_ - 1))};
+  const double kInteriorInterval{kDuration_ / (kNumControlPoints_ - (kOrder_ - 1))};
   knots_.resize(kNumKnots_, 0.0);
   for (int i = kOrder_; i < kNumKnots_; ++i) {
-    knots_[i] = std::min(1.0, knots_[i - 1] + kInteriorInterval);
+    knots_[i] = std::min(kDuration_, knots_[i - 1] + kInteriorInterval);
   }
   for (int i = 0; i < kNumControlPoints_; ++i) {
     basis_.emplace_back(
@@ -116,10 +117,10 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     const KinematicPlanningProblem* problem, int num_control_points,
-    int num_evaluation_points, int spline_order)
+    int num_evaluation_points, int spline_order, double duration)
     : KinematicTrajectoryOptimization(problem->num_positions(),
                                       num_control_points, num_evaluation_points,
-                                      spline_order) {
+                                      spline_order, duration) {
   problem_ = problem;
   // for (const auto& cost : problem->costs()) {
   // AddCost(cost->cost, cost->plan_interval);
@@ -130,6 +131,7 @@ const VectorX<Expression>
 KinematicTrajectoryOptimization::GetSplineVariableExpression(
     double evaluation_time, int derivative_order) const {
   DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
+  evaluation_time *= kDuration_;
   VectorX<Expression> expression(kNumPositions_);
   for (int i = 0; i < kNumPositions_; ++i) {
     expression(i) = Expression::Zero();
