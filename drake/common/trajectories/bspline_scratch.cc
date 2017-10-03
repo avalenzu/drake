@@ -10,7 +10,6 @@
 using drake::common::CallMatlab;
 using drake::common::CallMatlabSingleOutput;
 
-DEFINE_int32(index, 0, "Index of the B-spline to plot");
 DEFINE_int32(order, 4, "Order of the B-splines");
 DEFINE_int32(num_control_points, 11, "Number of unique knot points");
 DEFINE_int32(num_plotting_points, 1000, "Number of points to use when plotting.");
@@ -18,7 +17,6 @@ DEFINE_int32(derivatives_to_plot, 0, "Order of derivatives to plot.");
 namespace drake {
 namespace {
 int DoMain() {
-  const int kIndex{FLAGS_index};
   const int kOrder = FLAGS_order;
   const int kNumControlPoints = FLAGS_num_control_points;
   const int kNumPlottingPoints = FLAGS_num_plotting_points;
@@ -28,37 +26,49 @@ int DoMain() {
   std::vector<double> knots(kNumKnots, 0.0);
   for (int i = kOrder; i < kNumKnots; ++i) {
     knots[i] = std::min(1.0, knots[i - 1] + kKnotInterval);
+    drake::log()->info("Knot {}: {}", i, knots[i]);
   }
-  PiecewisePolynomial<double> bspline =
-      PiecewisePolynomial<double>::BSpline(kIndex, kOrder, knots);
-  PiecewisePolynomial<double> omega_j =
-      PiecewisePolynomial<double>::BSplineOmega(kIndex, kOrder, knots,
-                                                bspline.getSegmentTimes());
-  PiecewisePolynomial<double> omega_j_plus_1 =
-      PiecewisePolynomial<double>::BSplineOmega(kIndex + 1, kOrder, knots,
-                                                bspline.getSegmentTimes());
-  const VectorX<double> x{VectorX<double>::LinSpaced(kNumPlottingPoints, 0, 1)};
-  VectorX<double> bspline_values(x.size());
-  VectorX<double> omega_j_values(x.size());
-  VectorX<double> omega_j_plus_1_values(x.size());
-  for (int i = 0; i < kNumPlottingPoints; ++i) {
-    bspline_values(i) = bspline.value(x(i))(0);
-    omega_j_values(i) = omega_j.value(x(i))(0);
-    omega_j_plus_1_values(i) = omega_j_plus_1.value(x(i))(0);
-  }
-  drake::log()->debug("Knots: {}", Eigen::Map<VectorX<double>>(knots.data(), knots.size()).transpose());
-  drake::log()->debug("Values: \n{}", bspline_values);
-  CallMatlab("plot", x, bspline_values, "LineWidth", 2.0, "DisplayName", "B_{" + std::to_string(kIndex) + std::to_string(kOrder) + "}(x)");
-  CallMatlab("hold", "on");
-  for (int i = 1; i <= kDerivativesToPlot; ++i) {
-    VectorX<double> y(x.size());
+  for (int i = 0; i < kNumControlPoints; ++i) {
+    PiecewisePolynomial<double> bspline =
+        PiecewisePolynomial<double>::BSpline(i, kOrder, knots);
+    PiecewisePolynomial<double> omega_j =
+        PiecewisePolynomial<double>::BSplineOmega(i, kOrder, knots,
+                                                  bspline.getSegmentTimes());
+    PiecewisePolynomial<double> omega_j_plus_1 =
+        PiecewisePolynomial<double>::BSplineOmega(i + 1, kOrder, knots,
+                                                  bspline.getSegmentTimes());
+    const VectorX<double> x{
+        VectorX<double>::LinSpaced(kNumPlottingPoints, 0, 1)};
+    VectorX<double> bspline_values(x.size());
+    VectorX<double> omega_j_values(x.size());
+    VectorX<double> omega_j_plus_1_values(x.size());
     for (int j = 0; j < kNumPlottingPoints; ++j) {
-      y(j) = bspline.derivative(i).value(x(j))(0)*std::pow(kKnotInterval, i);
+      bspline_values(j) = bspline.value(x(j))(0);
+      omega_j_values(j) = omega_j.value(x(j))(0);
+      omega_j_plus_1_values(j) = omega_j_plus_1.value(x(j))(0);
     }
-    CallMatlab("plot", x, y, "DisplayName", "B_{" + std::to_string(kIndex) + std::to_string(kOrder) + "}^{" + std::string(i,'\'') + "}(x)");
+    drake::log()->debug(
+        "Knots: {}",
+        Eigen::Map<VectorX<double>>(knots.data(), knots.size()).transpose());
+    drake::log()->debug("Values: \n{}", bspline_values);
+    CallMatlab(
+        "plot", x, bspline_values, "LineWidth", 2.0, "DisplayName",
+        "B_{" + std::to_string(i) + "," + std::to_string(kOrder) + "}(x)");
+    CallMatlab("hold", "on");
+    for (int k = 1; k <= kDerivativesToPlot; ++k) {
+      VectorX<double> y(x.size());
+      for (int j = 0; j < kNumPlottingPoints; ++j) {
+        y(j) =
+            bspline.derivative(k).value(x(j))(0) * std::pow(kKnotInterval, k);
+      }
+      CallMatlab("plot", x, y, "DisplayName",
+                 "B_{" + std::to_string(k) + std::to_string(kOrder) +
+                     "}^{" + std::string(k, '\'') + "}(x)");
+    }
   }
   CallMatlab("legend","-DynamicLegend");
   CallMatlab("hold", "off");
+
   return 0;
 }
 } // namespace
