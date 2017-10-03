@@ -27,8 +27,8 @@ DEFINE_int32(num_evaluation_points, -1,
              "should be evaluated.");
 DEFINE_int32(num_plotting_points, 1000,
              "Number of points to use when plotting.");
-DEFINE_bool(use_squared_jerk_cost, true,
-            "If true, then impose a running cost on the squared jerk.");
+DEFINE_double(jerk_weight, 1.0,
+            "Weight applied to the squared jerk cost.");
 DEFINE_double(max_velocity, -1.0, "Maximum allowable velocity.");
 DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
 DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
@@ -38,17 +38,18 @@ int DoMain() {
   const int kSplineOrder = FLAGS_order;
   const int kNumControlPoints = FLAGS_num_control_points;
   const int kNumPlottingPoints = FLAGS_num_plotting_points;
-  const bool kUseSquaredJerkCost = FLAGS_use_squared_jerk_cost;
   const int kNumInternalIntervals{kNumControlPoints - kSplineOrder + 1};
   const int kNumEvaluationPoints = FLAGS_num_evaluation_points > 0
                                        ? FLAGS_num_evaluation_points
                                        : 3 * kNumInternalIntervals + 1;
+  const double kJerkWeight = FLAGS_jerk_weight;
   const double kMaxVelocity = FLAGS_max_velocity;
   const double kPositionTolerance = FLAGS_position_tolerance;
   const double kVelocityTolerance = FLAGS_velocity_tolerance;
   const double kAccelerationTolerance = FLAGS_acceleration_tolerance;
   const double kJerkTolerance = FLAGS_jerk_tolerance;
-  KinematicTrajectoryOptimization program{1 /*num_positions*/,
+  const int kNumPositions{1};
+  KinematicTrajectoryOptimization program{kNumPositions,
                                           kNumControlPoints,
                                           kNumEvaluationPoints, kSplineOrder};
   if (kPositionTolerance > 0) {
@@ -123,10 +124,18 @@ int DoMain() {
 
   VectorX<double> evaluation_times =
       VectorX<double>::LinSpaced(kNumEvaluationPoints, 0.0, 1.0);
+  symbolic::Substitution control_point_substitution;
+  for (int i = 0; i < kNumPositions; ++i) {
+    for (int j = 0; j < kNumControlPoints; ++j) {
+      control_point_substitution.emplace(
+          program.control_points()(i, j),
+          std::sqrt(kJerkWeight) * program.control_points()(i, j));
+    }
+  }
   for (int i = 0; i < kNumEvaluationPoints; ++i) {
-    if (kUseSquaredJerkCost && i < kNumEvaluationPoints - 1) {
-      auto jerk0 = program.jerk(evaluation_times(i + 1))(0);
-      auto jerk1 = program.jerk(evaluation_times(i + 1))(0);
+    if (kJerkWeight > 0 && i < kNumEvaluationPoints - 1) {
+      auto jerk0 = program.jerk(evaluation_times(i + 1))(0).Substitute(control_point_substitution);
+      auto jerk1 = program.jerk(evaluation_times(i + 1))(0).Substitute(control_point_substitution);
       auto jerk_squared_cost = (evaluation_times(i + 1) - evaluation_times(i)) *
                                0.5 * (jerk0 * jerk0 + jerk1 * jerk1);
       program.AddQuadraticCost(jerk_squared_cost);
