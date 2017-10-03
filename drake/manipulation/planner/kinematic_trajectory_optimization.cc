@@ -191,12 +191,12 @@ const VectorX<Expression> KinematicTrajectoryOptimization::jerk(
 PiecewisePolynomialTrajectory KinematicTrajectoryOptimization::ReconstructPositionTrajectory() const {
   std::vector<MatrixX<Polynomial<double>>> position_polynomials(kNumInternalIntervals_);
   for (int i = 0; i < kNumInternalIntervals_; ++i) {
-    position_polynomials[i] = MatrixX<Polynomial<double>>(kNumPositions_, 1);
+    position_polynomials[i] = MatrixX<Polynomial<double>>::Zero(kNumPositions_, 1);
     for (int j = 0; j < kNumPositions_; ++j) {
       // TODO(avalenzu): Only do this for the elements of the basis whose
       // support includes the i-th interval.
       for (int k = 0; k < kNumControlPoints_; ++k) {
-        position_polynomials[i](j) = basis_[k].getPolynomial(i, 0, 0) * GetSolution(control_points_(j, k));
+        position_polynomials[i](j) += basis_[k].getPolynomial(i, 0, 0) * GetSolution(control_points_(j, k));
       }
     }
   }
