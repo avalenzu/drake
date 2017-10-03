@@ -108,7 +108,7 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   }
   for (int i = 0; i < kNumControlPoints_; ++i) {
     basis_.emplace_back(PiecewisePolynomial<double>::BSpline(i, kOrder_, knots_));
-    drake::log()->info("B_{},{}(t) = {}", i, kOrder_, basis_.back().getPolynomial(0));
+    drake::log()->debug("B_{},{}(t) = {}", i, kOrder_, basis_.back().getPolynomial(0));
   }
 }
 
@@ -135,7 +135,7 @@ const VectorX<Expression> KinematicTrajectoryOptimization::position(
     for (int j = 0; j < kNumControlPoints_; ++j) {
       position(i) += control_points_(i,j)*basis_[j].value(evaluation_time)(0);
     }
-    drake::log()->info("position({})[{}] = {}", evaluation_time, i, position(i));
+    drake::log()->debug("position({})[{}] = {}", evaluation_time, i, position(i));
   }
   return position;
 }
@@ -151,7 +151,7 @@ const VectorX<Expression> KinematicTrajectoryOptimization::velocity(
     for (int j = 0; j < kNumControlPoints_; ++j) {
       velocity(i) += control_points_(i,j)*basis_[j].derivative(1).value(evaluation_time)(0);
     }
-    drake::log()->info("velocity({})[{}] = {}", evaluation_time, i, velocity(i));
+    drake::log()->debug("velocity({})[{}] = {}", evaluation_time, i, velocity(i));
   }
   return velocity;
 }
@@ -167,7 +167,7 @@ const VectorX<Expression> KinematicTrajectoryOptimization::acceleration(
     for (int j = 0; j < kNumControlPoints_; ++j) {
       acceleration(i) += control_points_(i,j)*basis_[j].derivative(2).value(evaluation_time)(0);
     }
-    drake::log()->info("acceleration({})[{}] = {}", evaluation_time, i, acceleration(i));
+    drake::log()->debug("acceleration({})[{}] = {}", evaluation_time, i, acceleration(i));
   }
   return acceleration;
 }
@@ -183,7 +183,7 @@ const VectorX<Expression> KinematicTrajectoryOptimization::jerk(
     for (int j = 0; j < kNumControlPoints_; ++j) {
       jerk(i) += control_points_(i,j)*basis_[j].derivative(3).value(evaluation_time)(0);
     }
-    drake::log()->info("jerk({})[{}] = {}", evaluation_time, i, jerk(i));
+    drake::log()->debug("jerk({})[{}] = {}", evaluation_time, i, jerk(i));
   }
   return jerk;
 }
