@@ -352,10 +352,12 @@ class RigidBodyTree {
   /// @param cache Reference to the KinematicsCache.
   /// @param body Reference to the RigidBody.
   /// @retval `X_WB`
-  drake::Isometry3<T> CalcBodyPoseInWorldFrame(
-      const KinematicsCache<T>& cache, const RigidBody<T>& body) const {
+  /// @retval `X_WF`
+  template <typename CacheT>
+  drake::Isometry3<CacheT> CalcBodyPoseInWorldFrame(
+      const KinematicsCache<CacheT>& cache, const RigidBody<T>& body) const {
     return CalcFramePoseInWorldFrame(
-        cache, body, drake::Isometry3<T>::Identity());
+        cache, body, drake::Isometry3<CacheT>::Identity());
   }
 
   /// Computes the pose `X_WF` of @p frame_F in the world frame W. @p frame_F
@@ -377,17 +379,19 @@ class RigidBodyTree {
   /// @param body Reference to the RigidBody.
   /// @param X_BF The pose of frame F in body frame B.
   /// @retval `X_WF`
-  drake::Isometry3<T> CalcFramePoseInWorldFrame(
-      const KinematicsCache<T>& cache, const RigidBody<T>& body,
-      const drake::Isometry3<T>& X_BF) const;
+  template <typename CacheT>
+  drake::Isometry3<CacheT> CalcFramePoseInWorldFrame(
+      const KinematicsCache<CacheT>& cache, const RigidBody<T>& body,
+      const drake::Isometry3<CacheT>& X_BF) const;
 
   /// Computes the spatial velocity `V_WB` of @p body's frame B measured and
   /// expressed in the world frame W.
   /// @param cache Reference to the KinematicsCache.
   /// @param body Reference to the RigidBody.
   /// @retval `V_WB`
-  drake::Vector6<T> CalcBodySpatialVelocityInWorldFrame(
-      const KinematicsCache<T>& cache, const RigidBody<T>& body) const;
+  template <typename CacheT>
+  drake::Vector6<CacheT> CalcBodySpatialVelocityInWorldFrame(
+      const KinematicsCache<CacheT>& cache, const RigidBody<T>& body) const;
 
   /// Computes the spatial velocity `V_WF` of RigidBodyFrame @p frame_F measured
   /// and expressed in the world frame W. @p frame_F does not necessarily need
@@ -409,9 +413,10 @@ class RigidBodyTree {
   /// @param body Reference to the RigidBody.
   /// @param X_BF The pose of frame F in body frame B.
   /// @retval `V_WF`
-  drake::Vector6<T> CalcFrameSpatialVelocityInWorldFrame(
-      const KinematicsCache<T>& cache, const RigidBody<T>& body,
-      const drake::Isometry3<T>& X_BF) const;
+  template <typename CacheT>
+  drake::Vector6<CacheT> CalcFrameSpatialVelocityInWorldFrame(
+      const KinematicsCache<CacheT>& cache, const RigidBody<T>& body,
+      const drake::Isometry3<CacheT>& X_BF) const;
 
   /// Computes the Jacobian `J_WF` of the spatial velocity `V_WF` of frame F
   /// measured and expressed in the world frame W such that `V_WF = J_WF * v`,
