@@ -38,6 +38,12 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
                                   int num_evaluation_points = -1,
                                   int spline_order = 4, double duration = 1);
 
+  int num_positions() const { return kNumPositions_; };
+
+  int num_control_points() const { return kNumControlPoints_; };
+
+  int spline_order() const { return kOrder_; };
+
   const solvers::MatrixXDecisionVariable& control_points() const {
     return control_points_;
   }
@@ -50,6 +56,12 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
       double evaluation_time) const;
 
   const VectorX<symbolic::Expression> jerk(double evaluation_time) const;
+
+  void AddBodyPoseConstraint(
+      double evaluation_time, const std::string& body_name,
+      const Isometry3<double> X_WFd, double position_tolerance = 0,
+      double orientation_tolerance = 0.0,
+      const Isometry3<double> X_BF = Isometry3<double>::Identity());
 
   PiecewisePolynomialTrajectory ReconstructTrajectory(
       int derivative_order = 0) const;
