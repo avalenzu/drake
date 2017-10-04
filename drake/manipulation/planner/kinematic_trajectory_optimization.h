@@ -51,7 +51,8 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
 
   const VectorX<symbolic::Expression> jerk(double evaluation_time) const;
 
-  PiecewisePolynomialTrajectory ReconstructPositionTrajectory() const;
+  PiecewisePolynomialTrajectory ReconstructTrajectory(
+      int derivative_order = 0) const;
 
  private:
   const VectorX<symbolic::Expression> GetSplineVariableExpression(
