@@ -19,15 +19,15 @@
 DEFINE_bool(flat_terrain, true, "If true, add flat terrain to the world.");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(order, 6, "Order of the B-splines");
-DEFINE_int32(num_control_points, 20, "Number of control points");
+DEFINE_int32(num_control_points, 24, "Number of control points");
 DEFINE_int32(num_evaluation_points, -1,
              "Number of points on the spline at which costs and constraints "
              "should be evaluated.");
 DEFINE_int32(num_plotting_points, 1000,
              "Number of points to use when plotting.");
-DEFINE_double(jerk_weight, -1.0, "Weight applied to the squared jerk cost.");
-DEFINE_double(duration, 1, "Duration of the trajectory.");
-DEFINE_double(max_velocity, -1.0, "Maximum allowable velocity.");
+DEFINE_double(jerk_weight, 1e-3, "Weight applied to the squared jerk cost.");
+DEFINE_double(duration, 2, "Duration of the trajectory.");
+DEFINE_double(max_velocity, 0.7, "Maximum allowable velocity.");
 DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
 DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
 DEFINE_double(acceleration_tolerance, 0.0, "Maximum acceleration error.");
@@ -39,8 +39,8 @@ namespace planner {
 namespace {
 
 using common::CallMatlab;
+using symbolic::Expression;
 using systems::DrakeVisualizer;
-//using symbolic::Expression;
 
 int DoMain() {
   const int kSplineOrder = FLAGS_order;
@@ -51,7 +51,6 @@ int DoMain() {
                                        ? FLAGS_num_evaluation_points
                                        : 3 * kNumInternalIntervals + 1;
   const double kJerkWeight = FLAGS_jerk_weight;
-  const double kMaxVelocity = FLAGS_max_velocity;
   const double kDuration = FLAGS_duration;
 
   const std::string kModelPath = FindResourceOrThrow(
@@ -69,8 +68,11 @@ int DoMain() {
   const int kNumPositions{problem.num_positions()};
   const VectorX<double> kZeroVector{VectorX<double>::Zero(kNumPositions)};
   const VectorX<double> kOnesVector{VectorX<double>::Ones(kNumPositions)};
-  const VectorX<double> kPositionTolerance = FLAGS_position_tolerance * kOnesVector;
-  const VectorX<double> kVelocityTolerance = FLAGS_velocity_tolerance * kOnesVector;
+  const VectorX<double> kMaxVelocity = FLAGS_max_velocity * kOnesVector;
+  const VectorX<double> kPositionTolerance =
+      FLAGS_position_tolerance * kOnesVector;
+  const VectorX<double> kVelocityTolerance =
+      FLAGS_velocity_tolerance * kOnesVector;
   const VectorX<double> kAccelerationTolerance =
       FLAGS_acceleration_tolerance * kOnesVector;
   const VectorX<double> kJerkTolerance = FLAGS_jerk_tolerance * kOnesVector;
@@ -141,22 +143,30 @@ int DoMain() {
 
   if (kAccelerationTolerance(0) > 0) {
     program.AddLinearConstraint(program.acceleration(kTStart) <=
-                                kAccelerationTargetStart + kAccelerationTolerance);
+                                kAccelerationTargetStart +
+                                    kAccelerationTolerance);
     program.AddLinearConstraint(program.acceleration(kTStart) >=
-                                kAccelerationTargetStart - kAccelerationTolerance);
+                                kAccelerationTargetStart -
+                                    kAccelerationTolerance);
     program.AddLinearConstraint(program.acceleration(kTMid) <=
-                                kAccelerationTargetMid + kAccelerationTolerance);
+                                kAccelerationTargetMid +
+                                    kAccelerationTolerance);
     program.AddLinearConstraint(program.acceleration(kTMid) >=
-                                kAccelerationTargetMid - kAccelerationTolerance);
+                                kAccelerationTargetMid -
+                                    kAccelerationTolerance);
     program.AddLinearConstraint(program.acceleration(kTEnd) <=
-                                kAccelerationTargetEnd + kAccelerationTolerance);
+                                kAccelerationTargetEnd +
+                                    kAccelerationTolerance);
     program.AddLinearConstraint(program.acceleration(kTEnd) >=
-                                kAccelerationTargetEnd - kAccelerationTolerance);
+                                kAccelerationTargetEnd -
+                                    kAccelerationTolerance);
   } else {
     program.AddLinearConstraint(program.acceleration(kTStart) ==
                                 kAccelerationTargetStart);
-    program.AddLinearConstraint(program.acceleration(kTMid) == kAccelerationTargetMid);
-    program.AddLinearConstraint(program.acceleration(kTEnd) == kAccelerationTargetEnd);
+    program.AddLinearConstraint(program.acceleration(kTMid) ==
+                                kAccelerationTargetMid);
+    program.AddLinearConstraint(program.acceleration(kTEnd) ==
+                                kAccelerationTargetEnd);
   }
 
   if (kJerkTolerance(0) > 0) {
@@ -173,12 +183,10 @@ int DoMain() {
     program.AddLinearConstraint(program.jerk(kTEnd) >=
                                 kJerkTargetEnd - kJerkTolerance);
   } else {
-    program.AddLinearConstraint(program.jerk(kTStart) ==
-                                kJerkTargetStart);
+    program.AddLinearConstraint(program.jerk(kTStart) == kJerkTargetStart);
     program.AddLinearConstraint(program.jerk(kTMid) == kJerkTargetMid);
     program.AddLinearConstraint(program.jerk(kTEnd) == kJerkTargetEnd);
   }
-
 
   VectorX<double> evaluation_times =
       VectorX<double>::LinSpaced(kNumEvaluationPoints, 0.0, 1.0);
@@ -190,27 +198,32 @@ int DoMain() {
           std::sqrt(kJerkWeight) * program.control_points()(i, j));
     }
   }
+  Expression jerk_squared_cost{Expression::Zero()};
   for (int i = 0; i < kNumEvaluationPoints; ++i) {
     if (kJerkWeight > 0 && i < kNumEvaluationPoints - 1) {
-      auto jerk0 = program.jerk(evaluation_times(i + 1))(0).Substitute(
-          control_point_substitution);
-      auto jerk1 = program.jerk(evaluation_times(i + 1))(0).Substitute(
-          control_point_substitution);
-      auto jerk_squared_cost = (evaluation_times(i + 1) - evaluation_times(i)) *
-                               0.5 * (jerk0 * jerk0 + jerk1 * jerk1);
-      program.AddQuadraticCost(jerk_squared_cost);
-      drake::log()->info("Cost for t = {}: {}", evaluation_times(i),
-                         jerk_squared_cost);
+      VectorX<Expression> jerk0 = program.jerk(evaluation_times(i));
+      VectorX<Expression> jerk1 = program.jerk(evaluation_times(i + 1));
+      jerk_squared_cost +=
+          (evaluation_times(i + 1) - evaluation_times(i)) * 0.5 *
+          (jerk0.transpose() * jerk0 + jerk1.transpose() * jerk1)(0);
+      // drake::log()->info("Cost for t = {}: {}", evaluation_times(i),
+      // jerk_squared_cost);
     }
-    if (kMaxVelocity > 0) {
-      program.AddLinearConstraint(program.velocity(evaluation_times(i))(0) <=
+    if (FLAGS_max_velocity > 0) {
+      program.AddLinearConstraint(program.velocity(evaluation_times(i)) <=
                                   kMaxVelocity);
-      program.AddLinearConstraint(program.velocity(evaluation_times(i))(0) >=
+      program.AddLinearConstraint(program.velocity(evaluation_times(i)) >=
                                   -kMaxVelocity);
     }
   }
+  if (kJerkWeight > 0) {
+    program.AddQuadraticCost(
+        jerk_squared_cost.Substitute(control_point_substitution));
+  }
 
+  drake::log()->info("Calling program.Solve() ...");
   solvers::SolutionResult result = program.Solve();
+  drake::log()->info("... Done");
 
   PiecewisePolynomialTrajectory solution_trajectory{
       program.ReconstructTrajectory(1)};
@@ -222,15 +235,23 @@ int DoMain() {
   MatrixX<double> acceleration_values(x.size(), kNumPositions);
   MatrixX<double> jerk_values(x.size(), kNumPositions);
   for (int i = 0; i < kNumPlottingPoints; ++i) {
-    position_values.row(i) = solution_trajectory.value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
-    velocity_values.row(i) =
-        solution_trajectory.derivative(1)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    position_values.row(i) = solution_trajectory.value(x(i))
+                                 .topLeftCorner(kNumPositions, 1)
+                                 .transpose();
+    velocity_values.row(i) = solution_trajectory.derivative(1)
+                                 ->value(x(i))
+                                 .topLeftCorner(kNumPositions, 1)
+                                 .transpose();
     ;
-    acceleration_values.row(i) =
-        solution_trajectory.derivative(2)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    acceleration_values.row(i) = solution_trajectory.derivative(2)
+                                     ->value(x(i))
+                                     .topLeftCorner(kNumPositions, 1)
+                                     .transpose();
     ;
-    jerk_values.row(i) =
-        solution_trajectory.derivative(3)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    jerk_values.row(i) = solution_trajectory.derivative(3)
+                             ->value(x(i))
+                             .topLeftCorner(kNumPositions, 1)
+                             .transpose();
     ;
   }
   CallMatlab("subplot", 4, 1, 1);
@@ -252,10 +273,12 @@ int DoMain() {
   CallMatlab("plot", x, jerk_values);
   CallMatlab("grid", "on");
   CallMatlab("legend", "Jerk");
-  drake::log()->info("Control Point Values = \n{}", program.GetSolution(program.control_points()));
+  drake::log()->info("Control Point Values = \n{}",
+                     program.GetSolution(program.control_points()));
 
   do {
-    visualizer.PlaybackTrajectory(solution_trajectory.get_piecewise_polynomial());
+    visualizer.PlaybackTrajectory(
+        solution_trajectory.get_piecewise_polynomial());
   } while (FLAGS_loop_animation);
 
   return 0;
