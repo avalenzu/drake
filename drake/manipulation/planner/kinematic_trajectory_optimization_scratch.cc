@@ -13,6 +13,22 @@
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_tree.h"
 
+DEFINE_int32(order, 4, "Order of the B-splines");
+DEFINE_int32(num_positions, 7, "Number of position variables.");
+DEFINE_int32(num_control_points, 11, "Number of control points");
+DEFINE_int32(num_evaluation_points, -1,
+             "Number of points on the spline at which costs and constraints "
+             "should be evaluated.");
+DEFINE_int32(num_plotting_points, 1000,
+             "Number of points to use when plotting.");
+DEFINE_double(jerk_weight, -1.0, "Weight applied to the squared jerk cost.");
+DEFINE_double(duration, 1, "Duration of the trajectory.");
+DEFINE_double(max_velocity, -1.0, "Maximum allowable velocity.");
+DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
+DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
+DEFINE_double(acceleration_tolerance, 0.0, "Maximum acceleration error.");
+DEFINE_double(jerk_tolerance, 0.0, "Maximum jerk error.");
+
 namespace drake {
 namespace manipulation {
 namespace planner {
@@ -20,20 +36,6 @@ namespace {
 
 using common::CallMatlab;
 
-DEFINE_int32(order, 4, "Order of the B-splines");
-DEFINE_int32(num_control_points, 11, "Number of control points");
-DEFINE_int32(num_evaluation_points, -1,
-             "Number of points on the spline at which costs and constraints "
-             "should be evaluated.");
-DEFINE_int32(num_plotting_points, 1000,
-             "Number of points to use when plotting.");
-DEFINE_double(jerk_weight, 1.0,
-            "Weight applied to the squared jerk cost.");
-DEFINE_double(max_velocity, -1.0, "Maximum allowable velocity.");
-DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
-DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
-DEFINE_double(acceleration_tolerance, 0.0, "Maximum acceleration error.");
-DEFINE_double(jerk_tolerance, 0.0, "Maximum jerk error.");
 int DoMain() {
   const int kSplineOrder = FLAGS_order;
   const int kNumControlPoints = FLAGS_num_control_points;
@@ -44,83 +46,116 @@ int DoMain() {
                                        : 3 * kNumInternalIntervals + 1;
   const double kJerkWeight = FLAGS_jerk_weight;
   const double kMaxVelocity = FLAGS_max_velocity;
-  const double kPositionTolerance = FLAGS_position_tolerance;
-  const double kVelocityTolerance = FLAGS_velocity_tolerance;
-  const double kAccelerationTolerance = FLAGS_acceleration_tolerance;
-  const double kJerkTolerance = FLAGS_jerk_tolerance;
-  const int kNumPositions{1};
-  KinematicTrajectoryOptimization program{kNumPositions,
-                                          kNumControlPoints,
-                                          kNumEvaluationPoints, kSplineOrder};
-  if (kPositionTolerance > 0) {
-    program.AddLinearConstraint(program.position(0.0)(0) <=
-                                0 + kPositionTolerance);
-    program.AddLinearConstraint(program.position(0.0)(0) >=
-                                0 - kPositionTolerance);
-    program.AddLinearConstraint(program.position(0.5)(0) <=
-                                0.5 + kPositionTolerance);
-    program.AddLinearConstraint(program.position(0.5)(0) >=
-                                0.5 - kPositionTolerance);
-    program.AddLinearConstraint(program.position(1.0)(0) <=
-                                1.0 + kPositionTolerance);
-    program.AddLinearConstraint(program.position(1.0)(0) >=
-                                1.0 - kPositionTolerance);
+  const double kDuration = FLAGS_duration;
+
+  const int kNumPositions{FLAGS_num_positions};
+  const VectorX<double> kZeroVector{VectorX<double>::Zero(kNumPositions)};
+  const VectorX<double> kOnesVector{VectorX<double>::Ones(kNumPositions)};
+  const VectorX<double> kPositionTolerance = FLAGS_position_tolerance * kOnesVector;
+  const VectorX<double> kVelocityTolerance = FLAGS_velocity_tolerance * kOnesVector;
+  const VectorX<double> kAccelerationTolerance =
+      FLAGS_acceleration_tolerance * kOnesVector;
+  const VectorX<double> kJerkTolerance = FLAGS_jerk_tolerance * kOnesVector;
+
+  KinematicTrajectoryOptimization program{kNumPositions, kNumControlPoints,
+                                          kNumEvaluationPoints, kSplineOrder,
+                                          kDuration};
+
+  const double kTStart{0.0};
+  const double kTMid{0.5};
+  const double kTEnd{1.0};
+  const VectorX<double> kPositionTargetStart{0.0 * kOnesVector};
+  const VectorX<double> kPositionTargetMid{0.5 * kOnesVector};
+  const VectorX<double> kPositionTargetEnd{1.0 * kOnesVector};
+  const VectorX<double> kVelocityTargetStart{kZeroVector};
+  const VectorX<double> kVelocityTargetMid{kZeroVector};
+  const VectorX<double> kVelocityTargetEnd{kZeroVector};
+  const VectorX<double> kAccelerationTargetStart{kZeroVector};
+  const VectorX<double> kAccelerationTargetMid{kZeroVector};
+  const VectorX<double> kAccelerationTargetEnd{kZeroVector};
+  const VectorX<double> kJerkTargetStart{kZeroVector};
+  const VectorX<double> kJerkTargetMid{kZeroVector};
+  const VectorX<double> kJerkTargetEnd{kZeroVector};
+  if (kPositionTolerance(0) > 0) {
+    program.AddLinearConstraint(program.position(kTStart) <=
+                                kPositionTargetStart + kPositionTolerance);
+    program.AddLinearConstraint(program.position(kTStart) >=
+                                kPositionTargetStart - kPositionTolerance);
+    program.AddLinearConstraint(program.position(kTMid) <=
+                                kPositionTargetMid + kPositionTolerance);
+    program.AddLinearConstraint(program.position(kTMid) >=
+                                kPositionTargetMid - kPositionTolerance);
+    program.AddLinearConstraint(program.position(kTEnd) <=
+                                kPositionTargetEnd + kPositionTolerance);
+    program.AddLinearConstraint(program.position(kTEnd) >=
+                                kPositionTargetEnd - kPositionTolerance);
   } else {
-    program.AddLinearConstraint(program.position(0.0)(0) == 0.0);
-    program.AddLinearConstraint(program.position(0.5)(0) == 0.5);
-    program.AddLinearConstraint(program.position(1.0)(0) == 1.0);
+    program.AddLinearConstraint(program.position(kTStart) ==
+                                kPositionTargetStart);
+    program.AddLinearConstraint(program.position(kTMid) == kPositionTargetMid);
+    program.AddLinearConstraint(program.position(kTEnd) == kPositionTargetEnd);
   }
 
-  if (kVelocityTolerance > 0) {
-    program.AddLinearConstraint(program.velocity(0.0)(0) <=
-                                0.0 + kVelocityTolerance);
-    program.AddLinearConstraint(program.velocity(0.0)(0) >=
-                                0.0 - kVelocityTolerance);
-    program.AddLinearConstraint(program.velocity(0.5)(0) <=
-                                0.0 + kVelocityTolerance);
-    program.AddLinearConstraint(program.velocity(0.5)(0) >=
-                                0.0 - kVelocityTolerance);
-    program.AddLinearConstraint(program.velocity(1.0)(0) <=
-                                0.0 + kVelocityTolerance);
-    program.AddLinearConstraint(program.velocity(1.0)(0) >=
-                                0.0 - kVelocityTolerance);
+  if (kVelocityTolerance(0) > 0) {
+    program.AddLinearConstraint(program.velocity(kTStart) <=
+                                kVelocityTargetStart + kVelocityTolerance);
+    program.AddLinearConstraint(program.velocity(kTStart) >=
+                                kVelocityTargetStart - kVelocityTolerance);
+    program.AddLinearConstraint(program.velocity(kTMid) <=
+                                kVelocityTargetMid + kVelocityTolerance);
+    program.AddLinearConstraint(program.velocity(kTMid) >=
+                                kVelocityTargetMid - kVelocityTolerance);
+    program.AddLinearConstraint(program.velocity(kTEnd) <=
+                                kVelocityTargetEnd + kVelocityTolerance);
+    program.AddLinearConstraint(program.velocity(kTEnd) >=
+                                kVelocityTargetEnd - kVelocityTolerance);
   } else {
-    program.AddLinearConstraint(program.velocity(0.0)(0) == 0.0);
-    program.AddLinearConstraint(program.velocity(0.5)(0) == 0.0);
-    program.AddLinearConstraint(program.velocity(1.0)(0) == 0.0);
+    program.AddLinearConstraint(program.velocity(kTStart) ==
+                                kVelocityTargetStart);
+    program.AddLinearConstraint(program.velocity(kTMid) == kVelocityTargetMid);
+    program.AddLinearConstraint(program.velocity(kTEnd) == kVelocityTargetEnd);
   }
 
-  if (kAccelerationTolerance > 0) {
-    program.AddLinearConstraint(program.acceleration(0.0)(0) <=
-                                0.0 + kAccelerationTolerance);
-    program.AddLinearConstraint(program.acceleration(0.0)(0) >=
-                                0.0 - kAccelerationTolerance);
-    program.AddLinearConstraint(program.acceleration(0.5)(0) <=
-                                0.0 + kAccelerationTolerance);
-    program.AddLinearConstraint(program.acceleration(0.5)(0) >=
-                                0.0 - kAccelerationTolerance);
-    program.AddLinearConstraint(program.acceleration(1.0)(0) <=
-                                0.0 + kAccelerationTolerance);
-    program.AddLinearConstraint(program.acceleration(1.0)(0) >=
-                                0.0 - kAccelerationTolerance);
+  if (kAccelerationTolerance(0) > 0) {
+    program.AddLinearConstraint(program.acceleration(kTStart) <=
+                                kAccelerationTargetStart + kAccelerationTolerance);
+    program.AddLinearConstraint(program.acceleration(kTStart) >=
+                                kAccelerationTargetStart - kAccelerationTolerance);
+    program.AddLinearConstraint(program.acceleration(kTMid) <=
+                                kAccelerationTargetMid + kAccelerationTolerance);
+    program.AddLinearConstraint(program.acceleration(kTMid) >=
+                                kAccelerationTargetMid - kAccelerationTolerance);
+    program.AddLinearConstraint(program.acceleration(kTEnd) <=
+                                kAccelerationTargetEnd + kAccelerationTolerance);
+    program.AddLinearConstraint(program.acceleration(kTEnd) >=
+                                kAccelerationTargetEnd - kAccelerationTolerance);
   } else {
-    program.AddLinearConstraint(program.acceleration(0.0)(0) == 0.0);
-    program.AddLinearConstraint(program.acceleration(0.5)(0) == 0.0);
-    program.AddLinearConstraint(program.acceleration(1.0)(0) == 0.0);
+    program.AddLinearConstraint(program.acceleration(kTStart) ==
+                                kAccelerationTargetStart);
+    program.AddLinearConstraint(program.acceleration(kTMid) == kAccelerationTargetMid);
+    program.AddLinearConstraint(program.acceleration(kTEnd) == kAccelerationTargetEnd);
   }
 
-  if (kJerkTolerance > 0) {
-    program.AddLinearConstraint(program.jerk(0.0)(0) <= 0.0 + kJerkTolerance);
-    program.AddLinearConstraint(program.jerk(0.0)(0) >= 0.0 - kJerkTolerance);
-    program.AddLinearConstraint(program.jerk(0.5)(0) <= 0.0 + kJerkTolerance);
-    program.AddLinearConstraint(program.jerk(0.5)(0) >= 0.0 - kJerkTolerance);
-    program.AddLinearConstraint(program.jerk(1.0)(0) <= 0.0 + kJerkTolerance);
-    program.AddLinearConstraint(program.jerk(1.0)(0) >= 0.0 - kJerkTolerance);
+  if (kJerkTolerance(0) > 0) {
+    program.AddLinearConstraint(program.jerk(kTStart) <=
+                                kJerkTargetStart + kJerkTolerance);
+    program.AddLinearConstraint(program.jerk(kTStart) >=
+                                kJerkTargetStart - kJerkTolerance);
+    program.AddLinearConstraint(program.jerk(kTMid) <=
+                                kJerkTargetMid + kJerkTolerance);
+    program.AddLinearConstraint(program.jerk(kTMid) >=
+                                kJerkTargetMid - kJerkTolerance);
+    program.AddLinearConstraint(program.jerk(kTEnd) <=
+                                kJerkTargetEnd + kJerkTolerance);
+    program.AddLinearConstraint(program.jerk(kTEnd) >=
+                                kJerkTargetEnd - kJerkTolerance);
   } else {
-    program.AddLinearConstraint(program.jerk(0.0)(0) == 0.0);
-    program.AddLinearConstraint(program.jerk(0.5)(0) == 0.0);
-    program.AddLinearConstraint(program.jerk(1.0)(0) == 0.0);
+    program.AddLinearConstraint(program.jerk(kTStart) ==
+                                kJerkTargetStart);
+    program.AddLinearConstraint(program.jerk(kTMid) == kJerkTargetMid);
+    program.AddLinearConstraint(program.jerk(kTEnd) == kJerkTargetEnd);
   }
+
 
   VectorX<double> evaluation_times =
       VectorX<double>::LinSpaced(kNumEvaluationPoints, 0.0, 1.0);
@@ -134,8 +169,10 @@ int DoMain() {
   }
   for (int i = 0; i < kNumEvaluationPoints; ++i) {
     if (kJerkWeight > 0 && i < kNumEvaluationPoints - 1) {
-      auto jerk0 = program.jerk(evaluation_times(i + 1))(0).Substitute(control_point_substitution);
-      auto jerk1 = program.jerk(evaluation_times(i + 1))(0).Substitute(control_point_substitution);
+      auto jerk0 = program.jerk(evaluation_times(i + 1))(0).Substitute(
+          control_point_substitution);
+      auto jerk1 = program.jerk(evaluation_times(i + 1))(0).Substitute(
+          control_point_substitution);
       auto jerk_squared_cost = (evaluation_times(i + 1) - evaluation_times(i)) *
                                0.5 * (jerk0 * jerk0 + jerk1 * jerk1);
       program.AddQuadraticCost(jerk_squared_cost);
@@ -157,15 +194,21 @@ int DoMain() {
   const VectorX<double> x{VectorX<double>::LinSpaced(
       kNumPlottingPoints, solution_trajectory.get_start_time(),
       solution_trajectory.get_end_time())};
-  VectorX<double> position_values(x.size());
-  VectorX<double> velocity_values(x.size());
-  VectorX<double> acceleration_values(x.size());
-  VectorX<double> jerk_values(x.size());
+  MatrixX<double> position_values(x.size(), kNumPositions);
+  MatrixX<double> velocity_values(x.size(), kNumPositions);
+  MatrixX<double> acceleration_values(x.size(), kNumPositions);
+  MatrixX<double> jerk_values(x.size(), kNumPositions);
   for (int i = 0; i < kNumPlottingPoints; ++i) {
-    position_values(i) = solution_trajectory.value(x(i))(0);
-    velocity_values(i) = solution_trajectory.derivative(1)->value(x(i))(0);
-    acceleration_values(i) = solution_trajectory.derivative(2)->value(x(i))(0);
-    jerk_values(i) = solution_trajectory.derivative(3)->value(x(i))(0);
+    position_values.row(i) = solution_trajectory.value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    velocity_values.row(i) =
+        solution_trajectory.derivative(1)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    ;
+    acceleration_values.row(i) =
+        solution_trajectory.derivative(2)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    ;
+    jerk_values.row(i) =
+        solution_trajectory.derivative(3)->value(x(i)).topLeftCorner(kNumPositions, 1).transpose();
+    ;
   }
   CallMatlab("subplot", 4, 1, 1);
   CallMatlab("plot", x, position_values, "LineWidth", 2.0);
@@ -186,6 +229,7 @@ int DoMain() {
   CallMatlab("plot", x, jerk_values);
   CallMatlab("grid", "on");
   CallMatlab("legend", "Jerk");
+  drake::log()->info("Control Point Values = \n{}", program.GetSolution(program.control_points()));
   return 0;
 }
 
