@@ -153,7 +153,7 @@ int DoMain() {
   solvers::SolutionResult result = program.Solve();
 
   PiecewisePolynomialTrajectory solution_trajectory{
-      program.ReconstructPositionTrajectory()};
+      program.ReconstructTrajectory()};
   const VectorX<double> x{VectorX<double>::LinSpaced(
       kNumPlottingPoints, solution_trajectory.get_start_time(),
       solution_trajectory.get_end_time())};

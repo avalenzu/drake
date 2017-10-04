@@ -170,23 +170,26 @@ const VectorX<Expression> KinematicTrajectoryOptimization::jerk(
 }
 
 PiecewisePolynomialTrajectory
-KinematicTrajectoryOptimization::ReconstructPositionTrajectory() const {
-  std::vector<MatrixX<Polynomial<double>>> position_polynomials(
-      kNumInternalIntervals_);
+KinematicTrajectoryOptimization::ReconstructTrajectory(
+    const int derivative_order) const {
+  std::vector<MatrixX<Polynomial<double>>> polynomials(kNumInternalIntervals_);
   for (int i = 0; i < kNumInternalIntervals_; ++i) {
-    position_polynomials[i] =
-        MatrixX<Polynomial<double>>::Zero(kNumPositions_, 1);
+    polynomials[i] =
+        MatrixX<Polynomial<double>>::Zero((derivative_order + 1) * kNumPositions_, 1);
     for (int j = 0; j < kNumPositions_; ++j) {
       // TODO(avalenzu): Only do this for the elements of the basis whose
       // support includes the i-th interval.
       for (int k = 0; k < kNumControlPoints_; ++k) {
-        position_polynomials[i](j) += basis_[k].getPolynomial(i, 0, 0) *
-                                      GetSolution(control_points_(j, k));
+        for (int ii = 0; ii <= derivative_order; ++ii) {
+          polynomials[i](ii * kNumPositions_ + j) +=
+              basis_[k].derivative(derivative_order).getPolynomial(i, 0, 0) *
+              GetSolution(control_points_(j, k));
+        }
       }
     }
   }
   return PiecewisePolynomialTrajectory(PiecewisePolynomial<double>(
-      position_polynomials, basis_.front().getSegmentTimes()));
+      polynomials, basis_.front().getSegmentTimes()));
 }
 
 // symbolic::Substitution
