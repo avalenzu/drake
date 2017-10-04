@@ -77,8 +77,11 @@ drake_cc_binary(
         "//drake/common:find_resource",
         "//drake/common/proto:call_matlab",
         "//drake/common:text_logging_gflags",
-        "//drake/multibody:rigid_body_tree",
+        "//drake/lcm",
         "//drake/multibody/parsers",
+        "//drake/multibody/rigid_body_plant:drake_visualizer",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody:rigid_body_tree_construction",
         "@com_github_gflags_gflags//:gflags",
     ],
 )
