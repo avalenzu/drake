@@ -111,9 +111,12 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
                                       num_control_points, num_evaluation_points,
                                       spline_order, duration) {
   problem_ = problem;
-  // for (const auto& cost : problem->costs()) {
-  // AddCost(cost->cost, cost->plan_interval);
-  //}
+  for (int i = 0; i < kNumControlPoints_; ++i) {
+    AddLinearConstraint(control_points_.col(i) >=
+                        problem->tree().joint_limit_min);
+    AddLinearConstraint(control_points_.col(i) <=
+                        problem->tree().joint_limit_max);
+  }
 }
 
 void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
