@@ -17,22 +17,36 @@
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/rigid_body_tree_construction.h"
 
-DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at all points.");
-DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
+DEFINE_double(collision_avoidance_threshold, 0.05,
+              "Minimum distance to obstacles at all points.");
+DEFINE_string(initial_ee_position, "0.5 0.5 0.5",
+              "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
-DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
-DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
+DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0",
+              "Initial end-effector orientation (RPY in degrees)");
+DEFINE_string(final_ee_orientation, "0.0 0.0 0.0",
+              "Final end-effector position (RPY in degrees)");
+DEFINE_string(obstacle_0_position, "0.1 0.4 0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_0_size, "0.2 0.3 1.5", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_1_position, "0.1 -0.4 0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_1_size, "0.2 0.3 1.5", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_2_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_2_size, "0.5 1.0 0.3", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_3_position, "0.8 0.0 0.7", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_3_size, "0.5 1.0 0.8", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_4_position, "0.6625 0.0 0", "Dimensions of obstacle (m)");
+DEFINE_string(obstacle_4_size, "0.175 1.0 1.5", "Dimensions of obstacle (m)");
 DEFINE_bool(flat_terrain, true, "If true, add flat terrain to the world.");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_int32(order, 4, "Order of the B-splines");
-DEFINE_int32(num_control_points, 10, "Number of control points");
+DEFINE_int32(num_control_points, 12, "Number of control points");
 DEFINE_int32(num_evaluation_points, -1,
              "Number of points on the spline at which costs and constraints "
              "should be evaluated.");
 DEFINE_int32(num_plotting_points, 1000,
              "Number of points to use when plotting.");
 DEFINE_double(jerk_weight, 1, "Weight applied to the squared jerk cost.");
-DEFINE_double(duration, 6, "Duration of the trajectory.");
+DEFINE_double(duration, 10, "Duration of the trajectory.");
 DEFINE_double(max_velocity, 1.5, "Maximum allowable velocity.");
 DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
 DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
@@ -61,10 +75,13 @@ int DoMain() {
   const double kJerkWeight = FLAGS_jerk_weight;
   const double kDuration = FLAGS_duration;
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
+  const double kEndEffectorOrientationTolerance{FLAGS_ee_orientation_tolerance *
+                                                M_PI / 180};
+  const double kEndEffectorPositionTolerance{FLAGS_ee_position_tolerance};
 
   const std::string kModelPath = FindResourceOrThrow(
       "drake/manipulation/models/iiwa_description/urdf/"
-      "iiwa14_mesh_collision.urdf");
+      "iiwa14_sphere_collision.urdf");
   auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
       kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
@@ -73,6 +90,82 @@ int DoMain() {
   }
 
   KinematicPlanningProblem problem{std::move(iiwa)};
+
+  // Add obstacles to the world
+  std::istringstream iss_obstacle_0_position{FLAGS_obstacle_0_position};
+  std::istringstream iss_obstacle_0_size{FLAGS_obstacle_0_size};
+  Vector3<double> obstacle_0_size;
+  Isometry3<double> X_WO_0{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_0_size >> obstacle_0_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_0_size.fail());
+    iss_obstacle_0_position >> X_WO_0.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_0_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_0.translation().z() += obstacle_0_size.z() / 2;
+
+  problem.AddFixedBoxToWorld(obstacle_0_size, X_WO_0);
+
+  std::istringstream iss_obstacle_1_position{FLAGS_obstacle_1_position};
+  std::istringstream iss_obstacle_1_size{FLAGS_obstacle_1_size};
+  Vector3<double> obstacle_1_size;
+  Isometry3<double> X_WO_1{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_1_size >> obstacle_1_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_1_size.fail());
+    iss_obstacle_1_position >> X_WO_1.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_1_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_1.translation().z() += obstacle_1_size.z() / 2;
+
+  problem.AddFixedBoxToWorld(obstacle_1_size, X_WO_1);
+
+  std::istringstream iss_obstacle_2_position{FLAGS_obstacle_2_position};
+  std::istringstream iss_obstacle_2_size{FLAGS_obstacle_2_size};
+  Vector3<double> obstacle_2_size;
+  Isometry3<double> X_WO_2{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_2_size >> obstacle_2_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_2_size.fail());
+    iss_obstacle_2_position >> X_WO_2.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_2_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_2.translation().z() += obstacle_2_size.z() / 2;
+
+  problem.AddFixedBoxToWorld(obstacle_2_size, X_WO_2);
+
+  std::istringstream iss_obstacle_3_position{FLAGS_obstacle_3_position};
+  std::istringstream iss_obstacle_3_size{FLAGS_obstacle_3_size};
+  Vector3<double> obstacle_3_size;
+  Isometry3<double> X_WO_3{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_3_size >> obstacle_3_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_3_size.fail());
+    iss_obstacle_3_position >> X_WO_3.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_3_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_3.translation().z() += obstacle_3_size.z() / 2;
+
+  problem.AddFixedBoxToWorld(obstacle_3_size, X_WO_3);
+
+  std::istringstream iss_obstacle_4_position{FLAGS_obstacle_4_position};
+  std::istringstream iss_obstacle_4_size{FLAGS_obstacle_4_size};
+  Vector3<double> obstacle_4_size;
+  Isometry3<double> X_WO_4{Isometry3<double>::Identity()};
+  for (int i = 0; i < 3; ++i) {
+    iss_obstacle_4_size >> obstacle_4_size(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_4_size.fail());
+    iss_obstacle_4_position >> X_WO_4.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_obstacle_4_position.fail());
+  }
+  // Move the obstacle up to sit on the ground plane
+  X_WO_4.translation().z() += obstacle_4_size.z() / 2;
+
+  problem.AddFixedBoxToWorld(obstacle_4_size, X_WO_4);
 
   const int kNumPositions{problem.num_positions()};
   const VectorX<double> kZeroVector{VectorX<double>::Zero(kNumPositions)};
@@ -112,8 +205,6 @@ int DoMain() {
   const VectorX<double> kJerkTargetMid{kZeroVector};
   const VectorX<double> kJerkTargetEnd{kZeroVector};
 
-
-
   if (kPositionTolerance(0) > 0) {
     program.AddLinearConstraint(program.position(kTStart) <=
                                 kPositionTargetStart + kPositionTolerance);
@@ -142,10 +233,8 @@ int DoMain() {
     iss_final_ee_orientation >> rpy_WFf(i);
     DRAKE_THROW_UNLESS(!iss_final_ee_orientation.fail());
   }
-  X_WF0.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WF0);
-  X_WFf.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WFf);
-
-  const double kOrientationTolerance{FLAGS_ee_orientation_tolerance*M_PI/180};
+  X_WF0.linear() = drake::math::rpy2rotmat(M_PI / 180 * rpy_WF0);
+  X_WFf.linear() = drake::math::rpy2rotmat(M_PI / 180 * rpy_WFf);
 
   if (kCollisionAvoidanceThreshold > 0) {
     drake::log()->info("Adding collision avoidance constraints ...");
@@ -155,14 +244,13 @@ int DoMain() {
 
   drake::log()->info("Adding body-pose constraint to mid-point ...");
   program.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
-                                     kOrientationTolerance,
-                                     FLAGS_ee_position_tolerance);
+                                kEndEffectorOrientationTolerance,
+                                kEndEffectorPositionTolerance);
   drake::log()->info("\tDone.");
 
   drake::log()->info("Adding body-pose constraint to end-point ...");
-  program.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
-                                     kOrientationTolerance,
-                                     FLAGS_ee_position_tolerance);
+  program.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf, kEndEffectorOrientationTolerance,
+                                kEndEffectorPositionTolerance);
   drake::log()->info("\tDone.");
 
   if (kVelocityTolerance(0) > 0) {
