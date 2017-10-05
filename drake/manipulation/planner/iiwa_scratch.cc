@@ -11,27 +11,34 @@
 #include "drake/common/text_logging_gflags.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/manipulation/planner/kinematic_planning_problem.h"
+#include "drake/math/roll_pitch_yaw.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/rigid_body_tree_construction.h"
 
+DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
+DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
+DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
+DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
 DEFINE_bool(flat_terrain, true, "If true, add flat terrain to the world.");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
-DEFINE_int32(order, 6, "Order of the B-splines");
-DEFINE_int32(num_control_points, 24, "Number of control points");
+DEFINE_int32(order, 4, "Order of the B-splines");
+DEFINE_int32(num_control_points, 10, "Number of control points");
 DEFINE_int32(num_evaluation_points, -1,
              "Number of points on the spline at which costs and constraints "
              "should be evaluated.");
 DEFINE_int32(num_plotting_points, 1000,
              "Number of points to use when plotting.");
-DEFINE_double(jerk_weight, 1e-3, "Weight applied to the squared jerk cost.");
-DEFINE_double(duration, 2, "Duration of the trajectory.");
-DEFINE_double(max_velocity, 0.7, "Maximum allowable velocity.");
+DEFINE_double(jerk_weight, 1, "Weight applied to the squared jerk cost.");
+DEFINE_double(duration, 6, "Duration of the trajectory.");
+DEFINE_double(max_velocity, 1.5, "Maximum allowable velocity.");
 DEFINE_double(position_tolerance, 0.0, "Maximum position error.");
 DEFINE_double(velocity_tolerance, 0.0, "Maximum velocity error.");
 DEFINE_double(acceleration_tolerance, 0.0, "Maximum acceleration error.");
-DEFINE_double(jerk_tolerance, 0.0, "Maximum jerk error.");
+DEFINE_double(jerk_tolerance, -1.0, "Maximum jerk error.");
+DEFINE_double(ee_orientation_tolerance, 1.0, "Orientation tolerance (degrees)");
+DEFINE_double(ee_position_tolerance, 0.001, "Position tolerance");
 
 namespace drake {
 namespace manipulation {
@@ -91,7 +98,8 @@ int DoMain() {
   const double kTEnd{1.0};
   const VectorX<double> kPositionTargetStart{0.0 * kOnesVector};
   const VectorX<double> kPositionTargetMid{0.5 * kOnesVector};
-  const VectorX<double> kPositionTargetEnd{1.0 * kOnesVector};
+  VectorX<double> kPositionTargetEnd(kNumPositions);
+  kPositionTargetEnd << 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -0.7;
   const VectorX<double> kVelocityTargetStart{kZeroVector};
   const VectorX<double> kVelocityTargetMid{kZeroVector};
   const VectorX<double> kVelocityTargetEnd{kZeroVector};
@@ -101,25 +109,53 @@ int DoMain() {
   const VectorX<double> kJerkTargetStart{kZeroVector};
   const VectorX<double> kJerkTargetMid{kZeroVector};
   const VectorX<double> kJerkTargetEnd{kZeroVector};
+
+
+
   if (kPositionTolerance(0) > 0) {
     program.AddLinearConstraint(program.position(kTStart) <=
                                 kPositionTargetStart + kPositionTolerance);
     program.AddLinearConstraint(program.position(kTStart) >=
                                 kPositionTargetStart - kPositionTolerance);
-    program.AddLinearConstraint(program.position(kTMid) <=
-                                kPositionTargetMid + kPositionTolerance);
-    program.AddLinearConstraint(program.position(kTMid) >=
-                                kPositionTargetMid - kPositionTolerance);
-    program.AddLinearConstraint(program.position(kTEnd) <=
-                                kPositionTargetEnd + kPositionTolerance);
-    program.AddLinearConstraint(program.position(kTEnd) >=
-                                kPositionTargetEnd - kPositionTolerance);
   } else {
     program.AddLinearConstraint(program.position(kTStart) ==
                                 kPositionTargetStart);
-    program.AddLinearConstraint(program.position(kTMid) == kPositionTargetMid);
-    program.AddLinearConstraint(program.position(kTEnd) == kPositionTargetEnd);
   }
+
+  Isometry3<double> X_WF0{Isometry3<double>::Identity()};
+  Isometry3<double> X_WFf{Isometry3<double>::Identity()};
+  Vector3<double> rpy_WF0;
+  Vector3<double> rpy_WFf;
+  std::istringstream iss_initial_ee_position{FLAGS_initial_ee_position};
+  std::istringstream iss_final_ee_position{FLAGS_final_ee_position};
+  std::istringstream iss_initial_ee_orientation{FLAGS_initial_ee_orientation};
+  std::istringstream iss_final_ee_orientation{FLAGS_final_ee_orientation};
+  for (int i = 0; i < 3; ++i) {
+    iss_initial_ee_position >> X_WF0.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_initial_ee_position.fail());
+    iss_final_ee_position >> X_WFf.translation()(i);
+    DRAKE_THROW_UNLESS(!iss_final_ee_position.fail());
+    iss_initial_ee_orientation >> rpy_WF0(i);
+    DRAKE_THROW_UNLESS(!iss_initial_ee_orientation.fail());
+    iss_final_ee_orientation >> rpy_WFf(i);
+    DRAKE_THROW_UNLESS(!iss_final_ee_orientation.fail());
+  }
+  X_WF0.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WF0);
+  X_WFf.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WFf);
+
+  const double kOrientationTolerance{FLAGS_ee_orientation_tolerance*M_PI/180};
+
+
+  drake::log()->info("Adding body-pose constraint to mid-point ...");
+  program.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
+                                     kOrientationTolerance,
+                                     FLAGS_ee_position_tolerance);
+  drake::log()->info("\tDone.");
+  drake::log()->info("Adding body-pose constraint to end-point ...");
+  program.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
+                                     kOrientationTolerance,
+                                     FLAGS_ee_position_tolerance);
+  drake::log()->info("\tDone.");
 
   if (kVelocityTolerance(0) > 0) {
     program.AddLinearConstraint(program.velocity(kTStart) <=
@@ -182,7 +218,7 @@ int DoMain() {
                                 kJerkTargetEnd + kJerkTolerance);
     program.AddLinearConstraint(program.jerk(kTEnd) >=
                                 kJerkTargetEnd - kJerkTolerance);
-  } else {
+  } else if (kJerkTolerance(0) == 0.0) {
     program.AddLinearConstraint(program.jerk(kTStart) == kJerkTargetStart);
     program.AddLinearConstraint(program.jerk(kTMid) == kJerkTargetMid);
     program.AddLinearConstraint(program.jerk(kTEnd) == kJerkTargetEnd);
@@ -223,10 +259,17 @@ int DoMain() {
 
   drake::log()->info("Calling program.Solve() ...");
   solvers::SolutionResult result = program.Solve();
-  drake::log()->info("... Done");
+  drake::log()->info("... Done. Solver returned {}", result);
 
   PiecewisePolynomialTrajectory solution_trajectory{
       program.ReconstructTrajectory(1)};
+
+  do {
+    visualizer.PlaybackTrajectory(
+        solution_trajectory.get_piecewise_polynomial());
+  } while (FLAGS_loop_animation);
+
+  // Plot trajectory using CallMatlab
   const VectorX<double> x{VectorX<double>::LinSpaced(
       kNumPlottingPoints, solution_trajectory.get_start_time(),
       solution_trajectory.get_end_time())};
@@ -275,11 +318,6 @@ int DoMain() {
   CallMatlab("legend", "Jerk");
   drake::log()->info("Control Point Values = \n{}",
                      program.GetSolution(program.control_points()));
-
-  do {
-    visualizer.PlaybackTrajectory(
-        solution_trajectory.get_piecewise_polynomial());
-  } while (FLAGS_loop_animation);
 
   return 0;
 }
