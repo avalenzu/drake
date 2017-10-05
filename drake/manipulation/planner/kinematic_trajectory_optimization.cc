@@ -1,5 +1,5 @@
-#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
 
@@ -72,6 +72,84 @@ class BodyPoseConstraint : public Constraint {
   const int kNumActiveControlPoints_;
 };
 
+class CollisionAvoidanceConstraint : public Constraint {
+ public:
+  CollisionAvoidanceConstraint(const RigidBodyTree<double>& tree,
+                               double collision_avoidance_threshold,
+                               const VectorX<double> spline_weights)
+      : Constraint(1, spline_weights.size() * tree.get_num_positions(),
+                   Vector1<double>(0), Vector1<double>(exp(-1))),
+        tree_(tree),
+        collision_avoidance_threshold_(collision_avoidance_threshold),
+        spline_weights_(spline_weights),
+        kNumActiveControlPoints_(spline_weights.size()) {}
+
+  virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      Eigen::VectorXd& y) const {
+    AutoDiffVecXd y_t(1);
+    Eval(math::initializeAutoDiff(x), y_t);
+    y = math::autoDiffToValueMatrix(y_t);
+  }
+
+  virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      AutoDiffVecXd& y) const {
+    const int kNumPositions{tree_.get_num_positions()};
+    AutoDiffVecXd q{x.head(kNumPositions) * spline_weights_(0)};
+    for (int i = 1; i < spline_weights_.size(); ++i) {
+      q += x.segment(i * kNumPositions, kNumPositions) * spline_weights_(i);
+    }
+    const VectorX<double> q_value = math::autoDiffToValueMatrix(q);
+
+    KinematicsCache<AutoDiffXd> autodiff_cache = tree_.doKinematics(q);
+    KinematicsCache<double> cache = tree_.doKinematics(q_value);
+    VectorX<double> distance_value;
+    Matrix3X<double> xA, xB, normal;
+    std::vector<int> idxA_tmp;
+    std::vector<int> idxB_tmp;
+    const_cast<RigidBodyTree<double>&>(tree_).collisionDetect(
+        cache, distance_value, normal, xA, xB, idxA_tmp, idxB_tmp);
+    const int kNumPairs = distance_value.size();
+    y(0) = 0;
+    y(0).derivatives().resize(x.size());
+    y(0).derivatives().setZero();
+    if (kNumPairs > 0) {
+      VectorX<int> idxA(kNumPairs);
+      VectorX<int> idxB(kNumPairs);
+      for (int i = 0; i < kNumPairs; ++i) {
+        idxA(i) = idxA_tmp[i];
+        idxB(i) = idxB_tmp[i];
+      }
+      MatrixX<double> J;
+      tree_.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
+      MatrixX<double> ddist_dq{kNumPairs, x.size()};
+      for (int i = 0; i < kNumPairs; ++i) {
+        ddist_dq.row(i) = normal.col(i).transpose() * J.middleRows(3 * i, 3) *
+                          math::autoDiffToGradientMatrix(q);
+      }
+      AutoDiffVecXd distance{kNumPairs};
+      math::initializeAutoDiffGivenGradientMatrix(distance_value, ddist_dq,
+                                                  distance);
+      for (int i = 0; i < kNumPairs; ++i) {
+        if (distance(i) < 2 * collision_avoidance_threshold_) {
+          distance(i) /= collision_avoidance_threshold_;
+          distance(i) -= 2;
+          y(0) += -distance(i) * exp(1 / distance(i));
+        }
+      }
+    }
+  }
+
+  int numOutputs() const { return 1; };
+
+ private:
+  const RigidBodyTree<double>& tree_;
+  double collision_avoidance_threshold_;
+  const VectorX<double> spline_weights_;
+  const int kNumActiveControlPoints_;
+};
+
 }  // namespace
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
@@ -93,8 +171,7 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
   // 	(t[0] ..., t[kOrder], ..., t[kNumControlPoints], ...,
   //    					t[kNumControlPoints + kOrder])
   // where, t[0] == t[1] == ... == t[kOrder-1] == 0, t[kNumControlPoints
-  const double kInteriorInterval{kDuration_ /
-                                 (kNumControlPoints_ - (kOrder_ - 1))};
+  const double kInteriorInterval{kDuration_ / kNumInternalIntervals_};
   knots_.resize(kNumKnots_, 0.0);
   for (int i = kOrder_; i < kNumKnots_; ++i) {
     knots_[i] = std::min(kDuration_, knots_[i - 1] + kInteriorInterval);
@@ -150,6 +227,40 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
                     problem_->tree(), *body, X_WFd, orientation_tolerance,
                     position_tolerance, X_BF, basis_function_values),
                 vars);
+}
+
+void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
+    double collision_avoidance_threshold, Vector2<double> plan_interval) {
+  // Re-scale the plan interval
+  plan_interval(0) = ScaleTime(plan_interval(0));
+  plan_interval(1) = ScaleTime(plan_interval(1));
+
+  // Evaluate constraints at points spaced by no more than one-half the interval
+  // between knots.
+  const double kInteriorInterval{kDuration_ / kNumInternalIntervals_};
+  const int kNumEvaluationTimes(std::ceil(
+      (plan_interval(1) - plan_interval(0)) / (0.5 * kInteriorInterval)));
+  const VectorX<double> evaluation_times{VectorX<double>::LinSpaced(
+      kNumEvaluationTimes, plan_interval(0), plan_interval(1))};
+  for (int i = 0; i < kNumEvaluationTimes; ++i) {
+    const std::vector<int> active_control_point_indices{
+        ComputeActiveControlPointIndices(evaluation_times(i))};
+    // Compute the basis values at evaluation_time
+    VectorX<double> basis_function_values(kOrder_);
+    for (int j = 0; j < kOrder_; ++j) {
+      basis_function_values(j) =
+          basis_[active_control_point_indices[j]].value(evaluation_times(i))(0);
+    }
+    auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
+        problem_->tree(), collision_avoidance_threshold, basis_function_values);
+    VectorXDecisionVariable vars{num_positions() *
+                                 active_control_point_indices.size()};
+    for (int j = 0; j < kOrder_; ++j) {
+      vars.segment(j * kNumPositions_, kNumPositions_) =
+          control_points_.col(active_control_point_indices[j]);
+    }
+    AddConstraint(constraint, vars);
+  }
 }
 
 double KinematicTrajectoryOptimization::ScaleTime(double time) const {
@@ -254,7 +365,8 @@ KinematicTrajectoryOptimization::ReconstructTrajectory(
 // sub.emplace(placeholder_q_vars_(i), prog.state(index)(i));
 //}
 // for (int i = 0; i < num_positions(); ++i) {
-// sub.emplace(placeholder_v_vars_(i), prog.state(index)(num_positions() + i));
+// sub.emplace(placeholder_v_vars_(i), prog.state(index)(num_positions() +
+// i));
 //}
 // for (int i = 0; i < num_positions(); ++i) {
 // sub.emplace(placeholder_a_vars_(i), prog.state(index)(num_positions() +

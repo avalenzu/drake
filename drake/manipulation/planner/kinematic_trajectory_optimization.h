@@ -63,6 +63,10 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
       double orientation_tolerance = 0.0,
       const Isometry3<double> X_BF = Isometry3<double>::Identity());
 
+  void AddCollisionAvoidanceConstraint(
+      double collision_avoidance_threshold,
+      Vector2<double> plan_interval = Vector2<double>(0, 1));
+
   PiecewisePolynomialTrajectory ReconstructTrajectory(
       int derivative_order = 0) const;
 
