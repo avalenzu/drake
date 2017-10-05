@@ -123,6 +123,8 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
     double evaluation_time, const std::string& body_name,
     const Isometry3<double> X_WFd, double position_tolerance,
     double orientation_tolerance, const Isometry3<double> X_BF) {
+  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
+  evaluation_time *= kDuration_;
   // Compute the control points that contribute to the position at
   // evaluation_time.
   std::vector<int> active_control_point_indices;
