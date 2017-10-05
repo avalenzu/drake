@@ -47,15 +47,24 @@ void CloseGripper(const WorldState& env_state, WsgAction* wsg_act,
 
 std::unique_ptr<RigidBodyTree<double>> BuildTree(
     const pick_and_place::PlannerConfiguration& configuration,
-    bool add_grasp_frame = false, int num_arms = 1) {
+    const optional<WorldState>& env_state = nullopt,
+    bool add_grasp_frame = false) {
   WorldSimTreeBuilder<double> tree_builder;
   tree_builder.StoreModel("iiwa", configuration.absolute_model_path());
-  std::vector<int> arm_instance_ids(num_arms, 0);
   auto previous_log_level = drake::log()->level();
   drake::log()->set_level(spdlog::level::warn);
-  for (int i = 0; i < num_arms; ++i) {
-    arm_instance_ids[i] =
-        tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
+  tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
+
+  if (env_state) {
+    for (int i = 0; i < configuration.num_tables; ++i) {
+      const std::string table_tag{"table_" + std::to_string(i)};
+      tree_builder.StoreDrakeModel(table_tag, configuration.table_models[i]);
+      Isometry3<double> X_WS{env_state->get_iiwa_base().inverse()};
+      const Isometry3<double> X_WT = X_WS * env_state->get_table_poses()[i];
+      tree_builder.AddFixedModelInstance(
+          table_tag, X_WT.translation(),
+          drake::math::rotmat2rpy(X_WT.linear()));
+    }
   }
 
   std::unique_ptr<RigidBodyTree<double>> robot{tree_builder.Build()};
@@ -215,8 +224,9 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
-                                finger_length * std::cos(pitch_offset));
+        std::min<double>(0,
+                         -0.5 * env_state.get_object_dimensions().x() +
+                             finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -345,6 +355,8 @@ ComputeTrajectories(const WorldState& env_state,
   const double yaw_offset =
       (r_WO.dot(X_WO.linear().matrix().col(0)) > 0) ? 0 : M_PI;
 
+  MinDistanceConstraint collision_avoidance_constraint(robot, 0.05, {}, {});
+
   for (double pitch_offset : pitch_offsets) {
     if (auto X_WG_desired =
             ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
@@ -352,7 +364,7 @@ ComputeTrajectories(const WorldState& env_state,
       programs.emplace_back(BsplineCurve<double>(
           BsplineBasis(spline_order, num_control_points), seed_control_points));
       KinematicTrajectoryOptimization& prog = programs.back();
-      prog.set_min_knot_resolution(1.0/120.0);
+      prog.set_min_knot_resolution(1.0 / 120.0);
       prog.set_num_evaluation_points(100);
       prog.set_initial_num_evaluation_points(2);
 
@@ -393,8 +405,7 @@ ComputeTrajectories(const WorldState& env_state,
       prog.AddQuadraticCost(cost);
 
       // Add duration limits.
-      prog.AddLinearConstraint(prog.duration()(0) >= 0,
-                               {{0.0, 0.0}});
+      prog.AddLinearConstraint(prog.duration()(0) >= 0, {{0.0, 0.0}});
 
       // Add joint limits
       prog.AddLinearConstraint(prog.position() >= robot->joint_limit_min,
@@ -442,6 +453,14 @@ ComputeTrajectories(const WorldState& env_state,
                                {{plan_time_place, plan_time_place}});
       prog.AddLinearConstraint(prog.jerk() == zero_vector,
                                {{plan_time_place, plan_time_place}});
+
+      // Add collision avoidance constraint for whole trajectory.
+      cache_helpers.emplace_back(
+          new KinematicsCacheHelper<double>(robot->bodies));
+      prog.AddGenericPositionConstraint(
+          std::make_shared<SingleTimeKinematicConstraintWrapper>(
+              &collision_avoidance_constraint, cache_helpers.back().get()),
+          {{0.0, 1.0}});
 
       const Isometry3<double> X_WG_pick =
           X_WG_desired->at(PickAndPlaceState::kApproachPick);
@@ -605,7 +624,7 @@ ComputeTrajectories(const WorldState& env_state,
         }
       }
 
-      if (true) {
+      if (false) {
         drake::log()->debug("Adding height threshold constraint for pre-pick");
 
         auto X_WC = Isometry3<double>::Identity();
@@ -698,7 +717,7 @@ ComputeTrajectories(const WorldState& env_state,
 
       // The grasp frame should stay above a safety threshold during the
       // move.
-      if (true) {
+      if (false) {
         drake::log()->debug(
             "Adding height threshold constraint for pick-to-place move.");
 
@@ -790,7 +809,7 @@ ComputeTrajectories(const WorldState& env_state,
         }
       }
 
-      if (true) {
+      if (false) {
         drake::log()->debug(
             "Adding height threshold constraint for lift-from-place");
 
@@ -1067,7 +1086,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       // Compute all the desired configurations.
       expected_object_pose_ = env_state.get_object_pose();
       std::unique_ptr<RigidBodyTree<double>> robot{
-          BuildTree(configuration_, true /*add_grasp_frame*/)};
+          BuildTree(configuration_, env_state, true /*add_grasp_frame*/)};
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
       interpolation_result_map_ = ComputeTrajectories(

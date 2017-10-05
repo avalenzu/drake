@@ -49,6 +49,9 @@ struct PlannerConfiguration {
   /// Path (relative to DRAKE_RESOURCE_ROOT) to the model file describing each
   /// table in the scenario.
   std::vector<std::string> table_models;
+  /// Path (relative to DRAKE_RESOURCE_ROOT) to the model file describing the
+  /// target object.
+  std::string target_model;
 
   /// Returns the absolute path for our @p drake_relative_model_path.
   std::string absolute_model_path() const {

@@ -168,7 +168,7 @@ void ExtractPlanningModelPathsForModels(
     std::vector<std::string>* model_paths) {
   DRAKE_DEMAND(model_paths != nullptr);
   std::transform(
-      models.cbegin(), models.cend(), std::back_inserter(*model_paths),
+      models.begin(), models.end(), std::back_inserter(*model_paths),
       [&configuration](const proto::ModelInstance& table) -> std::string {
         return GetPlanningModelPathOrThrow(configuration, table);
       });

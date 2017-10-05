@@ -37,6 +37,9 @@ drake_cc_library(
         "pick_and_place_state_machine.h",
         "world_state.h",
     ],
+    data = [
+        "//drake/manipulation/models/wsg_50_description:models",
+    ],
     deps = [
         ":pick_and_place_configuration",
         "//drake/common:essential",
