@@ -42,9 +42,11 @@ class BodyPoseConstraint : public Constraint {
   virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime / references).
                       AutoDiffVecXd& y) const {
-    const Eigen::Map<const MatrixX<AutoDiffXd>> control_points(
-        x.data(), tree_.get_num_positions(), kNumActiveControlPoints_);
-    const AutoDiffVecXd q = control_points * spline_weights_.cast<AutoDiffXd>();
+    const int kNumPositions{tree_.get_num_positions()};
+    AutoDiffVecXd q{x.head(kNumPositions) * spline_weights_(0)};
+    for (int i = 1; i < spline_weights_.size(); ++i) {
+      q += x.segment(i*kNumPositions, kNumPositions) * spline_weights_(i);
+    }
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
     const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(
@@ -145,10 +147,11 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
   }
 
   const RigidBody<double>* body = problem_->tree().FindBody(body_name);
-  MatrixXDecisionVariable vars{num_positions(),
+  VectorXDecisionVariable vars{num_positions() *
                                active_control_point_indices.size()};
   for (int i = 0; i < kOrder_; ++i) {
-    vars.col(i) = control_points_.col(active_control_point_indices[i]);
+    vars.segment(i * kNumPositions_, kNumPositions_) =
+        control_points_.col(active_control_point_indices[i]);
   }
   AddConstraint(std::make_shared<BodyPoseConstraint>(
                     problem_->tree(), *body, X_WFd, orientation_tolerance,
