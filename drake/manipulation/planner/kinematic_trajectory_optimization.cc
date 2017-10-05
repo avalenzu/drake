@@ -45,7 +45,7 @@ class BodyPoseConstraint : public Constraint {
     const int kNumPositions{tree_.get_num_positions()};
     AutoDiffVecXd q{x.head(kNumPositions) * spline_weights_(0)};
     for (int i = 1; i < spline_weights_.size(); ++i) {
-      q += x.segment(i*kNumPositions, kNumPositions) * spline_weights_(i);
+      q += x.segment(i * kNumPositions, kNumPositions) * spline_weights_(i);
     }
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
@@ -183,25 +183,29 @@ KinematicTrajectoryOptimization::GetSplineVariableExpression(
 
 const VectorX<Expression> KinematicTrajectoryOptimization::position(
     double evaluation_time) const {
-  drake::log()->debug("position({}) = \n{}", evaluation_time, GetSplineVariableExpression(evaluation_time, 0));
+  drake::log()->debug("position({}) = \n{}", evaluation_time,
+                      GetSplineVariableExpression(evaluation_time, 0));
   return GetSplineVariableExpression(evaluation_time, 0);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::velocity(
     double evaluation_time) const {
-  drake::log()->debug("velocity({}) = \n{}", evaluation_time, GetSplineVariableExpression(evaluation_time, 1));
+  drake::log()->debug("velocity({}) = \n{}", evaluation_time,
+                      GetSplineVariableExpression(evaluation_time, 1));
   return GetSplineVariableExpression(evaluation_time, 1);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::acceleration(
     double evaluation_time) const {
-  drake::log()->debug("acceleration({}) = \n{}", evaluation_time, GetSplineVariableExpression(evaluation_time, 2));
+  drake::log()->debug("acceleration({}) = \n{}", evaluation_time,
+                      GetSplineVariableExpression(evaluation_time, 2));
   return GetSplineVariableExpression(evaluation_time, 2);
 }
 
 const VectorX<Expression> KinematicTrajectoryOptimization::jerk(
     double evaluation_time) const {
-  drake::log()->debug("jerk({}) = \n{}", evaluation_time, GetSplineVariableExpression(evaluation_time, 3));
+  drake::log()->debug("jerk({}) = \n{}", evaluation_time,
+                      GetSplineVariableExpression(evaluation_time, 3));
   return GetSplineVariableExpression(evaluation_time, 3);
 }
 
@@ -210,8 +214,8 @@ KinematicTrajectoryOptimization::ReconstructTrajectory(
     const int derivative_order) const {
   std::vector<MatrixX<Polynomial<double>>> polynomials(kNumInternalIntervals_);
   for (int i = 0; i < kNumInternalIntervals_; ++i) {
-    polynomials[i] =
-        MatrixX<Polynomial<double>>::Zero((derivative_order + 1) * kNumPositions_, 1);
+    polynomials[i] = MatrixX<Polynomial<double>>::Zero(
+        (derivative_order + 1) * kNumPositions_, 1);
     for (int j = 0; j < kNumPositions_; ++j) {
       // TODO(avalenzu): Only do this for the elements of the basis whose
       // support includes the i-th interval.
