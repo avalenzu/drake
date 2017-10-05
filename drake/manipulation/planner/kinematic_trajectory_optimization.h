@@ -67,10 +67,17 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
       int derivative_order = 0) const;
 
  private:
+  double ScaleTime(double time) const;
+
+  std::vector<int> ComputeActiveControlPointIndices(
+      double evaluation_time) const;
+
   const VectorX<symbolic::Expression> GetSplineVariableExpression(
       double evaluation_time, int derivative_order) const;
+
   void AddCost(const solvers::Binding<solvers::Cost>& cost,
                const Vector2<double> plan_interval);
+
   const KinematicPlanningProblem* problem_;
   const int kNumControlPoints_;
   const int kNumEvaluationPoints_;
@@ -79,6 +86,10 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
   const int kNumInternalIntervals_;
   const int kNumPositions_;
   const double kDuration_;
+  // TODO(avalenzu): Replace usage of this member with
+  // PiecewisePolynomial<double>::kEpsilonTime. That ought to work, but it was
+  // giving me linker errors.
+  const double kEpsilonTime_{1e-10};
 
   std::vector<double> evaluation_times_;
   const solvers::MatrixXDecisionVariable control_points_;

@@ -1,3 +1,4 @@
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
@@ -125,19 +126,11 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
     double evaluation_time, const std::string& body_name,
     const Isometry3<double> X_WFd, double position_tolerance,
     double orientation_tolerance, const Isometry3<double> X_BF) {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  evaluation_time *= kDuration_;
+  evaluation_time = ScaleTime(evaluation_time);
   // Compute the control points that contribute to the position at
   // evaluation_time.
-  std::vector<int> active_control_point_indices;
-  active_control_point_indices.reserve(num_control_points());
-  for (int j = 0; j < kNumControlPoints_; ++j) {
-    if (knots_[j] <= evaluation_time &&
-        evaluation_time <= knots_[j + kOrder_]) {
-      active_control_point_indices.push_back(j);
-    }
-  }
-  active_control_point_indices.shrink_to_fit();
+  const std::vector<int> active_control_point_indices =
+      ComputeActiveControlPointIndices(evaluation_time);
 
   // Compute the basis values at evaluation_time
   VectorX<double> basis_function_values(kOrder_);
@@ -159,11 +152,32 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
                 vars);
 }
 
+double KinematicTrajectoryOptimization::ScaleTime(double time) const {
+  DRAKE_DEMAND(0.0 <= time && time <= 1.0);
+  return time * kDuration_;
+}
+
+std::vector<int>
+KinematicTrajectoryOptimization::ComputeActiveControlPointIndices(
+    double evaluation_time) const {
+  std::vector<int> active_control_point_indices(kOrder_);
+  for (int i = 0; i < kNumControlPoints_; ++i) {
+    if (knots_[i] <= evaluation_time + kEpsilonTime_ &&
+        evaluation_time <= knots_[i + kOrder_] + kEpsilonTime_) {
+      active_control_point_indices[0] = i;
+      break;
+    }
+  }
+  for (int i = 1; i < kOrder_; ++i) {
+    active_control_point_indices[i] = active_control_point_indices[i - 1] + 1;
+  }
+  return active_control_point_indices;
+}
+
 const VectorX<Expression>
 KinematicTrajectoryOptimization::GetSplineVariableExpression(
     double evaluation_time, int derivative_order) const {
-  DRAKE_DEMAND(0.0 <= evaluation_time && evaluation_time <= 1.0);
-  evaluation_time *= kDuration_;
+  evaluation_time = ScaleTime(evaluation_time);
   VectorX<Expression> expression(kNumPositions_);
   for (int i = 0; i < kNumPositions_; ++i) {
     expression(i) = Expression::Zero();
