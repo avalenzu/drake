@@ -17,6 +17,7 @@
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/rigid_body_tree_construction.h"
 
+DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at all points.");
 DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
 DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
@@ -59,10 +60,11 @@ int DoMain() {
                                        : 3 * kNumInternalIntervals + 1;
   const double kJerkWeight = FLAGS_jerk_weight;
   const double kDuration = FLAGS_duration;
+  double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
 
   const std::string kModelPath = FindResourceOrThrow(
       "drake/manipulation/models/iiwa_description/urdf/"
-      "iiwa14_polytope_collision.urdf");
+      "iiwa14_mesh_collision.urdf");
   auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
       kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
@@ -145,12 +147,18 @@ int DoMain() {
 
   const double kOrientationTolerance{FLAGS_ee_orientation_tolerance*M_PI/180};
 
+  if (kCollisionAvoidanceThreshold > 0) {
+    drake::log()->info("Adding collision avoidance constraints ...");
+    program.AddCollisionAvoidanceConstraint(kCollisionAvoidanceThreshold);
+    drake::log()->info("\tDone.");
+  }
 
   drake::log()->info("Adding body-pose constraint to mid-point ...");
   program.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
                                      kOrientationTolerance,
                                      FLAGS_ee_position_tolerance);
   drake::log()->info("\tDone.");
+
   drake::log()->info("Adding body-pose constraint to end-point ...");
   program.AddBodyPoseConstraint(1, "iiwa_link_ee", X_WFf,
                                      kOrientationTolerance,
@@ -264,11 +272,6 @@ int DoMain() {
   PiecewisePolynomialTrajectory solution_trajectory{
       program.ReconstructTrajectory(1)};
 
-  do {
-    visualizer.PlaybackTrajectory(
-        solution_trajectory.get_piecewise_polynomial());
-  } while (FLAGS_loop_animation);
-
   // Plot trajectory using CallMatlab
   const VectorX<double> x{VectorX<double>::LinSpaced(
       kNumPlottingPoints, solution_trajectory.get_start_time(),
@@ -319,6 +322,11 @@ int DoMain() {
   drake::log()->info("Control Point Values = \n{}",
                      program.GetSolution(program.control_points()));
 
+  // Publish an animation of the trajectory to the visualizer.
+  do {
+    visualizer.PlaybackTrajectory(
+        solution_trajectory.get_piecewise_polynomial());
+  } while (FLAGS_loop_animation);
   return 0;
 }
 
