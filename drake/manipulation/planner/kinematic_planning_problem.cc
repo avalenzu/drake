@@ -23,7 +23,7 @@ solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
 
 KinematicPlanningProblem::KinematicPlanningProblem(
     std::unique_ptr<RigidBodyTree<double>> tree)
-    : tree_(std::move(tree)), 
+    : tree_(std::move(tree)),
       placeholder_time_var_(
           solvers::VectorDecisionVariable<1>(symbolic::Variable("t"))),
       placeholder_position_vars_(
@@ -38,6 +38,8 @@ KinematicPlanningProblem::KinematicPlanningProblem(
 void KinematicPlanningProblem::AddFixedBoxToWorld(
     const Vector3<double>& size, const Isometry3<double>& X_WB) {
   world_geometry_.emplace_back(std::make_unique<DrakeShapes::Box>(size), X_WB);
+  AddGeometryToTree(*world_geometry_.back().first,
+                    world_geometry_.back().second);
 }
 
 void KinematicPlanningProblem::AddGeometryToTree(
