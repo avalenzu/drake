@@ -3,8 +3,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "drake/common/eigen_types.h"
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_optional.h"
+#include "drake/common/eigen_types.h"
 
 namespace drake {
 namespace examples {
@@ -23,8 +24,10 @@ class OptitrackConfiguration {
     Eigen::Vector3d dimensions;
   };
 
-  const Object& object(std::string object_name) const {
-    return objects_.at(object_name);
+  const optional<Object> object(std::string object_name) const {
+    const auto& itr = objects_.find(object_name);
+    return (itr == objects_.cend()) ? optional<Object>{objects_.at(object_name)}
+                                    : optional<Object>{};
   };
 
   int num_objects() const { return objects_.size(); };

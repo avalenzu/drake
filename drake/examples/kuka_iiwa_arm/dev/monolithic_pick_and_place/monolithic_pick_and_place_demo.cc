@@ -9,6 +9,8 @@
 #include "drake/common/find_resource.h"
 #include "drake/common/text_logging_gflags.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/state_machine_system.h"
+#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/optitrack_configuration.h"
+#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/default_optitrack_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_world/iiwa_wsg_diagram_factory.h"
 #include "drake/lcm/drake_lcm.h"
@@ -31,7 +33,7 @@
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/primitives/constant_vector_source.h"
 
-DEFINE_int32(target, 0, "ID of the target to pick.");
+DEFINE_string(target, "block", "Name of the target to pick.");
 DEFINE_double(orientation, 2 * M_PI, "Yaw angle of the box.");
 DEFINE_int32(start_position, 1, "Position index to start from");
 DEFINE_int32(end_position, 2, "Position index to end at");
@@ -75,24 +77,14 @@ const double kTableTopZInWorld = 0.736 + 0.057 / 2;
 const Eigen::Vector3d kRobotBase(0, 0, kTableTopZInWorld);
 const Eigen::Vector3d kTableBase(0.243716, 0.625087, 0.);
 
-struct Target {
-  std::string model_name;
-  Eigen::Vector3d dimensions;
-};
-
-Target GetTarget() {
-  Target targets[] = {
-    {"block_for_pick_and_place.urdf", Eigen::Vector3d(0.06, 0.06, 0.2)},
-    {"black_box.urdf", Eigen::Vector3d(0.055, 0.165, 0.18)},
-    {"simple_cuboid.urdf", Eigen::Vector3d(0.06, 0.06, 0.06)},
-    {"simple_cylinder.urdf", Eigen::Vector3d(0.065, 0.065, 0.13)}
-  };
-
-  const int num_targets = 4;
-  if ((FLAGS_target >= num_targets) || (FLAGS_target < 0)) {
-    throw std::runtime_error("Invalid target ID");
+OptitrackConfiguration::Object GetTarget(const OptitrackConfiguration& optitrack_configuration) {
+  optional<OptitrackConfiguration::Object> target =
+      optitrack_configuration.object(FLAGS_target);
+  if (target) {
+    return target.value();
+  } else {
+    throw std::runtime_error("Invalid target name: " + FLAGS_target);
   }
-  return targets[FLAGS_target];
 }
 
 std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
@@ -213,6 +205,15 @@ int DoMain(void) {
       AngleAxis<double>(-M_PI / 2., Vector3<double>::UnitZ()));
   place_locations.push_back(place_location);
 
+  OptitrackConfiguration optitrack_configuration{};
+  optitrack_configuration.AddObject("block", 0, "block_for_pick_and_place.urdf",
+                                    Eigen::Vector3d(0.06, 0.06, 0.2));
+  optitrack_configuration.AddObject("black_box", 1, "black_box.urdf",
+                                    Eigen::Vector3d(0.055, 0.165, 0.18));
+  optitrack_configuration.AddObject("cube", 2, "simple_cuboid.urdf",
+                                    Eigen::Vector3d(0.06, 0.06, 0.06));
+  optitrack_configuration.AddObject("cylinder", 3, "simple_cylinder.urdf",
+                                    Eigen::Vector3d(0.065, 0.065, 0.13));
   Target target = GetTarget();
   Eigen::Vector3d box_origin(0, 0, kTableTopZInWorld);
   box_origin += place_locations[FLAGS_start_position].translation();

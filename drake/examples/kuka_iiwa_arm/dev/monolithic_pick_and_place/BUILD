@@ -111,6 +111,8 @@ drake_cc_binary(
     ],
     deps = [
         ":kuka_pick_and_place_monolithic",
+        ":optitrack_configuration",
+        ":pick_and_place_planner",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
