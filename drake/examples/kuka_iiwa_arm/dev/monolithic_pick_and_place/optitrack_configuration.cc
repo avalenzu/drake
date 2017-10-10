@@ -7,9 +7,15 @@ namespace monolithic_pick_and_place {
 
 void OptitrackConfiguration::AddObject(const std::string& object_name,
                                        int object_id,
+                                       const std::string& model_path) {
+  objects_.emplace(object_name, Object{object_id, model_path});
+}
+
+void OptitrackConfiguration::AddObject(const std::string& object_name,
+                                       int object_id,
                                        const std::string& model_path,
-                                       const Vector3<double>& dimensions) {
-  objects_.emplace(object_name, Object{object_id, model_path, dimensions});
+                                       const Vector3<double>&) {
+  AddObject(object_name, object_id, model_path);
 }
 
 }  // namespace monolithic_pick_and_place

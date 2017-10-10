@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package drake.examples.kuka_iiwa_arm.monolithic_pick_and_place;
+
+// OptitrackRigidBody is a message that represents a rigid-body tracked by the
+// Optitrack motion-capture system.
+//
+// Next ID: 4
+message OptitrackRigidBody {
+    // The identifier assigned to the object in the Optitrack interface.
+    int32 id = 1;
+    // The user-friendly name of the object.
+    string name = 2;
+    // Path to a URDF file defining the geometry of the object.
+    string model_path = 3;
+}
+
+// OptitrackRigidBodies is a message that stores a number of rigid body
+// definitions
+message OptitrackRigidBodies {
+    repeated OptitrackRigidBody rigid_body = 1;
+}
+

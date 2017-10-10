@@ -1,0 +1,5 @@
+rigid_body {
+  id: 3
+  name: "cube"
+  model_path: "drake/examples/kuka_iiwa_arm/models/objects/simple_cuboid.urdf"
+}

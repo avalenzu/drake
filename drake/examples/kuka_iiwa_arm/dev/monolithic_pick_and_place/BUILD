@@ -5,9 +5,11 @@ load(
     "//tools:drake.bzl",
     "drake_cc_binary",
     "drake_cc_library",
+    "drake_cc_googletest",
 )
 load("//tools:lint.bzl", "add_lint_tests")
 load(":pick_and_place_test.bzl", "pick_and_place_test")
+load("@protobuf//:protobuf.bzl", "cc_proto_library")
 
 drake_cc_library(
     name = "optitrack_configuration",
@@ -21,6 +23,31 @@ drake_cc_library(
     ],
     deps = [
         "//drake/common",
+    ],
+)
+
+cc_proto_library(
+    name = "optitrack_configuration_proto",
+    data = [
+        ":optitrack_configurations",
+    ],
+    srcs = [
+        "optitrack_configuration.proto",
+    ],
+)
+
+drake_cc_library(
+    name = "load_optitrack_configuration",
+    srcs = [
+        "load_optitrack_configuration.cc",
+    ],
+    hdrs = [
+        "load_optitrack_configuration.h",
+    ],
+    deps = [
+        ":optitrack_configuration",
+        ":optitrack_configuration_proto",
+        "//drake/common/proto:protobuf",
     ],
 )
 
@@ -156,6 +183,15 @@ drake_cc_binary(
         "@com_github_gflags_gflags//:gflags",
         "@lcmtypes_bot2_core",
         "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
+    ],
+)
+
+# === test/ ===
+
+drake_cc_googletest(
+    name = "load_optitrack_configuration_test",
+    deps = [
+        ":load_optitrack_configuration",
     ],
 )
 

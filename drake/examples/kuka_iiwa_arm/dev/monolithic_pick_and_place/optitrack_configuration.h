@@ -19,8 +19,7 @@ class OptitrackConfiguration {
 
   struct Object {
     int object_id;
-    std::string model_name;
-    Eigen::Vector3d dimensions;
+    std::string model_path;
   };
 
   const Object& object(std::string object_name) const {
@@ -32,8 +31,11 @@ class OptitrackConfiguration {
   const Isometry3<double>& optitrack_frame() const { return X_WO_; };
 
   void AddObject(const std::string& object_name, int object_id,
-                 const std::string& model_path = "",
-                 const Vector3<double>& dimensions = Vector3<double>::Zero());
+                 const std::string& model_path = "");
+
+  void AddObject(const std::string& object_name, int object_id,
+                 const std::string& model_path,
+                 const Vector3<double>& dimensions);
 
  private:
   std::unordered_map<std::string, Object> objects_{};
