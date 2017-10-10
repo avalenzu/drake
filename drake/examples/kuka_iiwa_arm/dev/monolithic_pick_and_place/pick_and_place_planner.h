@@ -8,6 +8,18 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace monolithic_pick_and_place {
 
+struct Table {
+  std::string name;
+  double radius;
+};
+
+const std::vector<Table> DefaultTableInfo() {
+  return {{"round_table_1", 0.18},   {"round_table_2", 0.18},
+          {"round_table_3", 0.18},   {"round_table_4", 0.18},
+          {"folding_table_1", 0.18}, {"folding_table_2", 0.18},
+          {"folding_table_3", 0.18}, {"folding_table_4", 0.18}};
+};
+
 /// A custom `systems::Diagram` composed of a `PickAndPlaceStateMachineSystem`
 /// and `drake::manipulation::OptitrackPoseExtractor` systems.
 class PickAndPlacePlanner : public systems::Diagram<double> {
@@ -17,7 +29,7 @@ class PickAndPlacePlanner : public systems::Diagram<double> {
                       const std::string& iiwa_base_name,
                       const OptitrackConfiguration& optitrack_configuration,
                       const std::string& target_name,
-                      const std::vector<std::string>& table_names,
+                      const std::vector<Table>& table_info,
                       const double period_sec = 0.01);
 
   /**

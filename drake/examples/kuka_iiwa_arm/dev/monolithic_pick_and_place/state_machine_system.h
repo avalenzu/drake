@@ -17,6 +17,18 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace monolithic_pick_and_place {
 
+struct Table {
+  std::string name;
+  double radius;
+};
+
+const std::vector<Table> DefaultTableInfo() {
+  return {{"round_table_1", 0.18},   {"round_table_2", 0.18},
+          {"round_table_3", 0.18},   {"round_table_4", 0.18},
+          {"folding_table_1", 0.18}, {"folding_table_2", 0.18},
+          {"folding_table_3", 0.18}, {"folding_table_4", 0.18}};
+};
+
 /**
  * A class that implements the Finite-State-Machine logic for the
  * Pick-And-Place demo. This system should be used by coupling the outputs with
@@ -36,7 +48,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
       const std::string& iiwa_model_path,
       const std::string& end_effector_name,
       const Isometry3<double>& iiwa_base,
-      int num_tables,
+      const std::vector<double> table_radii,
       const Vector3<double>& box_dimensions,
       const double period_sec = 0.01);
 
@@ -138,7 +150,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
   std::string end_effector_name_;
   const Isometry3<double> iiwa_base_;
 
-  const int num_tables_;
+  std::vector<double> table_radii_;
   const Vector3<double> box_dimensions_;
 };
 

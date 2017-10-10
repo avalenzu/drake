@@ -93,14 +93,17 @@ PickAndPlacePlanner::PickAndPlacePlanner(
     const std::string& model_path, const std::string& end_effector_name,
     const std::string& iiwa_base_name,
     const OptitrackConfiguration& optitrack_configuration,
-    const std::string& target_name, const std::vector<std::string>& table_names,
+    const std::string& target_name, const std::vector<Table>& table_info,
     const double period_sec) {
   DiagramBuilder<double> builder;
 
+  std::vector<double> table_radii;
+  std::transform(table_info.begin(), table_info.end(), table_radii.begin(),
+                 [](const Table& table) -> double { return table.radius; });
+
   auto state_machine = builder.AddSystem<PickAndPlaceStateMachineSystem>(
       model_path, end_effector_name, Isometry3<double>::Identity(),
-      table_names.size(),
-      optitrack_configuration.object(target_name).dimensions);
+      table_radii, optitrack_configuration.GetObjectOrThrow(target_name).dimensions);
 
   // Export input ports for WSG status message.
   input_port_wsg_status_ =
@@ -118,7 +121,7 @@ PickAndPlacePlanner::PickAndPlacePlanner(
   const Isometry3<double>& X_WO{optitrack_configuration.optitrack_frame()};
   const double kOptitrackLcmStatusPeriod{1.0 / 120.0};
   const OptitrackConfiguration::Object& target{
-      optitrack_configuration.object(target_name)};
+      optitrack_configuration.GetObjectOrThrow(target_name)};
 
   // Connect blocks for target.
   auto optitrack_target_pose_extractor =
@@ -138,11 +141,11 @@ PickAndPlacePlanner::PickAndPlacePlanner(
                   state_machine->get_input_port_box_state());
 
   // Connect Optitrack blocks for tables.
-  for (int i = 0; i < static_cast<int>(table_names.size()); ++i) {
+  for (int i = 0; i < static_cast<int>(table_info.size()); ++i) {
     auto optitrack_table_pose_extractor =
         builder.AddSystem<manipulation::perception::OptitrackPoseExtractor>(
-            optitrack_configuration.object(table_names[i]).object_id, X_WO,
-            kOptitrackLcmStatusPeriod);
+            optitrack_configuration.GetObjectOrThrow(table_info[i].name).object_id,
+            X_WO, kOptitrackLcmStatusPeriod);
     optitrack_table_pose_extractor->set_name(
         "Optitrack table " + std::to_string(i) + "  pose extractor");
     builder.Connect(optitrack_message_passthrough->get_output_port(),
@@ -154,7 +157,7 @@ PickAndPlacePlanner::PickAndPlacePlanner(
   // Connect Optitrack blocks for IIWA base.
   auto optitrack_iiwa_base_pose_extractor =
       builder.AddSystem<OptitrackPoseExtractor>(
-          optitrack_configuration.object(iiwa_base_name).object_id, X_WO,
+          optitrack_configuration.GetObjectOrThrow(iiwa_base_name).object_id, X_WO,
           kOptitrackLcmStatusPeriod);
   optitrack_iiwa_base_pose_extractor->set_name(
       "Optitrack IIWA base pose extractor");

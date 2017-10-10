@@ -10,17 +10,21 @@ namespace kuka_iiwa_arm {
 namespace pick_and_place {
 
 WorldState::WorldState(const std::string& iiwa_model_path,
-                       const std::string& end_effector_name, int num_tables,
+                       const std::string& end_effector_name,
+                       const std::vector<double>& table_radii,
                        const Vector3<double>& object_dimensions)
-    : iiwa_model_path_(iiwa_model_path), end_effector_name_(end_effector_name), object_dimensions_(object_dimensions){
+    : iiwa_model_path_(iiwa_model_path),
+      end_effector_name_(end_effector_name),
+      object_dimensions_(object_dimensions),
+      table_radii_(table_radii) {
   iiwa_time_ = -1;
   iiwa_base_ = Isometry3<double>::Identity();
   iiwa_end_effector_pose_ = Isometry3<double>::Identity();
   iiwa_q_ = VectorX<double>::Zero(kIiwaArmNumJoints);
   iiwa_v_ = VectorX<double>::Zero(kIiwaArmNumJoints);
   iiwa_end_effector_vel_.setZero();
-  table_poses_.resize(num_tables, Isometry3<double>::Identity());
-  table_radii_.resize(num_tables, 0.18);
+  table_poses_.resize(table_radii_.size(), Isometry3<double>::Identity());
+  //table_radii_.resize(num_tables, 0.18);
 
   wsg_time_ = -1;
   wsg_q_ = 0;

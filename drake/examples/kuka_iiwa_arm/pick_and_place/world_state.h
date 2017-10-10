@@ -37,7 +37,8 @@ class WorldState {
    * received status.
    */
   WorldState(const std::string& iiwa_model_path,
-             const std::string& end_effector_name, int num_tables,
+             const std::string& end_effector_name,
+             const std::vector<double>& table_radii,
              const Vector3<double>& object_dimensions);
 
   // TODO(sam.creasey) We should consider adding an alternate
