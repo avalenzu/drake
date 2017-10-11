@@ -27,6 +27,15 @@ drake_cc_library(
 )
 
 cc_proto_library(
+    name = "model_maps_proto",
+    srcs = [
+        "model_maps/path_map.proto",
+        #"transform_map_path_map.proto",
+        #"id_map.proto",
+    ],
+)
+
+cc_proto_library(
     name = "optitrack_configuration_proto",
     data = [
         ":optitrack_configurations",
