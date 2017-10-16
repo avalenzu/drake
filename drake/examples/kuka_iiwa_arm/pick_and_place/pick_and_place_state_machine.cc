@@ -530,7 +530,7 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   // should be rotated about the y-axis by pitch_offset
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
   X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
-  X_OG.translation()[0] =
+  X_OG.translation().x() =
       std::min<double>(-0.5 * env_state.get_object_dimensions().x() +
                            0.07 * std::cos(pitch_offset),
                        0);
@@ -570,9 +570,8 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
 
   // Set LiftFromPlace pose
   X_OfO.setIdentity();
-  X_OfO.translation()[2] = kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
-                        X_WOf * X_OfO * X_OG * X_GE);
+                        X_WOf * X_OfO * X_OG * X_GGoffset * X_GE);
   return true;
 }
 
