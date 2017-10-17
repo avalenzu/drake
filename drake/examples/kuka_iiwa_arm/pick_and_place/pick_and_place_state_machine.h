@@ -101,7 +101,7 @@ class PickAndPlaceStateMachine {
                                     const WorldState& env_state);
 
   bool ComputeDesiredPoses(const WorldState& env_state, double yaw_offset,
-                           double pitch_offset);
+                           double pitch_offset, double roll_offset);
 
   bool ComputeTrajectories(const RigidBodyTree<double>& iiwa,
                            const WorldState& env_state);
@@ -149,6 +149,8 @@ class PickAndPlaceStateMachine {
 
   // Radius of the largest inscribed circle on the surface of each table.
   std::vector<double> table_radii_;
+
+  std::default_random_engine rand_generator_{1234};
 };
 
 }  // namespace pick_and_place

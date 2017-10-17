@@ -17,7 +17,7 @@ namespace pick_and_place {
 namespace {
 
 // Position the gripper 30cm above the object before grasp.
-const double kPreGraspHeightOffset = 0.3;
+const double kPreGraspOffset = 0.3;
 
 // Finger is 19 cm from end-effector frame.
 const double kEndEffectorToMidFingerDepth = 0.19;
@@ -496,8 +496,10 @@ bool ComputeInitialAndFinalObjectPoses(
   return true;
 }
 
-bool PickAndPlaceStateMachine::ComputeDesiredPoses(
-    const WorldState& env_state, double yaw_offset, double pitch_offset) {
+bool PickAndPlaceStateMachine::ComputeDesiredPoses(const WorldState& env_state,
+                                                   double yaw_offset,
+                                                   double pitch_offset,
+                                                   double roll_offset) {
   X_WE_desired_.clear();
 
   //     
@@ -530,6 +532,7 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   // should be rotated about the y-axis by pitch_offset
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
   X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
+  X_OG.rotate(AngleAxis<double>(roll_offset, Vector3<double>::UnitX()));
   X_OG.translation().x() =
       std::min<double>(-0.5 * env_state.get_object_dimensions().x() +
                            0.07 * std::cos(pitch_offset),
@@ -547,13 +550,13 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
 
   // Set ApproachPickPregrasp pose
   Isometry3<double> X_GGoffset{Isometry3<double>::Identity()};
-  X_GGoffset.translate(Vector3<double>(-0.75*kPreGraspHeightOffset, 0.0, 0.0));
+  X_GGoffset.translate(Vector3<double>(-0.75*kPreGraspOffset, 0.0, 0.0));
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
                         X_WOi * X_OiO * X_OG * X_GGoffset* X_GE);
 
   // Set LiftFromPick pose
   X_OiO.setIdentity();
-  X_OiO.translation()[2] = kPreGraspHeightOffset;
+  X_OiO.translation()[2] = kPreGraspOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPick,
                         X_WOi * X_OiO * X_OG * X_GE);
 
@@ -564,7 +567,7 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
 
   // Set ApproachPlacePregrasp pose
   X_OfO.setIdentity();
-  X_OfO.translation()[2] = kPreGraspHeightOffset;
+  X_OfO.translation()[2] = kPreGraspOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPlacePregrasp,
                         X_WOf * X_OfO * X_OG * X_GE);
 
@@ -611,7 +614,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(bool loop, const std::vector<
       // adjusting to tighter bounds until IK stopped reliably giving
       // results.
       tight_pos_tol_(0.001, 0.001, 0.001),
-      tight_rot_tol_(0.05),
+      tight_rot_tol_(5.0*M_PI/180.0),
       loose_pos_tol_(0.1, 0.1, 0.1),
       loose_rot_tol_(30*M_PI/180), table_radii_(table_radii) {
 }
@@ -628,9 +631,10 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<std::unique_ptr<PostureChangeConstraint>>
     posture_change_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
-  std::vector<double> yaw_offsets{M_PI, 0.0};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
-  std::vector<double> pitch_offsets{M_PI/8};
+  std::vector<double> yaw_offsets{M_PI, 0.0};
+  std::vector<double> pitch_offsets{M_PI/6};
+  std::vector<double> roll_offsets{M_PI, 0.0};
   int kNumJoints = iiwa.get_num_positions();
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
@@ -656,57 +660,70 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   }
   //q_nom.row(3).fill(M_PI_2);
 
-  for (double pitch_offset : pitch_offsets) {
-    for (double yaw_offset : yaw_offsets) {
-      if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
-        constraint_array.emplace_back();
+  for (double roll_offset : roll_offsets) {
+    for (double pitch_offset : pitch_offsets) {
+      for (double yaw_offset : yaw_offsets) {
+        if (ComputeDesiredPoses(env_state, yaw_offset, pitch_offset,
+                                roll_offset)) {
+          constraint_array.emplace_back();
 
-        for (int i = 0; i < kNumKnots; ++i) {
-          const PickAndPlaceState state{states[i]};
-          const Vector2<double> knot_tspan{t(i), t(i)};
+          for (int i = 0; i < kNumKnots; ++i) {
+            const PickAndPlaceState state{states[i]};
+            const Vector2<double> knot_tspan{t(i), t(i)};
 
-          // Extract desired position and orientation of end effector at the
-          // given
-          // state.
-          const Isometry3<double>& X_WE = X_WE_desired_.at(state);
-          const Vector3<double>& r_WE = X_WE.translation();
-          const Quaternion<double>& quat_WE{X_WE.rotation()};
+            // Extract desired position and orientation of end effector at the
+            // given
+            // state.
+            const Isometry3<double>& X_WE = X_WE_desired_.at(state);
+            const Vector3<double>& r_WE = X_WE.translation();
+            const Quaternion<double>& quat_WE{X_WE.rotation()};
 
-          // Constrain the end-effector position for all knots.
-          position_constraints.emplace_back(new WorldPositionConstraint(
-              robot.get(), end_effector_body_idx, end_effector_points,
-              r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
-          constraint_array.back().push_back(position_constraints.back().get());
-
-          // Constrain the end-effector orientation for all knots
-          orientation_constraints.emplace_back(
-              new WorldQuatConstraint(robot.get(), end_effector_body_idx,
-                                      Eigen::Vector4d(quat_WE.w(), quat_WE.x(),
-                                                      quat_WE.y(), quat_WE.z()),
-                                      tight_rot_tol_, knot_tspan));
-          constraint_array.back().push_back(
-              orientation_constraints.back().get());
-
-          // For each pair of adjacent knots, add a constraint on the change in
-          // joint
-          // positions.
-          if (i > 0) {
-            const VectorX<int> joint_indices =
-                VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
-            const Vector2<double> segment_tspan{t(i - 1), t(i)};
-            // The move to ApproachPlacePregrasp can require large joint
-            // motions.
-            const double max_joint_position_change =
-                (state == PickAndPlaceState::kApproachPlacePregrasp)
-                    ? 0.75 * M_PI
-                    : M_PI_4;
-            const VectorX<double> ub_change{max_joint_position_change *
-                                            VectorX<double>::Ones(kNumJoints)};
-            const VectorX<double> lb_change{-ub_change};
-            posture_change_constraints.emplace_back(new PostureChangeConstraint(
-                robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
+            // Constrain the end-effector position for all knots.
+            position_constraints.emplace_back(new WorldPositionConstraint(
+                robot.get(), end_effector_body_idx, end_effector_points,
+                r_WE - tight_pos_tol_, r_WE + tight_pos_tol_, knot_tspan));
             constraint_array.back().push_back(
-                posture_change_constraints.back().get());
+                position_constraints.back().get());
+
+            // Constrain the end-effector orientation for all knots
+            if (/*state == PickAndPlaceState::kApproachPickPregrasp ||
+                state == PickAndPlaceState::kApproachPick ||*/
+                //state == PickAndPlaceState::kApproachPlace ||
+                true || state == PickAndPlaceState::kLiftFromPlace) {
+              orientation_constraints.emplace_back(new WorldQuatConstraint(
+                  robot.get(), end_effector_body_idx,
+                  Eigen::Vector4d(quat_WE.w(), quat_WE.x(), quat_WE.y(),
+                                  quat_WE.z()),
+                  tight_rot_tol_, knot_tspan));
+              constraint_array.back().push_back(
+                  orientation_constraints.back().get());
+            }
+
+            // For each pair of adjacent knots, add a constraint on the change
+            // in
+            // joint
+            // positions.
+            if (i > 0) {
+              const VectorX<int> joint_indices =
+                  VectorX<int>::LinSpaced(kNumJoints, 0, kNumJoints - 1);
+              const Vector2<double> segment_tspan{t(i - 1), t(i)};
+              // The move to ApproachPlacePregrasp can require large joint
+              // motions.
+              const double max_joint_position_change =
+                  (state == PickAndPlaceState::kApproachPlacePregrasp)
+                      ? 0.75 * M_PI
+                      : M_PI_4;
+              const VectorX<double> ub_change{
+                  max_joint_position_change *
+                  VectorX<double>::Ones(kNumJoints)};
+              const VectorX<double> lb_change{-ub_change};
+              posture_change_constraints.emplace_back(
+                  new PostureChangeConstraint(robot.get(), joint_indices,
+                                              lb_change, ub_change,
+                                              segment_tspan));
+              constraint_array.back().push_back(
+                  posture_change_constraints.back().get());
+            }
           }
         }
       }
@@ -723,7 +740,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
                                             robot->get_num_positions()));
   const int kNumRestarts = 50;
-  std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
     MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
     for (int j = 0; j < kNumKnots; ++j) {
@@ -737,7 +753,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
       q_seed_local = ik_res.q_sol.back();
       break;
     } else {
-      q_seed_local = robot->getRandomConfiguration(rand_generator);
+      q_seed_local = robot->getRandomConfiguration(rand_generator_);
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
     }
   }

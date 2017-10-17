@@ -133,7 +133,7 @@ std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
     auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
     wsg_frame->get_mutable_transform_to_body()->rotate(
         Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
-    wsg_frame->get_mutable_transform_to_body()->translate(0.06*Eigen::Vector3d::UnitY());
+    wsg_frame->get_mutable_transform_to_body()->translate(0.04*Eigen::Vector3d::UnitY());
     int wsg_id = tree_builder->AddModelInstanceToFrame(
         "wsg", wsg_frame, drake::multibody::joints::kFixed);
     wsg_instances->push_back(tree_builder->get_model_info_for_instance(wsg_id));
