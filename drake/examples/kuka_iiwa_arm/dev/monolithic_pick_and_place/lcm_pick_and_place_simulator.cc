@@ -31,6 +31,8 @@
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_plant/rigid_body_plant.h"
 #include "drake/systems/analysis/runge_kutta2_integrator.h"
+#include "drake/systems/analysis/runge_kutta3_integrator.h"
+#include "drake/systems/analysis/implicit_euler_integrator.h"
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
@@ -47,7 +49,8 @@ DEFINE_double(orientation_1, 0, "Yaw angle of the first target.");
 DEFINE_double(orientation_2, M_PI_2, "Yaw angle of the second target.");
 DEFINE_int32(start_position_1, 1, "Position index to start from");
 DEFINE_int32(start_position_2, 3, "Position index to start from");
-DEFINE_double(dt, 5e-4, "Integration step size");
+DEFINE_double(dt, -1, "Minimum integration step size");
+DEFINE_double(accuracy, -1, "Target accuracy for the integrator");
 DEFINE_double(realtime_rate, 1.0, "Rate at which to run the simulation, "
     "relative to realtime");
 DEFINE_bool(quick, false, "Run only a brief simulation and return success "
@@ -67,7 +70,9 @@ namespace {
 using manipulation::schunk_wsg::SchunkWsgController;
 using manipulation::schunk_wsg::SchunkWsgStatusSender;
 using systems::RigidBodyPlant;
+using systems::ImplicitEulerIntegrator;
 using systems::RungeKutta2Integrator;
+using systems::RungeKutta3Integrator;
 using systems::Simulator;
 using manipulation::util::ModelInstanceInfo;
 using manipulation::planner::RobotPlanInterpolator;
@@ -237,6 +242,8 @@ int DoMain(void) {
   std::unique_ptr<systems::RigidBodyPlant<double>> model_ptr =
       BuildCombinedPlant(plant_configuration, &iiwa_instances, &wsg_instances,
                          &box_instances, &table_instances);
+  model_ptr->set_normal_contact_parameters(plant_configuration.stiffness,
+                                           plant_configuration.dissipation);
   model_ptr->set_friction_contact_parameters(
       plant_configuration.static_friction_coef,
       plant_configuration.dynamic_friction_coef,
@@ -388,10 +395,24 @@ int DoMain(void) {
   auto sys = builder.Build();
   Simulator<double> simulator(*sys);
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
-  simulator.reset_integrator<RungeKutta2Integrator<double>>(*sys,
-      FLAGS_dt, simulator.get_mutable_context());
-  simulator.get_mutable_integrator()->set_maximum_step_size(FLAGS_dt);
-  simulator.get_mutable_integrator()->set_fixed_step_mode(true);
+  simulator.reset_integrator<ImplicitEulerIntegrator<double>>(
+      *sys, simulator.get_mutable_context());
+  if (FLAGS_dt > 0) {
+    simulator.get_mutable_integrator()->set_requested_minimum_step_size(
+        FLAGS_dt);
+    simulator.get_mutable_integrator()
+        ->set_throw_on_minimum_step_size_violation(false);
+  }
+  if (FLAGS_accuracy > 0) {
+    simulator.get_mutable_integrator()->set_target_accuracy(FLAGS_accuracy);
+  }
+  //static_cast<ImplicitEulerIntegrator<double>*>(
+      //simulator.get_mutable_integrator())
+      //->set_jacobian_computation_scheme(
+          //ImplicitEulerIntegrator<
+              //double>::JacobianComputationScheme::kCentralDifference);
+  simulator.get_mutable_integrator()->set_maximum_step_size(0.1);
+  //simulator.get_mutable_integrator()->set_fixed_step_mode(true);
 
   lcm.StartReceiveThread();
   simulator.set_publish_every_time_step(false);

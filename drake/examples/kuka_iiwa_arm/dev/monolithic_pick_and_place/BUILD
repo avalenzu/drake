@@ -194,6 +194,7 @@ drake_cc_binary(
         "//drake/multibody/rigid_body_plant:contact_results_to_lcm",
         "//drake/multibody/rigid_body_plant:create_load_robot_message",
         "//drake/systems/analysis:simulator",
+        "//drake/systems/analysis:implicit_euler_integrator",
         "@com_github_gflags_gflags//:gflags",
         "@lcmtypes_bot2_core",
         "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
