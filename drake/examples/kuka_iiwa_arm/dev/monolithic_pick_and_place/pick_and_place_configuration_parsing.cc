@@ -42,10 +42,10 @@ Isometry3<double> ParsePose(const proto::Pose& pose) {
 }
 }  // namespace
 
-PlannerConfiguration ParsePlannerConfigurationOrThrow(
+pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
     std::string filename, RobotBaseIndex robot_base_index,
     TargetIndex target_index) {
-  PlannerConfiguration planner_configuration;
+  pick_and_place::PlannerConfiguration planner_configuration;
 
   // Read configuration file
   const proto::PickAndPlaceConfiguration configuration{
@@ -121,9 +121,9 @@ PlannerConfiguration ParsePlannerConfigurationOrThrow(
   return planner_configuration;
 }
 
-SimulatedPlantConfiguration ParseSimulatedPlantConfigurationOrThrow(
+pick_and_place::SimulatedPlantConfiguration ParseSimulatedPlantConfigurationOrThrow(
     const std::string& filename) {
-  SimulatedPlantConfiguration plant_configuration;
+  pick_and_place::SimulatedPlantConfiguration plant_configuration;
 
   // Read configuration file
   const proto::PickAndPlaceConfiguration configuration{
@@ -195,9 +195,9 @@ SimulatedPlantConfiguration ParseSimulatedPlantConfigurationOrThrow(
   return plant_configuration;
 }
 
-OptitrackConfiguration ParseOptitrackConfigurationOrThrow(
+pick_and_place::OptitrackConfiguration ParseOptitrackConfigurationOrThrow(
     const std::string& filename) {
-  OptitrackConfiguration optitrack_configuration;
+  pick_and_place::OptitrackConfiguration optitrack_configuration;
 
   // Read configuration file
   const proto::PickAndPlaceConfiguration configuration{

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "drake/systems/framework/diagram.h"
-#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_configuration.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 
 namespace drake {
 namespace examples {
@@ -12,7 +12,8 @@ namespace monolithic_pick_and_place {
 /// and `drake::manipulation::OptitrackPoseExtractor` systems.
 class PickAndPlacePlanner : public systems::Diagram<double> {
  public:
-  PickAndPlacePlanner(const PlannerConfiguration& configuration);
+  PickAndPlacePlanner(
+      const pick_and_place::PlannerConfiguration& configuration);
 
   /**
    * Getter for the input port corresponding to the abstract input with iiwa

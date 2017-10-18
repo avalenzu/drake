@@ -10,7 +10,7 @@
 #include "drake/common/find_resource.h"
 #include "drake/common/text_logging_gflags.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/state_machine_system.h"
-#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_configuration.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_configuration_parsing.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
@@ -87,7 +87,7 @@ const char kIiwaUrdf[] =
 const double kTableTopZInWorld = 0.736 + 0.057 / 2;
 
 std::unique_ptr<systems::RigidBodyPlant<double>> BuildCombinedPlant(
-    const SimulatedPlantConfiguration& configuration,
+    const pick_and_place::SimulatedPlantConfiguration& configuration,
     std::vector<ModelInstanceInfo<double>>* iiwa_instances,
     std::vector<ModelInstanceInfo<double>>* wsg_instances,
     std::vector<ModelInstanceInfo<double>>* object_instances,
@@ -224,9 +224,9 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 
 int DoMain(void) {
   // Parse configuration file
-  const SimulatedPlantConfiguration plant_configuration =
+  const pick_and_place::SimulatedPlantConfiguration plant_configuration =
       ParseSimulatedPlantConfigurationOrThrow(FLAGS_configuration_file);
-  const OptitrackConfiguration optitrack_configuration =
+  const pick_and_place::OptitrackConfiguration optitrack_configuration =
       ParseOptitrackConfigurationOrThrow(FLAGS_configuration_file);
 
   lcm::DrakeLcm lcm;

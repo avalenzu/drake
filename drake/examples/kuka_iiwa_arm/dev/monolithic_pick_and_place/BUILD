@@ -10,16 +10,6 @@ load("//tools:lint.bzl", "add_lint_tests")
 load(":pick_and_place_test.bzl", "pick_and_place_test")
 load("@protobuf//:protobuf.bzl", "cc_proto_library")
 
-drake_cc_library(
-    name = "pick_and_place_configuration",
-    hdrs = [
-        "pick_and_place_configuration.h",
-    ],
-    deps = [
-        "//drake/common",
-    ],
-)
-
 cc_proto_library(
     name = "pick_and_place_configuration_proto",
     srcs = [
@@ -36,8 +26,8 @@ drake_cc_library(
         "pick_and_place_configuration_parsing.h",
     ],
     deps = [
-        ":pick_and_place_configuration",
         ":pick_and_place_configuration_proto",
+        "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",
         "//drake/common:find_resource",
         "//drake/common/proto:protobuf",
         "//drake/math:geometric_transform",
@@ -68,7 +58,6 @@ drake_cc_library(
         "state_machine_system.h",
     ],
     deps = [
-        ":pick_and_place_configuration",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/examples/kuka_iiwa_arm/pick_and_place",
         "//drake/multibody:rigid_body_tree",
@@ -90,7 +79,6 @@ drake_cc_library(
     deps = [
         ":kuka_pick_and_place_monolithic",
         ":optitrack_configuration",
-        ":pick_and_place_configuration",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",

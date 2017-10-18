@@ -56,7 +56,7 @@ struct PickAndPlaceStateMachineSystem::InternalState {
 };
 
 PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
-    const PlannerConfiguration& configuration)
+    const pick_and_place::PlannerConfiguration& configuration)
     : configuration_(configuration) {
   input_port_iiwa_state_ = this->DeclareAbstractInputPort().get_index();
   input_port_box_state_ = this->DeclareAbstractInputPort().get_index();

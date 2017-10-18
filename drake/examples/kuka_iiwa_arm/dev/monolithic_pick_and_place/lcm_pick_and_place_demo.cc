@@ -58,7 +58,7 @@ int DoMain(void) {
   systems::DiagramBuilder<double> builder;
 
   // Parse configuration file
-  PlannerConfiguration planner_configuration = ParsePlannerConfigurationOrThrow(
+  pick_and_place::PlannerConfiguration planner_configuration = ParsePlannerConfigurationOrThrow(
       FLAGS_configuration_file, RobotBaseIndex(FLAGS_iiwa_index),
       TargetIndex(FLAGS_target));
 

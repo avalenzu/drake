@@ -8,7 +8,7 @@
 namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
-namespace monolithic_pick_and_place {
+namespace pick_and_place {
 
 struct PlannerConfiguration {
   std::string model_path;
@@ -40,7 +40,7 @@ struct OptitrackConfiguration {
   std::vector<int> table_optitrack_ids;
 };
 
-}  // namespace monolithic_pick_and_place
+}  // namespace pick_and_place
 }  // namespace kuka_iiwa_arm
 }  // namespace examples
 }  // namespace drake

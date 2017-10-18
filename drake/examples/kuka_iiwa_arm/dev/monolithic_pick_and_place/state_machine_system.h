@@ -6,7 +6,7 @@
 
 #include "bot_core/robot_state_t.hpp"
 
-#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_configuration.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_state_machine.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
 #include "drake/multibody/rigid_body_tree.h"
@@ -33,7 +33,8 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
    * @param period_sec : The update interval of the unrestricted update of
    * this system. This should be bigger than that of the PlanSource components.
    */
-  PickAndPlaceStateMachineSystem(const PlannerConfiguration& configuration);
+  PickAndPlaceStateMachineSystem(
+      const pick_and_place::PlannerConfiguration& configuration);
 
   std::unique_ptr<systems::AbstractValues> AllocateAbstractState()
       const override;
@@ -143,7 +144,7 @@ class PickAndPlaceStateMachineSystem : public systems::LeafSystem<double> {
   int output_port_iiwa_plan_{-1};
   int output_port_wsg_command_{-1};
 
-  const PlannerConfiguration configuration_;
+  const pick_and_place::PlannerConfiguration configuration_;
 
 };
 
