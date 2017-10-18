@@ -406,7 +406,6 @@ std::ostream& operator<<(std::ostream& os, const PickAndPlaceState value) {
 
 bool ComputeInitialAndFinalObjectPoses(
     const WorldState& env_state,
-    const std::vector<double>& table_radii,
     std::pair<Isometry3<double>, Isometry3<double>>* X_WO_initial_and_final) {
   // W -- planning World frame, coincides with kuka base frame.
   // S -- Sensor world frame
@@ -473,12 +472,11 @@ bool ComputeInitialAndFinalObjectPoses(
                       X_WT.translation().transpose());
   drake::log()->debug("R_WT = \n{}",
                       X_WT.linear());
-  double destination_table_radius = table_radii.at(destination_table_index);
 
   Vector3<double> dir_TO_final = -X_WT.linear().inverse()*r_WT;
   dir_TO_final.z() = 0;
   dir_TO_final.normalize();
-  Vector3<double> r_TO_final = 0.0 * destination_table_radius * dir_TO_final;
+  Vector3<double> r_TO_final = Vector3<double>::Zero();
   r_TO_final.z() += 0.5*env_state.get_object_dimensions().z();
   Matrix3<double> R_TO_final{Matrix3<double>::Identity()};
   R_TO_final.col(0) = -dir_TO_final;
@@ -517,8 +515,7 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   // E  - End-effector frame
   // G  - Gripper frame
   std::pair<Isometry3<double>, Isometry3<double>> X_WO_initial_and_final;
-  if (!ComputeInitialAndFinalObjectPoses(env_state, configuration_.table_radii,
-                                         &X_WO_initial_and_final)) {
+  if (!ComputeInitialAndFinalObjectPoses(env_state, &X_WO_initial_and_final)) {
     return false;
   }
 
