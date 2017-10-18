@@ -37,13 +37,11 @@ using pick_and_place::PickAndPlaceStateMachine;
 namespace monolithic_pick_and_place {
 
 struct PickAndPlaceStateMachineSystem::InternalState {
-  InternalState(const std::string& iiwa_model_path,
-                const std::string& end_effector_name,
-                const std::vector<double>& table_radii,
-                const Vector3<double>& object_dimensions)
-      : world_state(iiwa_model_path, end_effector_name, table_radii.size(),
-                    object_dimensions),
-        state_machine(table_radii.size() > 1, table_radii),
+  InternalState(const pick_and_place::PlannerConfiguration& configuration)
+      : world_state(configuration.model_path, configuration.end_effector_name,
+                    configuration.table_radii.size(),
+                    configuration.target_dimensions),
+        state_machine(configuration.table_radii.size() > 1, configuration),
         last_iiwa_plan(MakeDefaultIiwaPlan()),
         last_wsg_command(MakeDefaultWsgCommand()) {}
 
@@ -89,8 +87,7 @@ PickAndPlaceStateMachineSystem::AllocateAbstractState() const {
   std::vector<std::unique_ptr<systems::AbstractValue>> abstract_vals;
   abstract_vals.push_back(
       std::unique_ptr<systems::AbstractValue>(new systems::Value<InternalState>(
-          InternalState(iiwa_model_path(), end_effector_name(),
-                        configuration_.table_radii, target_dimensions()))));
+          InternalState(configuration_))));
   return std::make_unique<systems::AbstractValues>(std::move(abstract_vals));
 }
 
@@ -99,9 +96,7 @@ void PickAndPlaceStateMachineSystem::SetDefaultState(
     systems::State<double>* state) const {
   InternalState& internal_state =
       state->get_mutable_abstract_state<InternalState>(kStateIndex);
-  internal_state =
-      InternalState(iiwa_model_path(), end_effector_name(),
-                    configuration_.table_radii, target_dimensions());
+  internal_state = InternalState(configuration_);
 }
 
 void PickAndPlaceStateMachineSystem::CalcIiwaPlan(

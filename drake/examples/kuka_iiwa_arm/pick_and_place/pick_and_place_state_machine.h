@@ -10,6 +10,7 @@
 #include "drake/common/eigen_types.h"
 #include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/action.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
 #include "drake/lcmt_schunk_wsg_command.hpp"
 namespace drake {
@@ -80,7 +81,8 @@ class PickAndPlaceStateMachine {
   /// is true, the state machine will loop through the pick and place
   /// locations, otherwise it will remain in the kDone state once
   /// complete.
-  PickAndPlaceStateMachine(bool loop, const std::vector<double>& table_radii);
+  PickAndPlaceStateMachine(bool loop,
+                           const PlannerConfiguration& configuration);
   ~PickAndPlaceStateMachine();
 
   /// Update the state machine based on the state of the world in @p
@@ -147,8 +149,7 @@ class PickAndPlaceStateMachine {
   // Measured location of object at planning time
   Isometry3<double> expected_object_pose_;
 
-  // Radius of the largest inscribed circle on the surface of each table.
-  std::vector<double> table_radii_;
+  PlannerConfiguration configuration_;
 };
 
 }  // namespace pick_and_place
