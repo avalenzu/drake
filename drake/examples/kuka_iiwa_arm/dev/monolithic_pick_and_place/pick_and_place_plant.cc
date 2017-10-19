@@ -2,6 +2,9 @@
 
 #include "optitrack/optitrack_frame_t.hpp"
 
+#include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
 #include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
@@ -9,8 +12,10 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace monolithic_pick_and_place {
 
-using optitrack::optitrack_frame_t;
+using manipulation::schunk_wsg::SchunkWsgController;
+using manipulation::schunk_wsg::SchunkWsgStatusSender;
 using manipulation::util::WorldSimTreeBuilder;
+using optitrack::optitrack_frame_t;
 
 namespace {
 
@@ -174,23 +179,119 @@ class MockOptitrackSystem : public systems::LeafSystem<double> {
 }  // namespace
 
 PickAndPlacePlant::PickAndPlacePlant(
-    const pick_and_place::SimulatedPlantConfiguration& configuration) {
+    const pick_and_place::SimulatedPlantConfiguration& plant_configuration,
+    const pick_and_place::OptitrackConfiguration& optitrack_configuration) {
   systems::DiagramBuilder<double> builder;
   std::vector<ModelInstanceInfo<double>> iiwa_instances, wsg_instances,
       box_instances, table_instances;
   std::unique_ptr<systems::RigidBodyPlant<double>> model_ptr =
-      BuildCombinedPlant(configuration, &iiwa_instances, &wsg_instances,
+      BuildCombinedPlant(plant_configuration, &iiwa_instances, &wsg_instances,
                          &box_instances, &table_instances);
-  model_ptr->set_normal_contact_parameters(configuration.stiffness,
-                                           configuration.dissipation);
+  model_ptr->set_normal_contact_parameters(plant_configuration.stiffness,
+                                           plant_configuration.dissipation);
   model_ptr->set_friction_contact_parameters(
-      configuration.static_friction_coef,
-      configuration.dynamic_friction_coef,
-      configuration.v_stiction_tolerance);
+      plant_configuration.static_friction_coef,
+      plant_configuration.dynamic_friction_coef,
+      plant_configuration.v_stiction_tolerance);
 
   auto plant = builder.AddSystem<IiwaAndWsgPlantWithStateEstimator<double>>(
       std::move(model_ptr), iiwa_instances, wsg_instances, box_instances);
   plant->set_name("plant");
+
+  // Connect to "simulated" optitrack
+  std::vector<OptitrackBodyInfo> mocap_info;
+  const int kNumRobotBases(
+      optitrack_configuration.robot_base_optitrack_ids.size());
+  for (int i = 0; i < kNumRobotBases; ++i) {
+    mocap_info.push_back(std::make_tuple(
+        plant->get_tree()
+            .FindModelInstanceBodies(iiwa_instances[i].instance_id)
+            .front(),
+        Isometry3<double>::Identity(),
+        optitrack_configuration.robot_base_optitrack_ids[i]));
+  }
+  const int kNumObjects(optitrack_configuration.object_optitrack_ids.size());
+  for (int i = 0; i < kNumObjects; ++i) {
+    mocap_info.push_back(std::make_tuple(
+        plant->get_tree()
+            .FindModelInstanceBodies(box_instances[i].instance_id)
+            .front(),
+        Isometry3<double>::Identity(),
+        optitrack_configuration.object_optitrack_ids[i]));
+  }
+  const int kNumTables(optitrack_configuration.table_optitrack_ids.size());
+  for (int i = 0; i < kNumTables; ++i) {
+    mocap_info.push_back(std::make_tuple(
+        plant->get_tree()
+            .FindModelInstanceBodies(table_instances.at(i).instance_id)
+            .front(),
+        Isometry3<double>::Identity(),
+        optitrack_configuration.table_optitrack_ids[i]));
+  }
+
+  Eigen::Isometry3d X_WO = Eigen::Isometry3d::Identity();
+  Eigen::Matrix3d rot_mat;
+  rot_mat.col(0) = Eigen::Vector3d::UnitY();
+  rot_mat.col(1) = Eigen::Vector3d::UnitZ();
+  rot_mat.col(2) = Eigen::Vector3d::UnitX();
+  X_WO.linear() = rot_mat;
+  auto optitrack = builder.AddSystem<MockOptitrackSystem>(
+      X_WO, plant->get_tree(), mocap_info);
+  builder.Connect(plant->get_output_port_plant_state(),
+                  optitrack->get_input_port(0));
+  // Export Optitrack output port.
+  output_port_optitrack_frame_ =
+      builder.ExportOutput(optitrack->get_output_port(0));
+
+  std::vector<IiwaCommandReceiver*> iiwa_command_receivers;
+  const int kNumIiwas = plant_configuration.robot_base_poses.size();
+  for (int i = 0; i < kNumIiwas; ++i) {
+    const std::string suffix{"_" + std::to_string(i)};
+    auto iiwa_command_receiver = builder.AddSystem<IiwaCommandReceiver>(7);
+    iiwa_command_receivers.push_back(iiwa_command_receiver);
+    iiwa_command_receiver->set_name("iiwa_command_receiver" + suffix);
+
+    // Export iiwa command input port.
+    input_port_iiwa_command_.push_back(
+        builder.ExportInput(iiwa_command_receiver->get_input_port(0)));
+    builder.Connect(iiwa_command_receiver->get_output_port(0),
+                    plant->get_input_port_iiwa_state_command(i));
+
+    auto iiwa_status_sender = builder.AddSystem<IiwaStatusSender>(7);
+    iiwa_status_sender->set_name("iiwa_status_sender" + suffix);
+
+    builder.Connect(plant->get_output_port_iiwa_state(i),
+                    iiwa_status_sender->get_state_input_port());
+    builder.Connect(iiwa_command_receiver->get_output_port(0),
+                    iiwa_status_sender->get_command_input_port());
+
+    // Export iiwa status output port.
+    output_port_iiwa_status_.push_back(
+        builder.ExportOutput(iiwa_status_sender->get_output_port(0)));
+
+    auto wsg_controller = builder.AddSystem<SchunkWsgController>();
+    wsg_controller->set_name("wsg_controller" + suffix);
+    builder.Connect(plant->get_output_port_wsg_state(i),
+                    wsg_controller->get_state_input_port());
+    builder.Connect(wsg_controller->get_output_port(0),
+                    plant->get_input_port_wsg_command(i));
+
+    auto wsg_status_sender = builder.AddSystem<SchunkWsgStatusSender>(
+        plant->get_output_port_wsg_state(i).size(), 0, 0);
+    wsg_status_sender->set_name("wsg_status_sender" + suffix);
+    builder.Connect(plant->get_output_port_wsg_state(i),
+                    wsg_status_sender->get_input_port(0));
+
+    // Export wsg status output port.
+    output_port_wsg_status_.push_back(
+        builder.ExportOutput(wsg_status_sender->get_output_port(0)));
+
+    // Export iiwa robot_state_t output port.
+    output_port_iiwa_robot_state_.push_back(builder.ExportOutput(plant->get_output_port_iiwa_robot_state_msg(i)));
+
+    // Export WSG command input port.
+    input_port_wsg_command_.push_back(builder.ExportInput(wsg_controller->get_command_input_port()));
+  }
 }
 
 }  // namespace monolithic_pick_and_place

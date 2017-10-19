@@ -110,8 +110,10 @@ drake_cc_library(
         "//drake/manipulation/models/wsg_50_description:models",
     ],
     deps = [
+        "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
         "//drake/examples/kuka_iiwa_arm/iiwa_world:iiwa_wsg_diagram_factory",
         "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",
+        "//drake/manipulation/schunk_wsg:schunk_wsg_controller",
         "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
     ],
 )
