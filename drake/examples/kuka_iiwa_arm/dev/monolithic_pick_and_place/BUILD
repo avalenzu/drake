@@ -187,8 +187,7 @@ drake_cc_binary(
         "//drake/manipulation/models/wsg_50_description:models",
     ],
     deps = [
-        ":kuka_pick_and_place_monolithic",
-        ":optitrack_configuration",
+        ":pick_and_place_plant",
         ":pick_and_place_configuration_parsing",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
