@@ -359,13 +359,6 @@ int DoMain(void) {
     builder.Connect(plant->get_output_port_wsg_state(i),
                     wsg_status_sender->get_input_port(0));
 
-    auto object_state_pub = builder.AddSystem(
-        systems::lcm::LcmPublisherSystem::Make<bot_core::robot_state_t>(
-            "OBJECT_STATE_EST" + suffix, &lcm));
-    builder.Connect(plant->get_output_port_box_robot_state_msg(i),
-                    object_state_pub->get_input_port(0));
-    object_state_pub->set_publish_period(kIiwaLcmStatusPeriod);
-
     auto wsg_status_pub = builder.AddSystem(
         systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(
             "SCHUNK_WSG_STATUS" + suffix, &lcm));
