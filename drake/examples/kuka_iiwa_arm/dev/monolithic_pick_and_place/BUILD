@@ -97,6 +97,25 @@ drake_cc_library(
         "@lcmtypes_robotlocomotion",
     ],
 )
+
+drake_cc_library(
+    name = "pick_and_place_plant",
+    srcs = ["pick_and_place_plant.cc"],
+    hdrs = [
+        "pick_and_place_plant.h",
+    ],
+    data = [
+        "//drake/examples/kuka_iiwa_arm:models",
+        "//drake/manipulation/models/iiwa_description:models",
+        "//drake/manipulation/models/wsg_50_description:models",
+    ],
+    deps = [
+        "//drake/examples/kuka_iiwa_arm/iiwa_world:iiwa_wsg_diagram_factory",
+        "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",
+        "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
+    ],
+)
+
 drake_cc_binary(
     name = "lcm_pick_and_place_demo",
     srcs = ["lcm_pick_and_place_demo.cc"],
