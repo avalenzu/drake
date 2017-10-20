@@ -13,7 +13,6 @@
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_configuration_parsing.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
-#include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_world/iiwa_wsg_diagram_factory.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
 #include "drake/lcm/drake_lcm.h"
@@ -78,8 +77,6 @@ int DoMain(void) {
 
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;
-  std::vector<ModelInstanceInfo<double>> iiwa_instances, wsg_instances,
-      box_instances, table_instances;
 
   auto plant = builder.AddSystem<PickAndPlacePlant>(plant_configuration, optitrack_configuration);
 
