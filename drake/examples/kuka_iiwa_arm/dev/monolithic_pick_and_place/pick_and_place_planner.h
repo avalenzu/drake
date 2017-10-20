@@ -1,6 +1,7 @@
 #pragma once
 
 #include "drake/systems/framework/diagram.h"
+#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/state_machine_system.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 
 namespace drake {
@@ -53,6 +54,12 @@ class PickAndPlacePlanner : public systems::Diagram<double> {
     return this->get_output_port(output_port_wsg_command_);
   }
 
+  pick_and_place::PickAndPlaceState state(
+      const systems::Context<double>& context) const {
+    return state_machine_->state(
+        this->GetSubsystemContext(*state_machine_, context));
+  }
+
  private:
   // Input ports.
   int input_port_iiwa_state_{-1};
@@ -62,6 +69,8 @@ class PickAndPlacePlanner : public systems::Diagram<double> {
   // Output ports.
   int output_port_iiwa_plan_{-1};
   int output_port_wsg_command_{-1};
+
+  PickAndPlaceStateMachineSystem* state_machine_{};
 };
 }  // namespace monolithic_pick_and_place
 }  // namespace kuka_iiwa_arm

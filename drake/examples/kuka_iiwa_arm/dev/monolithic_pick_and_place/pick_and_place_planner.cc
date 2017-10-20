@@ -92,11 +92,11 @@ class RobotStateSplicer : public systems::LeafSystem<double> {
 PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfiguration& configuration) {
   DiagramBuilder<double> builder;
 
-  auto state_machine = builder.AddSystem<PickAndPlaceStateMachineSystem>(configuration);
+  state_machine_ = builder.AddSystem<PickAndPlaceStateMachineSystem>(configuration);
 
   // Export input ports for WSG status message.
   input_port_wsg_status_ =
-      builder.ExportInput(state_machine->get_input_port_wsg_status());
+      builder.ExportInput(state_machine_->get_input_port_wsg_status());
 
   // The Optitrack message needs to be passed to multiple OptitrackPoseExtractor
   // blocks, this pass-through block allows that.
@@ -125,7 +125,7 @@ PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfigurat
   builder.Connect(optitrack_target_pose_extractor->get_output_port(0),
                   optitrack_target_translator->get_input_port(0));
   builder.Connect(optitrack_target_translator->get_output_port(0),
-                  state_machine->get_input_port_box_state());
+                  state_machine_->get_input_port_box_state());
 
   // Connect Optitrack blocks for tables.
   for (int i = 0;
@@ -139,7 +139,7 @@ PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfigurat
     builder.Connect(optitrack_message_passthrough->get_output_port(),
                     optitrack_table_pose_extractor->get_input_port(0));
     builder.Connect(optitrack_table_pose_extractor->get_output_port(0),
-                    state_machine->get_input_port_table_state(i));
+                    state_machine_->get_input_port_table_state(i));
   }
 
   // Connect Optitrack blocks for IIWA base.
@@ -165,7 +165,7 @@ PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfigurat
   builder.Connect(optitrack_iiwa_base_translator->get_output_port(0),
                   iiwa_state_splicer->get_input_port_base_state());
   builder.Connect(iiwa_state_splicer->get_output_port(0),
-                  state_machine->get_input_port_iiwa_state());
+                  state_machine_->get_input_port_iiwa_state());
 
   // Export input port for IIWA status message.
   input_port_iiwa_state_ =
@@ -173,9 +173,9 @@ PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfigurat
 
   // Export output ports.
   output_port_iiwa_plan_ =
-      builder.ExportOutput(state_machine->get_output_port_iiwa_plan());
+      builder.ExportOutput(state_machine_->get_output_port_iiwa_plan());
   output_port_wsg_command_ =
-      builder.ExportOutput(state_machine->get_output_port_wsg_command());
+      builder.ExportOutput(state_machine_->get_output_port_wsg_command());
 
   // Build the system.
   builder.BuildInto(this);
