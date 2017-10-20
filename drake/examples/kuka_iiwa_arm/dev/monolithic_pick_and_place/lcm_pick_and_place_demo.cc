@@ -33,7 +33,6 @@
 
 DEFINE_int32(target, 0, "Index of the target to pick.");
 DEFINE_int32(iiwa_index, 0, "Index of the iiwa to use.");
-DEFINE_int32(end_position, -1, "Position index to end at");
 DEFINE_bool(use_channel_suffix, true,
             "If true, append a suffix to channel names");
 DEFINE_string(configuration_file,

@@ -41,13 +41,6 @@
 
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
               "Number of seconds to simulate.");
-DEFINE_int32(num_iiwas, 2, "Number of IIWA robots to place in the scene.");
-DEFINE_string(target_1, "big_yellow_robot", "Name of the target for arm 1.");
-DEFINE_string(target_2, "big_blue_robot", "Name of the target for arm 2.");
-DEFINE_double(orientation_1, 0, "Yaw angle of the first target.");
-DEFINE_double(orientation_2, M_PI_2, "Yaw angle of the second target.");
-DEFINE_int32(start_position_1, 1, "Position index to start from");
-DEFINE_int32(start_position_2, 3, "Position index to start from");
 DEFINE_double(dt, 5e-4, "Integration step size");
 DEFINE_double(realtime_rate, 1.0, "Rate at which to run the simulation, "
     "relative to realtime");
