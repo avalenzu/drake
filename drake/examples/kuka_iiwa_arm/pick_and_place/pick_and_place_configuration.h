@@ -10,13 +10,18 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace pick_and_place {
 
+struct OptitrackInfo {
+  int id{0};
+  Isometry3<double> X_MF{Isometry3<double>::Identity()};
+};
+
 struct PlannerConfiguration {
   std::string model_path;
   std::string end_effector_name;
   int iiwa_base_optitrack_id{};
   int target_optitrack_id{};
   Vector3<double> target_dimensions;
-  std::vector<int> table_optitrack_ids;
+  std::vector<OptitrackInfo> table_optitrack_info;
   std::vector<double> table_radii;
   double period_sec{0.01};
 };
@@ -37,7 +42,7 @@ struct SimulatedPlantConfiguration {
 struct OptitrackConfiguration {
   std::vector<int> robot_base_optitrack_ids{};
   std::vector<int> object_optitrack_ids{};
-  std::vector<int> table_optitrack_ids;
+  std::vector<OptitrackInfo> table_optitrack_info;
 };
 
 }  // namespace pick_and_place

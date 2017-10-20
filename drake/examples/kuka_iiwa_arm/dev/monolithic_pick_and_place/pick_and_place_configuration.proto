@@ -10,9 +10,11 @@ message Pose {
     repeated double rpy = 2;
 }
 
-// Next ID: 2
+// Next ID: 3
 message OptitrackInfo {
     int32 id = 1;
+    // Pose of the Optitrack frame relative to the model frame.
+    Pose X_MF = 2;
 }
 
 // Next ID: 4

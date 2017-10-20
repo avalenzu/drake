@@ -220,14 +220,14 @@ PickAndPlacePlant::PickAndPlacePlant(
         Isometry3<double>::Identity(),
         optitrack_configuration.object_optitrack_ids[i]));
   }
-  const int kNumTables(optitrack_configuration.table_optitrack_ids.size());
+  const int kNumTables(optitrack_configuration.table_optitrack_info.size());
   for (int i = 0; i < kNumTables; ++i) {
     mocap_info.push_back(std::make_tuple(
         iiwa_and_wsg_plant_->get_tree()
             .FindModelInstanceBodies(table_instances.at(i).instance_id)
             .front(),
-        Isometry3<double>::Identity(),
-        optitrack_configuration.table_optitrack_ids[i]));
+        optitrack_configuration.table_optitrack_info.at(i).X_MF,
+        optitrack_configuration.table_optitrack_info.at(i).id));
   }
 
   Eigen::Isometry3d X_WO = Eigen::Isometry3d::Identity();

@@ -129,10 +129,10 @@ PickAndPlacePlanner::PickAndPlacePlanner(const pick_and_place::PlannerConfigurat
 
   // Connect Optitrack blocks for tables.
   for (int i = 0;
-       i < static_cast<int>(configuration.table_optitrack_ids.size()); ++i) {
+       i < static_cast<int>(configuration.table_optitrack_info.size()); ++i) {
     auto optitrack_table_pose_extractor =
         builder.AddSystem<manipulation::perception::OptitrackPoseExtractor>(
-            configuration.table_optitrack_ids[i], X_WO,
+            configuration.table_optitrack_info[i].id, X_WO,
             kOptitrackLcmStatusPeriod);
     optitrack_table_pose_extractor->set_name(
         "Optitrack table " + std::to_string(i) + "  pose extractor");

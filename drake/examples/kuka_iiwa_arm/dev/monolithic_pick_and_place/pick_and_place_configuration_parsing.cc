@@ -52,11 +52,14 @@ pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
       ReadProtobufFileOrThrow(filename)};
 
   // Extract Optitrack Ids for tables
-  std::transform(configuration.table().begin(), configuration.table().end(),
-                 std::back_inserter(planner_configuration.table_optitrack_ids),
-                 [](const proto::Model& model) -> int {
-                   return model.optitrack_info().id();
-                 });
+  std::transform(
+      configuration.table().begin(), configuration.table().end(),
+      std::back_inserter(planner_configuration.table_optitrack_info),
+      [](const proto::Model& model) -> pick_and_place::OptitrackInfo {
+        return pick_and_place::OptitrackInfo(
+            {model.optitrack_info().id(),
+             ParsePose(model.optitrack_info().x_mf())});
+      });
 
   // Extract table radii
   std::transform(configuration.table().begin(), configuration.table().end(),
@@ -203,12 +206,15 @@ pick_and_place::OptitrackConfiguration ParseOptitrackConfigurationOrThrow(
   const proto::PickAndPlaceConfiguration configuration{
       ReadProtobufFileOrThrow(filename)};
 
-  // Extract Optitrack Ids for tables
-  std::transform(configuration.table().begin(), configuration.table().end(),
-                 std::back_inserter(optitrack_configuration.table_optitrack_ids),
-                 [](const proto::Model& model) -> int {
-                   return model.optitrack_info().id();
-                 });
+  // Extract Optitrack info for tables
+  std::transform(
+      configuration.table().begin(), configuration.table().end(),
+      std::back_inserter(optitrack_configuration.table_optitrack_info),
+      [](const proto::Model& model) -> pick_and_place::OptitrackInfo {
+        return pick_and_place::OptitrackInfo(
+            {model.optitrack_info().id(),
+             ParsePose(model.optitrack_info().x_mf())});
+      });
 
   // Extract Optitrack Ids for objects
   std::transform(configuration.object().begin(), configuration.object().end(),
