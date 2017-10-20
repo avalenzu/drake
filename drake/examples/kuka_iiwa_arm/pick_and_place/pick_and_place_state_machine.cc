@@ -528,14 +528,11 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   // should be rotated about the y-axis by pitch_offset
   Isometry3<double> X_OG{Isometry3<double>::Identity()};
   X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
-  X_OG.translation().x() =
+  X_OG.translation().x() = std::max<double>(
+      -0.5 * env_state.get_object_dimensions().x() + 0.02,
       std::min<double>(-0.5 * env_state.get_object_dimensions().x() +
                            0.07 * std::cos(pitch_offset),
-                       0);
-  X_OG.translation().z() =
-      std::max<double>(0.5 * env_state.get_object_dimensions().z() -
-                           0.07 * std::sin(pitch_offset),
-                       0);
+                       0));
 
   // Gripper is rotated relative to the end effector link.
   Isometry3<double> X_GE{Isometry3<double>::Identity()};
@@ -551,8 +548,9 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
   Isometry3<double> X_GGoffset{Isometry3<double>::Identity()};
   //X_GGoffset.translate(Vector3<double>(-0.75*kPreGraspHeightOffset, 0.0, 0.0));
   X_OiO.setIdentity();
-  X_OiO.translation()[0] = -0.1*kPreGraspHeightOffset;
-  X_OiO.translation()[2] = kPreGraspHeightOffset;
+  const double approach_angle = 70.0 * M_PI / 180.0;
+  X_OiO.translation()[0] = -cos(approach_angle)*kPreGraspHeightOffset;
+  X_OiO.translation()[2] = sin(approach_angle)*kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kApproachPickPregrasp,
                         X_WOi * X_OiO * X_OG * X_GGoffset* X_GE);
 
@@ -575,8 +573,8 @@ bool PickAndPlaceStateMachine::ComputeDesiredPoses(
 
   // Set LiftFromPlace pose
   X_OfO.setIdentity();
-  X_OfO.translation()[0] = -0.1*kPreGraspHeightOffset;
-  X_OfO.translation()[2] = kPreGraspHeightOffset;
+  X_OfO.translation()[0] = -cos(approach_angle)*kPreGraspHeightOffset;
+  X_OfO.translation()[2] = sin(approach_angle)*kPreGraspHeightOffset;
   X_WE_desired_.emplace(PickAndPlaceState::kLiftFromPlace,
                         X_WOf * X_OfO * X_OG * X_GE);
   return true;
@@ -638,7 +636,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   std::vector<std::vector<RigidBodyConstraint*>> constraint_array;
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::unique_ptr<RigidBodyTree<double>> robot{iiwa.Clone()};
-  std::vector<double> pitch_offsets{M_PI/6};
+  std::vector<double> pitch_offsets{M_PI/8};
   int kNumJoints = iiwa.get_num_positions();
 
   int end_effector_body_idx = robot->FindBodyIndex("iiwa_link_ee");
