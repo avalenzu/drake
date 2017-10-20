@@ -25,6 +25,7 @@
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/primitives/constant_vector_source.h"
+#include "drake/systems/primitives/zero_order_hold.h"
 
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
               "Number of seconds to simulate.");
@@ -37,7 +38,7 @@ DEFINE_bool(quick, false,
             "without executing the entire task");
 DEFINE_string(configuration_file,
               "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/"
-              "configuration/default.pick_and_place_configuration",
+              "configuration/yellow_posts.pick_and_place_configuration",
               "Path to the configuration file.");
 
 namespace drake {
@@ -47,8 +48,9 @@ namespace monolithic_pick_and_place {
 namespace {
 
 using manipulation::planner::InterpolatorType;
-using systems::Simulator;
 using systems::RungeKutta2Integrator;
+using systems::Simulator;
+using systems::ZeroOrderHold;
 
 const std::string kIiwaUrdf =
     "drake/manipulation/models/iiwa_description/urdf/"
@@ -63,6 +65,39 @@ int DoMain(void) {
 
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;
+
+  //
+  //
+  //
+  //     +-------------------------------------------------------------+
+  //     |                                                             |
+  //     |    +-------+  wsg command                                   |
+  //     +--->|Planner|---------------+    +--------+                  |
+  //          |       |               |    |        | iiwa robot_state |
+  //  +------>|       |               |    |        |------------------+
+  //  |       |       |  plan         |    |        |
+  //  |  +--->|       |-------+       |    |        | vis info   +----------+
+  //  |  |    +-------+       |       +--->|  Plant |----------->|Visualizer|
+  //  |  |                    |            |        |            +----------+
+  //  |  |  +-----------------+            |        | optitrack
+  //  |  |  |                              |        |------------------+
+  //  |  |  |   +------------+     iiwa    |        |                  |
+  //  |  |  +-->|            |  command    |        | wsg_status       |
+  //  |  |      |            |------------>|        |--------------+   |
+  //  |  |      |            |             |        |              |   |
+  //  |  |  +-->|Interpolator|             |        | iiwa_status  |   |
+  //  |  |  |   +------------+             |        |------------+ |   |
+  //  |  |  |                              +--------+            | |   |
+  //  |  |  |                    +------+                        | |   |
+  //  |  |  +--------------------| ZOH  |<-----------------------+ |   |
+  //  |  |                       +------+                          |   |
+  //  |  +---------------------------------------------------------+   |
+  //  |                                                                |
+  //  +----------------------------------------------------------------+
+  //
+  //
+  //
+  //
 
   // Add the plant.
   auto plant = builder.AddSystem<PickAndPlacePlant>(plant_configuration,
@@ -92,42 +127,70 @@ int DoMain(void) {
   // Loop over arms to add planners and plan interpolators.
   const int kNumIiwa(plant_configuration.robot_base_poses.size());
   std::vector<PickAndPlacePlanner*> planners;
+  std::vector<LcmPlanInterpolator*> plan_interpolators;
   for (int i = 0; i < kNumIiwa; ++i) {
     // Parse planner configuration.
     const pick_and_place::PlannerConfiguration planner_configuration =
-        ParsePlannerConfigurationOrThrow(FLAGS_configuration_file, RobotBaseIndex(i), TargetIndex(i));
+        ParsePlannerConfigurationOrThrow(FLAGS_configuration_file,
+                                         RobotBaseIndex(i), TargetIndex(i));
     // Add planner.
     auto planner =
         builder.AddSystem<PickAndPlacePlanner>(planner_configuration);
     planners.push_back(planner);
     // Add plan interpolator.
-    auto plan_interpolator = builder.AddSystem<LcmPlanInterpolator>(FindResourceOrThrow(planner_configuration.model_path), InterpolatorType::Cubic);
+    auto plan_interpolator = builder.AddSystem<LcmPlanInterpolator>(
+        FindResourceOrThrow(planner_configuration.model_path),
+        InterpolatorType::Cubic);
+    plan_interpolators.push_back(plan_interpolator);
+    // Add a zero-order hold between the plant and the interpolator
+    auto iiwa_status_zoh = builder.AddSystem<ZeroOrderHold<double>>(
+        kIiwaLcmStatusPeriod, systems::Value<lcmt_iiwa_status>());
     // Connect planner, plan interpolator, and plant.
     // Plant --> Planner
-    builder.Connect(plant->get_output_port_wsg_status(i), planner->get_input_port_wsg_status());
-    builder.Connect(plant->get_output_port_iiwa_robot_state(i), planner->get_input_port_iiwa_state());
-    builder.Connect(plant->get_output_port_optitrack_frame(), planner->get_input_port_optitrack_message());
+    builder.Connect(plant->get_output_port_wsg_status(i),
+                    planner->get_input_port_wsg_status());
+    builder.Connect(plant->get_output_port_iiwa_robot_state(i),
+                    planner->get_input_port_iiwa_state());
+    builder.Connect(plant->get_output_port_optitrack_frame(),
+                    planner->get_input_port_optitrack_message());
     // Plant --> plan interpolator
-    builder.Connect(plant->get_output_port_iiwa_status(i), plan_interpolator->get_input_port_iiwa_status());
+    builder.Connect(plant->get_output_port_iiwa_status(i),
+                    iiwa_status_zoh->get_input_port());
+    builder.Connect(iiwa_status_zoh->get_output_port(),
+                    plan_interpolator->get_input_port_iiwa_status());
     // Planner --> Plant
-    builder.Connect(planner->get_output_port_wsg_command(), plant->get_input_port_wsg_command(i));
+    builder.Connect(planner->get_output_port_wsg_command(),
+                    plant->get_input_port_wsg_command(i));
     // Planner --> Plan Interpolator
-    builder.Connect(planner->get_output_port_iiwa_plan(), plan_interpolator->get_input_port_iiwa_plan());
+    builder.Connect(planner->get_output_port_iiwa_plan(),
+                    plan_interpolator->get_input_port_iiwa_plan());
     // plan interpolator --> plant
-    builder.Connect(plan_interpolator->get_output_port_iiwa_command(), plant->get_input_port_iiwa_command(i));
+    builder.Connect(plan_interpolator->get_output_port_iiwa_command(),
+                    plant->get_input_port_iiwa_command(i));
   }
 
   auto sys = builder.Build();
   Simulator<double> simulator(*sys);
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
-  simulator.reset_integrator<RungeKutta2Integrator<double>>(*sys,
-      FLAGS_dt, simulator.get_mutable_context());
+  simulator.reset_integrator<RungeKutta2Integrator<double>>(
+      *sys, FLAGS_dt, simulator.get_mutable_context());
   simulator.get_mutable_integrator()->set_maximum_step_size(FLAGS_dt);
   simulator.get_mutable_integrator()->set_fixed_step_mode(true);
 
   lcm.StartReceiveThread();
   simulator.set_publish_every_time_step(false);
   simulator.Initialize();
+
+  // Initialize the plan interpolators
+  auto context = simulator.get_mutable_context();
+  for (auto& plan_interpolator : plan_interpolators) {
+    const VectorX<double> q0{
+        VectorX<double>::Zero(plan_interpolator->num_joints())};
+    auto& plan_interpolator_context =
+        sys->GetMutableSubsystemContext(*plan_interpolator, context);
+    plan_interpolator->Initialize(context->get_time(), q0,
+                                  &plan_interpolator_context);
+  }
 
   // Step the simulator in some small increment.  Between steps, check
   // to see if the state machine thinks we're done, and if so that the
@@ -143,52 +206,51 @@ int DoMain(void) {
     }
     done = true;
     for (const auto& planner : planners) {
-      done = done &&
-             planner->state(
-                 sys->GetSubsystemContext(*planner, simulator.get_context())) ==
-                 pick_and_place::PickAndPlaceState::kDone;
+      done = done && planner->state(sys->GetSubsystemContext(
+                         *planner, simulator.get_context())) ==
+                         pick_and_place::PickAndPlaceState::kDone;
     }
   }
 
-  //const pick_and_place::WorldState& world_state = state_machine->world_state(
-      //sys->GetSubsystemContext(*state_machine, simulator.get_context()));
-  //const Isometry3<double>& object_pose = world_state.get_object_pose();
-  //const Vector6<double>& object_velocity = world_state.get_object_velocity();
-  //Isometry3<double> goal = place_locations.back();
-  //goal.translation()(2) += kTableTopZInWorld;
-  //Eigen::Vector3d object_rpy = math::rotmat2rpy(object_pose.linear());
-  //Eigen::Vector3d goal_rpy = math::rotmat2rpy(goal.linear());
+  // const pick_and_place::WorldState& world_state = state_machine->world_state(
+  // sys->GetSubsystemContext(*state_machine, simulator.get_context()));
+  // const Isometry3<double>& object_pose = world_state.get_object_pose();
+  // const Vector6<double>& object_velocity = world_state.get_object_velocity();
+  // Isometry3<double> goal = place_locations.back();
+  // goal.translation()(2) += kTableTopZInWorld;
+  // Eigen::Vector3d object_rpy = math::rotmat2rpy(object_pose.linear());
+  // Eigen::Vector3d goal_rpy = math::rotmat2rpy(goal.linear());
 
-  //drake::log()->info("Pose: {} {}", object_pose.translation().transpose(),
-                     //object_rpy.transpose());
-  //drake::log()->info("Velocity: {}", object_velocity.transpose());
-  //drake::log()->info("Goal: {} {}", goal.translation().transpose(),
-                     //goal_rpy.transpose());
+  // drake::log()->info("Pose: {} {}", object_pose.translation().transpose(),
+  // object_rpy.transpose());
+  // drake::log()->info("Velocity: {}", object_velocity.transpose());
+  // drake::log()->info("Goal: {} {}", goal.translation().transpose(),
+  // goal_rpy.transpose());
 
-  //const double position_tolerance = 0.02;
-  //Eigen::Vector3d position_error =
-      //object_pose.translation() - goal.translation();
-  //drake::log()->info("Position error: {}", position_error.transpose());
-  //DRAKE_DEMAND(std::abs(position_error(0)) < position_tolerance);
-  //DRAKE_DEMAND(std::abs(position_error(1)) < position_tolerance);
-  //DRAKE_DEMAND(std::abs(position_error(2)) < position_tolerance);
+  // const double position_tolerance = 0.02;
+  // Eigen::Vector3d position_error =
+  // object_pose.translation() - goal.translation();
+  // drake::log()->info("Position error: {}", position_error.transpose());
+  // DRAKE_DEMAND(std::abs(position_error(0)) < position_tolerance);
+  // DRAKE_DEMAND(std::abs(position_error(1)) < position_tolerance);
+  // DRAKE_DEMAND(std::abs(position_error(2)) < position_tolerance);
 
-  //const double angle_tolerance = 0.0873;  // 5 degrees
-  //Eigen::Vector3d rpy_error = object_rpy - goal_rpy;
-  //drake::log()->info("RPY error: {}", rpy_error.transpose());
-  //DRAKE_DEMAND(std::abs(rpy_error(0)) < angle_tolerance);
-  //DRAKE_DEMAND(std::abs(rpy_error(1)) < angle_tolerance);
-  //DRAKE_DEMAND(std::abs(rpy_error(2)) < angle_tolerance);
+  // const double angle_tolerance = 0.0873;  // 5 degrees
+  // Eigen::Vector3d rpy_error = object_rpy - goal_rpy;
+  // drake::log()->info("RPY error: {}", rpy_error.transpose());
+  // DRAKE_DEMAND(std::abs(rpy_error(0)) < angle_tolerance);
+  // DRAKE_DEMAND(std::abs(rpy_error(1)) < angle_tolerance);
+  // DRAKE_DEMAND(std::abs(rpy_error(2)) < angle_tolerance);
 
-  //const double linear_velocity_tolerance = 0.1;
-  //DRAKE_DEMAND(std::abs(object_velocity(0)) < linear_velocity_tolerance);
-  //DRAKE_DEMAND(std::abs(object_velocity(1)) < linear_velocity_tolerance);
-  //DRAKE_DEMAND(std::abs(object_velocity(2)) < linear_velocity_tolerance);
+  // const double linear_velocity_tolerance = 0.1;
+  // DRAKE_DEMAND(std::abs(object_velocity(0)) < linear_velocity_tolerance);
+  // DRAKE_DEMAND(std::abs(object_velocity(1)) < linear_velocity_tolerance);
+  // DRAKE_DEMAND(std::abs(object_velocity(2)) < linear_velocity_tolerance);
 
-  //const double angular_velocity_tolerance = 0.1;
-  //DRAKE_DEMAND(std::abs(object_velocity(3)) < angular_velocity_tolerance);
-  //DRAKE_DEMAND(std::abs(object_velocity(4)) < angular_velocity_tolerance);
-  //DRAKE_DEMAND(std::abs(object_velocity(5)) < angular_velocity_tolerance);
+  // const double angular_velocity_tolerance = 0.1;
+  // DRAKE_DEMAND(std::abs(object_velocity(3)) < angular_velocity_tolerance);
+  // DRAKE_DEMAND(std::abs(object_velocity(4)) < angular_velocity_tolerance);
+  // DRAKE_DEMAND(std::abs(object_velocity(5)) < angular_velocity_tolerance);
 
   return 0;
 }

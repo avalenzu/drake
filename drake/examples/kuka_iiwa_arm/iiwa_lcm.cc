@@ -49,7 +49,7 @@ void IiwaCommandReceiver::DoCalcDiscreteVariableUpdates(
   DRAKE_ASSERT(input != nullptr);
   const auto& command = input->GetValue<lcmt_iiwa_command>();
   // TODO(sam.creasey) Support torque control.
-  DRAKE_ASSERT(command.num_torques == 0);
+  //DRAKE_ASSERT(command.num_torques == 0);
 
 
   // If we're using a default constructed message (haven't received

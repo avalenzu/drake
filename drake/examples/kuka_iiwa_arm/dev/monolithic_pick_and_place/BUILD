@@ -172,6 +172,7 @@ drake_cc_binary(
         "//drake/lcmtypes:iiwa",
         "//drake/multibody/rigid_body_plant:contact_results_to_lcm",
         "//drake/systems/analysis:simulator",
+        "//drake/systems/primitives:zero_order_hold",
         "@com_github_gflags_gflags//:gflags",
         "@lcmtypes_bot2_core",
     ],
