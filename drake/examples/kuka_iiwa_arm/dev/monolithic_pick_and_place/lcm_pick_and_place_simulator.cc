@@ -112,7 +112,7 @@ int DoMain(void) {
 
   const int kNumIiwa{plant->num_iiwa()};
   for (int i = 0; i < kNumIiwa; ++i) {
-    const std::string suffix{"_" + std::to_string(i)};
+    const std::string suffix = (kNumIiwa > 1) ? "_" + std::to_string(i) : "";
     auto iiwa_command_sub = builder.AddSystem(
         systems::lcm::LcmSubscriberSystem::Make<lcmt_iiwa_command>(
             "IIWA_COMMAND" + suffix, &lcm));
@@ -138,7 +138,7 @@ int DoMain(void) {
   }
   const int kNumWsg{plant->num_wsg()};
   for (int i = 0; i < kNumWsg; ++i) {
-    const std::string suffix{"_" + std::to_string(i)};
+    const std::string suffix = (kNumWsg > 1) ? "_" + std::to_string(i) : "";
     auto wsg_status_pub = builder.AddSystem(
         systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(
             "SCHUNK_WSG_STATUS" + suffix, &lcm));
