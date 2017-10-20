@@ -137,48 +137,55 @@
         <cast_shadows>1</cast_shadows>
         <transparency>0</transparency>
       </visual>
-      <!-- A sequence of spaced spheres the *width* of the finger from the tip
-      towards the base. -->
+      <!-- A triangle of spheres at the finger tip. -->
       <collision name='collision'>
-        <pose frame=''>0 -0.0225 0 0 0 0</pose>
+        <pose frame=''>0 0.0375 0.0080 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
+      <visual name='visual'>
+        <pose frame=''>0 0.0375 0.0080 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.008</radius>
+          </sphere>
+        </geometry>
+      </visual>
       <collision name='collision'>
-        <pose frame=''>0 -0.0075 0 0 0 0</pose>
+        <pose frame=''>0 0.0375 -0.0080 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
+      <visual name='visual'>
+        <pose frame=''>0 0.0375 -0.0080 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.008</radius>
+          </sphere>
+        </geometry>
+      </visual>
       <collision name='collision'>
-        <pose frame=''>0 0.0075 0 0 0 0</pose>
+        <pose frame=''>0 0.0236 0.0 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
-      <collision name='collision'>
-        <pose frame=''>0 0.0225 0 0 0 0</pose>
+      <visual name='visual'>
+        <pose frame=''>0 0.0236 0.0 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
-      </collision>
-      <collision name='collision'>
-        <pose frame=''>0 0.0375 0 0 0 0</pose>
-        <geometry>
-          <sphere>
-            <radius>0.008</radius>
-          </sphere>
-        </geometry>
-      </collision>
+      </visual>
     </link>
     <link name='left_pusher'>
       <pose frame=''>0.028 0.037 0 0 0 -0.909</pose>
@@ -256,48 +263,55 @@
         <cast_shadows>1</cast_shadows>
         <transparency>0</transparency>
       </visual>
-      <!-- A sequence of spaced spheres the *width* of the finger from the tip
-      towards the base. -->
+      <!-- A triangle of spheres at the finger tip. -->
       <collision name='collision'>
-        <pose frame=''>0 -0.0225 0 0 0 0</pose>
+        <pose frame=''>0 0.0375 0.0080 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
+      <visual name='visual'>
+        <pose frame=''>0 0.0375 0.0080 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.008</radius>
+          </sphere>
+        </geometry>
+      </visual>
       <collision name='collision'>
-        <pose frame=''>0 -0.0075 0 0 0 0</pose>
+        <pose frame=''>0 0.0375 -0.0080 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
+      <visual name='visual'>
+        <pose frame=''>0 0.0375 -0.0080 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.008</radius>
+          </sphere>
+        </geometry>
+      </visual>
       <collision name='collision'>
-        <pose frame=''>0 0.0075 0 0 0 0</pose>
+        <pose frame=''>0 0.0236 0.0 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
       </collision>
-      <collision name='collision'>
-        <pose frame=''>0 0.0225 0 0 0 0</pose>
+      <visual name='visual'>
+        <pose frame=''>0 0.0236 0.0 0 0 0</pose>
         <geometry>
           <sphere>
             <radius>0.008</radius>
           </sphere>
         </geometry>
-      </collision>
-      <collision name='collision'>
-        <pose frame=''>0 0.0375 0 0 0 0</pose>
-        <geometry>
-          <sphere>
-            <radius>0.008</radius>
-          </sphere>
-        </geometry>
-      </collision>
+      </visual>
     </link>
     <link name='right_pusher'>
       <pose frame=''>-0.028 -0.037 0 0 0 -0.909</pose>
