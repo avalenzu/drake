@@ -60,6 +60,20 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "lcm_plan_interpolator",
+    srcs = ["lcm_plan_interpolator.cc"],
+    hdrs = [
+        "lcm_plan_interpolator.h",
+    ],
+    deps = [
+        ":iiwa_lcm",
+        "//drake/manipulation/planner:robot_plan_interpolator",
+        "//drake/systems/framework:diagram_builder",
+        "//drake/systems/primitives:demultiplexer",
+    ],
+)
+
 drake_cc_binary(
     name = "iiwa_controller",
     srcs = ["iiwa_controller.cc"],
