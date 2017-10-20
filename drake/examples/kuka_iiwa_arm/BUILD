@@ -83,11 +83,10 @@ drake_cc_binary(
     ],
     deps = [
         ":iiwa_common",
-        ":iiwa_lcm",
+        ":lcm_plan_interpolator",
         "//drake/common:find_resource",
         "//drake/common:text_logging_gflags",
         "//drake/lcm",
-        "//drake/manipulation/planner:robot_plan_interpolator",
         "//drake/systems/analysis:simulator",
         "//drake/systems/lcm",
         "//drake/systems/lcm:lcm_driven_loop",
