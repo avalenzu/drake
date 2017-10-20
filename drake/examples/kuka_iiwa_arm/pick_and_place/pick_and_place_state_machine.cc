@@ -724,7 +724,6 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
   IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
   const int kNumRestarts = 50;
-  std::default_random_engine rand_generator{1234};
   for (int i = 0; i < kNumRestarts; ++i) {
     MatrixX<double> q_knots_seed{robot->get_num_positions(), kNumKnots};
     for (int j = 0; j < kNumKnots; ++j) {
@@ -739,7 +738,7 @@ bool PickAndPlaceStateMachine::ComputeNominalConfigurations(
       q_seed_local = ik_res.q_sol.back();
       break;
     } else {
-      q_seed_local = robot->getRandomConfiguration(rand_generator);
+      q_seed_local = robot->getRandomConfiguration(rand_generator_);
       drake::log()->warn("Attempt {} failed with info {}", i, ik_res.info[0]);
     }
   }

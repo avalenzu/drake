@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <random>
 #include <vector>
 
 #include "robotlocomotion/robot_plan_t.hpp"
@@ -150,6 +151,8 @@ class PickAndPlaceStateMachine {
   Isometry3<double> expected_object_pose_;
 
   PlannerConfiguration configuration_;
+
+  std::default_random_engine rand_generator_{1234};
 };
 
 }  // namespace pick_and_place
