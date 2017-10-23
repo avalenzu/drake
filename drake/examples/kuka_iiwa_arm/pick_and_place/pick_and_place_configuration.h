@@ -4,11 +4,15 @@
 #include <vector>
 
 #include "drake/common/eigen_types.h"
+#include "drake/common/type_safe_index.h"
 
 namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
 namespace pick_and_place {
+
+using RobotBaseIndex = TypeSafeIndex<class RobotBaseTag>;
+using TargetIndex = TypeSafeIndex<class TargetTag>;
 
 struct OptitrackInfo {
   int id{0};
@@ -18,12 +22,11 @@ struct OptitrackInfo {
 struct PlannerConfiguration {
   std::string model_path;
   std::string end_effector_name;
-  int iiwa_base_optitrack_id{};
-  int target_optitrack_id{};
+  RobotBaseIndex robot_base_index{0};
+  TargetIndex target_index{0};
   Vector3<double> target_dimensions;
-  std::vector<OptitrackInfo> table_optitrack_info;
-  std::vector<double> table_radii;
   double period_sec{0.01};
+  int num_tables{0};
 };
 
 struct SimulatedPlantConfiguration {
