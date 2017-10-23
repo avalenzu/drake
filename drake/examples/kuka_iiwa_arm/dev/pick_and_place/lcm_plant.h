@@ -32,11 +32,6 @@ class LcmPlant : public systems::Diagram<double> {
     return this->get_output_port(output_port_iiwa_status_.at(index));
   }
 
-  const systems::OutputPort<double>& get_output_port_iiwa_robot_state(
-      int index) const {
-    return this->get_output_port(output_port_iiwa_robot_state_.at(index));
-  }
-
   const systems::OutputPort<double>& get_output_port_wsg_status(
       int index) const {
     return this->get_output_port(output_port_wsg_status_.at(index));
@@ -67,7 +62,6 @@ class LcmPlant : public systems::Diagram<double> {
   std::vector<int> input_port_wsg_command_;
   std::vector<int> output_port_iiwa_status_;
   std::vector<int> output_port_wsg_status_;
-  std::vector<int> output_port_iiwa_robot_state_;
   int output_port_optitrack_frame_{-1};
   int output_port_contact_results_{-1};
   int output_port_plant_state_{-1};
