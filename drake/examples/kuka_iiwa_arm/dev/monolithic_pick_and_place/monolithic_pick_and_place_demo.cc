@@ -57,15 +57,9 @@ int DoMain(void) {
       ParseSimulatedPlantConfigurationOrThrow(FLAGS_configuration_file);
   const pick_and_place::OptitrackConfiguration optitrack_configuration =
       ParseOptitrackConfigurationOrThrow(FLAGS_configuration_file);
-  // Loop over arms to parse planner configurations.
-  const int kNumIiwa(plant_configuration.robot_poses.size());
-  std::vector<pick_and_place::PlannerConfiguration> planner_configurations;
-  for (int i = 0; i < kNumIiwa; ++i) {
-    // Parse planner configuration.
-    planner_configurations.push_back(ParsePlannerConfigurationOrThrow(
-        FLAGS_configuration_file, pick_and_place::RobotBaseIndex(i),
-        pick_and_place::TargetIndex(i)));
-  }
+  const std::vector<pick_and_place::PlannerConfiguration>
+      planner_configurations =
+          ParsePlannerConfigurationsOrThrow(FLAGS_configuration_file);
 
   lcm::DrakeLcm lcm;
   systems::DiagramBuilder<double> builder;

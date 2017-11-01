@@ -79,6 +79,7 @@ PickAndPlaceStateMachineSystem::PickAndPlaceStateMachineSystem(
 
   this->DeclarePeriodicUnrestrictedUpdate(configuration.period_sec, 0);
 
+  drake::log()->warn(iiwa_model_path());
   parsers::urdf::AddModelInstanceFromUrdfFileToWorld(
       iiwa_model_path(), multibody::joints::kFixed, &iiwa_tree_);
 }

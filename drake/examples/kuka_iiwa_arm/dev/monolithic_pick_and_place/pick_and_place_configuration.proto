@@ -17,33 +17,51 @@ message OptitrackInfo {
     Pose X_MF = 2;
 }
 
+// Next ID: 3
+message Model{
+    // Path to the model file for simulation (relative to DRAKE_RESOURCE_ROOT).
+    string simulation_model_path = 2;
+    // Path to the model file for planning (relative to DRAKE_RESOURCE_ROOT).
+    string planning_model_path = 1;
+}
+
 // Next ID: 4
-message Model {
-    // The name of the model. This should correspond to a key in model_path
+message ModelInstance {
+    // The name of the model. This should correspond to a key in the model
+    // field of the PickAndPlaceConfiguration message.
     string name = 1;
-    // The Optitrack information for the model.
+    // The Optitrack information for the model base.
     OptitrackInfo optitrack_info = 2;
     // The [initial] world-pose of the model base.
     Pose pose = 3;
 }
 
-// Next ID: 13
+// Next ID: 3
+message PickAndPlaceTask {
+    // The index of the robot arm to be used for this task.
+    int32 robot_index = 1;
+    // The index of the object to be used as the target for this task.
+    int32 target_index = 2;
+    // The name of the end-effector body in the robot.
+    string end_effector_name = 3;
+}
+
+// Next ID: 11
 message PickAndPlaceConfiguration {
-    map<string, string> model_path = 1;
+    map<string, Model> model = 1;
+
+    repeated PickAndPlaceTask task = 2;
 
     // The tables from/on which the target can be picked/placed.
-    repeated Model table = 3;
+    repeated ModelInstance table = 3;
     // The objects that can be picked and placed
-    repeated Model object = 4;
+    repeated ModelInstance object = 4;
     // The robots that pick and place
-    repeated Model robot = 5;
+    repeated ModelInstance robot = 5;
 
-    string planning_model_path = 6;
-    string planning_end_effector_name = 7;
-
-    double static_friction_coefficient = 8;
-    double dynamic_friction_coefficient = 9;
-    double v_stiction_tolerance = 10;
-    double stiffness = 11;
-    double dissipation = 12;
+    double static_friction_coefficient = 6;
+    double dynamic_friction_coefficient = 7;
+    double v_stiction_tolerance = 8;
+    double stiffness = 9;
+    double dissipation = 10;
 }

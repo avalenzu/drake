@@ -78,7 +78,8 @@ class SingleArmSingleMoveTests
     initial_table_index_ = std::get<0>(GetParam());
     final_table_index_ = std::get<1>(GetParam());
     // Set Optitrack parameters.
-    optitrack_configuration_.robot_base_optitrack_ids.push_back(1);
+    optitrack_configuration_.robot_base_optitrack_info.emplace_back();
+    optitrack_configuration_.robot_base_optitrack_info.back().id = 1;
     optitrack_configuration_.table_optitrack_info.emplace_back();
     optitrack_configuration_.table_optitrack_info.back().id = 2;
     optitrack_configuration_.table_optitrack_info.back()
@@ -89,12 +90,13 @@ class SingleArmSingleMoveTests
     optitrack_configuration_.table_optitrack_info.back()
         .X_MF.translation()
         .z() += kTableOptitrackFrameHeights[final_table_index_];
-    optitrack_configuration_.object_optitrack_ids.push_back(4);
+    optitrack_configuration_.object_optitrack_info.emplace_back();
+    optitrack_configuration_.object_optitrack_info.back().id = 4;
 
     // Set plant parameters.
-    plant_configuration_.robot_base_poses.push_back(
+    plant_configuration_.robot_poses.push_back(
         Isometry3<double>::Identity());
-    plant_configuration_.robot_base_poses.back().translation().z() = 0.7645;
+    plant_configuration_.robot_poses.back().translation().z() = 0.7645;
 
     plant_configuration_.table_models.push_back(
         kTableModelPaths[initial_table_index_]);

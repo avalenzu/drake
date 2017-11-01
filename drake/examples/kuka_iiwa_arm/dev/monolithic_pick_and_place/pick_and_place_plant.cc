@@ -275,7 +275,6 @@ PickAndPlacePlant::PickAndPlacePlant(
         builder.AddSystem<ConstantVectorSource<double>>(VectorX<double>::Zero(
             iiwa_and_wsg_plant_->get_input_port_iiwa_acceleration_command()
                 .size()));
-    zero_feedforward_acceleration->set_name("zero");
     builder.Connect(
         zero_feedforward_acceleration->get_output_port(),
         iiwa_and_wsg_plant_->get_input_port_iiwa_acceleration_command(i));

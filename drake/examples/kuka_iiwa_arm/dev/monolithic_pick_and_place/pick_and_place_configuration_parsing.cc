@@ -44,31 +44,45 @@ Isometry3<double> ParsePose(const proto::Pose& pose) {
   return X;
 }
 
-const std::string& GetModelPathOrThrow(
+const proto::Model& GetModelOrThrow(
     const proto::PickAndPlaceConfiguration& configuration,
-    const std::string& model_name) {
-  DRAKE_THROW_UNLESS(configuration.model_path().find(model_name) !=
-                     configuration.model_path().end());
-  return configuration.model_path().at(model_name);
+    const proto::ModelInstance& model_instance) {
+  DRAKE_THROW_UNLESS(configuration.model().find(model_instance.name()) !=
+                     configuration.model().end());
+  return configuration.model().at(model_instance.name());
+}
+
+const std::string& GetSimulationModelPathOrThrow(
+    const proto::PickAndPlaceConfiguration& configuration,
+    const proto::ModelInstance& model_instance) {
+  return GetModelOrThrow(configuration, model_instance).simulation_model_path();
+}
+
+const std::string& GetPlanningModelPathOrThrow(
+    const proto::PickAndPlaceConfiguration& configuration,
+    const proto::ModelInstance& model_instance) {
+  const proto::Model& model = GetModelOrThrow(configuration, model_instance);
+  return (model.planning_model_path().empty()) ? model.simulation_model_path()
+                                               : model.planning_model_path();
 }
 
 void ExtractBasePosesForModels(
-    const google::protobuf::RepeatedPtrField<proto::Model>& models,
+    const google::protobuf::RepeatedPtrField<proto::ModelInstance>& models,
     std::vector<Isometry3<double>>* poses) {
   DRAKE_DEMAND(poses != nullptr);
   std::transform(models.cbegin(), models.cend(), std::back_inserter(*poses),
-                 [](const proto::Model& table) -> Isometry3<double> {
-                   return ParsePose(table.pose());
+                 [](const proto::ModelInstance& model) -> Isometry3<double> {
+                   return ParsePose(model.pose());
                  });
 }
 
 void ExtractOptitrackInfoForModels(
-    const google::protobuf::RepeatedPtrField<proto::Model>& models,
+    const google::protobuf::RepeatedPtrField<proto::ModelInstance>& models,
     std::vector<pick_and_place::OptitrackInfo>* optitrack_info) {
   DRAKE_DEMAND(optitrack_info != nullptr);
   std::transform(
       models.cbegin(), models.cend(), std::back_inserter(*optitrack_info),
-      [](const proto::Model& model) -> pick_and_place::OptitrackInfo {
+      [](const proto::ModelInstance& model) -> pick_and_place::OptitrackInfo {
         return pick_and_place::OptitrackInfo(
             {model.optitrack_info().id(),
              ParsePose(model.optitrack_info().x_mf())});
@@ -77,31 +91,31 @@ void ExtractOptitrackInfoForModels(
 
 void ExtractModelPathsForModels(
     const proto::PickAndPlaceConfiguration& configuration,
-    const google::protobuf::RepeatedPtrField<proto::Model>& models,
+    const google::protobuf::RepeatedPtrField<proto::ModelInstance>& models,
     std::vector<std::string>* model_paths) {
   DRAKE_DEMAND(model_paths != nullptr);
-  std::transform(models.cbegin(), models.cend(),
-                 std::back_inserter(*model_paths),
-                 [&configuration](const proto::Model& table) -> std::string {
-                   return GetModelPathOrThrow(configuration, table.name());
-                 });
+  std::transform(
+      models.cbegin(), models.cend(), std::back_inserter(*model_paths),
+      [&configuration](const proto::ModelInstance& table) -> std::string {
+        return GetSimulationModelPathOrThrow(configuration, table);
+      });
 }
-}  // namespace
 
-pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
-    std::string filename, pick_and_place::RobotBaseIndex robot_index,
+pick_and_place::PlannerConfiguration DoParsePlannerConfiguration(
+    const proto::PickAndPlaceConfiguration& configuration,
+    const std::string& end_effector_name,
+    pick_and_place::RobotBaseIndex robot_index,
     pick_and_place::TargetIndex target_index) {
-  pick_and_place::PlannerConfiguration planner_configuration;
-  planner_configuration.robot_index = robot_index;
-  planner_configuration.target_index = target_index;
-
-  // Read configuration file
-  const proto::PickAndPlaceConfiguration configuration{
-      ReadProtobufFileOrThrow(filename)};
-
   // Check that the robot base and target indices are valid.
   DRAKE_THROW_UNLESS(robot_index < configuration.robot_size());
   DRAKE_THROW_UNLESS(target_index < configuration.object_size());
+
+  pick_and_place::PlannerConfiguration planner_configuration;
+
+  // Store model path and end-effector name.
+  planner_configuration.model_path = GetPlanningModelPathOrThrow(
+      configuration, configuration.robot(planner_configuration.robot_index));
+  planner_configuration.end_effector_name = end_effector_name;
 
   // Extract number of tables
   planner_configuration.num_tables = configuration.table_size();
@@ -109,10 +123,9 @@ pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
   // Extract target dimensions
   WorldSimTreeBuilder<double> tree_builder;
   tree_builder.StoreModel(
-      "target",
-      GetModelPathOrThrow(
-          configuration,
-          configuration.object(planner_configuration.target_index).name()));
+      "target", GetPlanningModelPathOrThrow(
+                    configuration,
+                    configuration.object(planner_configuration.target_index)));
   tree_builder.AddFixedModelInstance("target", Vector3<double>::Zero());
   auto target = tree_builder.Build();
   Vector3<double> max_corner{-std::numeric_limits<double>::infinity() *
@@ -135,10 +148,54 @@ pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
   }
   planner_configuration.target_dimensions = max_corner - min_corner;
 
-  planner_configuration.model_path = configuration.planning_model_path();
-  planner_configuration.end_effector_name =
-      configuration.planning_end_effector_name();
   return planner_configuration;
+}
+}  // namespace
+
+pick_and_place::PlannerConfiguration ParsePlannerConfigurationOrThrow(
+    const std::string& filename, TaskIndex task_index,
+    pick_and_place::RobotBaseIndex robot_index,
+    pick_and_place::TargetIndex target_index) {
+  pick_and_place::PlannerConfiguration planner_configuration;
+
+  // Read configuration file
+  const proto::PickAndPlaceConfiguration configuration{
+      ReadProtobufFileOrThrow(filename)};
+
+  // Check that the task index is valid.
+  DRAKE_THROW_UNLESS(task_index < configuration.task_size());
+  planner_configuration.robot_index =
+      (robot_index < 0) ? configuration.task(task_index).robot_index()
+                        : robot_index;
+  planner_configuration.target_index =
+      (target_index < 0) ? configuration.task(task_index).target_index()
+                         : target_index;
+
+  return DoParsePlannerConfiguration(
+      configuration, configuration.task(task_index).end_effector_name(),
+      robot_index, target_index);
+}
+
+std::vector<pick_and_place::PlannerConfiguration>
+ParsePlannerConfigurationsOrThrow(const std::string& filename) {
+  pick_and_place::PlannerConfiguration planner_configuration;
+
+  // Read configuration file
+  const proto::PickAndPlaceConfiguration configuration{
+      ReadProtobufFileOrThrow(filename)};
+
+  // Build the planner configuration vector.
+  std::vector<pick_and_place::PlannerConfiguration> planner_configurations;
+  std::transform(configuration.task().cbegin(), configuration.task().cend(),
+                 std::back_inserter(planner_configurations),
+                 [&configuration](const proto::PickAndPlaceTask& task)
+                     -> pick_and_place::PlannerConfiguration {
+                       return DoParsePlannerConfiguration(
+                           configuration, task.end_effector_name(),
+                           pick_and_place::RobotBaseIndex(task.robot_index()),
+                           pick_and_place::TargetIndex(task.target_index()));
+                     });
+  return planner_configurations;
 }
 
 pick_and_place::SimulatedPlantConfiguration

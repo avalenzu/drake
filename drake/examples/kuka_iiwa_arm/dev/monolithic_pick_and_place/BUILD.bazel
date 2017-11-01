@@ -207,6 +207,16 @@ drake_cc_googletest(
     ],
 )
 
+drake_cc_googletest(
+    name = "pick_and_place_configuration_parsing_test",
+    data = [
+        ":configuration",
+    ],
+    deps = [
+        ":pick_and_place_configuration_parsing",
+    ],
+)
+
 # TODO(sam.creasey) Re-enable this test once it is not so sensitive.
 pick_and_place_test(
     name = "pick_and_place_scenario_1",

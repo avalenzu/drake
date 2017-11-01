@@ -40,10 +40,9 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
       builder.ExportOutput(plant_->get_output_port_plant_state());
 
   // Loop over arms to add planners and plan interpolators.
-  const int kNumIiwa(plant_configuration.robot_poses.size());
-  DRAKE_THROW_UNLESS(kNumIiwa ==
-                     static_cast<int>(planner_configurations.size()));
-  for (int i = 0; i < kNumIiwa; ++i) {
+  const int num_planners(planner_configurations.size());
+  DRAKE_THROW_UNLESS(num_planners >= 1);
+  for (int i = 0; i < num_planners; ++i) {
     // Add planner.
     auto planner = builder.AddSystem<PickAndPlacePlanner>(
         planner_configurations[i], optitrack_configuration, single_move);
@@ -57,27 +56,28 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
     auto iiwa_status_zoh = builder.AddSystem<ZeroOrderHold<double>>(
         kIiwaLcmStatusPeriod, systems::Value<lcmt_iiwa_status>());
     // Connect planner, plan interpolator, and plant.
+    const int robot_index = planner_configurations[i].robot_index;
     // Plant --> Planner
-    builder.Connect(plant_->get_output_port_wsg_status(i),
+    builder.Connect(plant_->get_output_port_wsg_status(robot_index),
                     planner->get_input_port_wsg_status());
-    builder.Connect(plant_->get_output_port_iiwa_status(i),
+    builder.Connect(plant_->get_output_port_iiwa_status(robot_index),
                     planner->get_input_port_iiwa_status());
     builder.Connect(plant_->get_output_port_optitrack_frame(),
                     planner->get_input_port_optitrack_message());
     // Plant --> plan interpolator
-    builder.Connect(plant_->get_output_port_iiwa_status(i),
+    builder.Connect(plant_->get_output_port_iiwa_status(robot_index),
                     iiwa_status_zoh->get_input_port());
     builder.Connect(iiwa_status_zoh->get_output_port(),
                     plan_interpolator->get_input_port_iiwa_status());
     // Planner --> Plant
     builder.Connect(planner->get_output_port_wsg_command(),
-                    plant_->get_input_port_wsg_command(i));
+                    plant_->get_input_port_wsg_command(robot_index));
     // Planner --> Plan Interpolator
     builder.Connect(planner->get_output_port_iiwa_plan(),
                     plan_interpolator->get_input_port_iiwa_plan());
     // plan interpolator --> plant
     builder.Connect(plan_interpolator->get_output_port_iiwa_command(),
-                    plant_->get_input_port_iiwa_command(i));
+                    plant_->get_input_port_iiwa_command(robot_index));
   }
 
   builder.BuildInto(this);
