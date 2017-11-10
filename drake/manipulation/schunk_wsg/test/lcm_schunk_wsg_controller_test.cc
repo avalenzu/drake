@@ -1,4 +1,4 @@
-#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
+#include "drake/manipulation/schunk_wsg/lcm_schunk_wsg_controller.h"
 
 #include <memory>
 
@@ -19,7 +19,7 @@ namespace {
 /// conditions and returns the commanded force.
 double RunWsgControllerTestStep(const lcmt_schunk_wsg_command& wsg_command,
                                 double wsg_position) {
-  SchunkWsgController dut;
+  LcmSchunkWsgController dut;
   std::unique_ptr<systems::Context<double>> context =
       dut.CreateDefaultContext();
   std::unique_ptr<systems::SystemOutput<double>> output =
@@ -38,7 +38,7 @@ double RunWsgControllerTestStep(const lcmt_schunk_wsg_command& wsg_command,
   return output->get_vector_data(0)->GetAtIndex(0);
 }
 
-GTEST_TEST(SchunkWsgControllerTest, SchunkWsgControllerTest) {
+GTEST_TEST(LcmSchunkWsgControllerTest, LcmSchunkWsgControllerTest) {
   // Start off with the gripper closed (zero) and a command to open to
   // 100mm.
   lcmt_schunk_wsg_command wsg_command{};

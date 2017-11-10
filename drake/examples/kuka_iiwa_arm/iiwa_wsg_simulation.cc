@@ -23,7 +23,7 @@
 #include "drake/lcmt_schunk_wsg_command.hpp"
 #include "drake/lcmt_schunk_wsg_status.hpp"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
-#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
+#include "drake/manipulation/schunk_wsg/lcm_schunk_wsg_controller.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/multibody/parsers/urdf_parser.h"
@@ -50,7 +50,7 @@ namespace kuka_iiwa_arm {
 namespace {
 
 using manipulation::schunk_wsg::SchunkWsgStatusSender;
-using manipulation::schunk_wsg::SchunkWsgController;
+using manipulation::schunk_wsg::LcmSchunkWsgController;
 using manipulation::util::WorldSimTreeBuilder;
 using manipulation::util::ModelInstanceInfo;
 using systems::Context;
@@ -196,7 +196,7 @@ int DoMain() {
       systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_command>(
           "SCHUNK_WSG_COMMAND", &lcm));
   wsg_command_sub->set_name("wsg_command_subscriber");
-  auto wsg_controller = builder.AddSystem<SchunkWsgController>();
+  auto wsg_controller = builder.AddSystem<LcmSchunkWsgController>();
 
   auto wsg_status_pub = builder.AddSystem(
       systems::lcm::LcmPublisherSystem::Make<lcmt_schunk_wsg_status>(

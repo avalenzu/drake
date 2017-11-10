@@ -1,4 +1,4 @@
-#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
+#include "drake/manipulation/schunk_wsg/lcm_schunk_wsg_controller.h"
 
 #include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
@@ -12,7 +12,7 @@ namespace drake {
 namespace manipulation {
 namespace schunk_wsg {
 
-SchunkWsgController::SchunkWsgController() {
+LcmSchunkWsgController::LcmSchunkWsgController() {
   systems::DiagramBuilder<double> builder;
 
   auto wsg_trajectory_generator =
@@ -64,7 +64,7 @@ SchunkWsgController::SchunkWsgController() {
                   saturation->get_min_value_port());
   builder.ExportOutput(saturation->get_output_port());
   builder.BuildInto(this);
-  set_name("SchunkWsgController");
+  set_name("LcmSchunkWsgController");
 }
 
 }  // namespace schunk_wsg

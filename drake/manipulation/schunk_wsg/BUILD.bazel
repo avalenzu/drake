@@ -43,9 +43,9 @@ drake_cc_library(
 )
 
 drake_cc_library(
-    name = "schunk_wsg_controller",
-    srcs = ["schunk_wsg_controller.cc"],
-    hdrs = ["schunk_wsg_controller.h"],
+    name = "lcm_schunk_wsg_controller",
+    srcs = ["lcm_schunk_wsg_controller.cc"],
+    hdrs = ["lcm_schunk_wsg_controller.h"],
     deps = [
         ":schunk_wsg_constants",
         ":schunk_wsg_lcm",
@@ -76,10 +76,10 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
-    name = "schunk_wsg_controller_test",
+    name = "lcm_schunk_wsg_controller_test",
     deps = [
+        ":lcm_schunk_wsg_controller",
         ":schunk_wsg_constants",
-        ":schunk_wsg_controller",
         "//drake/systems/analysis:simulator",
     ],
 )

@@ -14,10 +14,10 @@ namespace schunk_wsg {
 /// consists of a PID controller (which controls the target position
 /// from the command message) combined with a saturation block (which
 /// applies the force control from the command message).
-class SchunkWsgController : public systems::Diagram<double> {
+class LcmSchunkWsgController : public systems::Diagram<double> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SchunkWsgController)
-  SchunkWsgController();
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(LcmSchunkWsgController)
+  LcmSchunkWsgController();
 
   const systems::InputPortDescriptor<double>& get_command_input_port() const {
     return this->get_input_port(command_input_port_);
