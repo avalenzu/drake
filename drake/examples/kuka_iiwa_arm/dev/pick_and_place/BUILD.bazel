@@ -53,7 +53,7 @@ drake_cc_library(
         "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
         "//drake/examples/kuka_iiwa_arm/iiwa_world:iiwa_wsg_diagram_factory",
         "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",
-        "//drake/manipulation/schunk_wsg:schunk_wsg_controller",
+        "//drake/manipulation/schunk_wsg:lcm_schunk_wsg_controller",
         "//drake/manipulation/util:frame_pose_tracker",
         "//drake/systems/sensors:optitrack_encoder",
         "//drake/systems/sensors:optitrack_sender",
