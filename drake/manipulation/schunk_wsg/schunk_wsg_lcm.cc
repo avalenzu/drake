@@ -72,11 +72,8 @@ void SchunkWsgTrajectoryGenerator::DoCalcDiscreteVariableUpdates(
   DRAKE_ASSERT(input != nullptr);
   const auto& command = input->GetValue<lcmt_schunk_wsg_command>();
   // The target_position_mm field represents the distance between
-  // the two fingers. The fingers are connected by a mechanical
-  // linkage, so the relative movement between the two fingers is
-  // twice the actuator's movement (and what we want to calcuate
-  // here is the value for the actuator).
-  double target_position = -(command.target_position_mm / 1e3) / 2.;
+  // the two fingers.
+  double target_position = command.target_position_mm / 1e3;
   if (std::isnan(target_position)) {
     target_position = 0;
   }

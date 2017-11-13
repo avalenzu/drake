@@ -16,8 +16,8 @@
 #include "drake/lcm/drake_lcm.h"
 #include "drake/lcmt_schunk_wsg_command.hpp"
 #include "drake/lcmt_schunk_wsg_status.hpp"
-#include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
 #include "drake/manipulation/schunk_wsg/lcm_schunk_wsg_controller.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_plant/rigid_body_plant.h"
@@ -36,8 +36,8 @@ namespace examples {
 namespace schunk_wsg {
 namespace {
 
-using manipulation::schunk_wsg::SchunkWsgStatusSender;
 using manipulation::schunk_wsg::LcmSchunkWsgController;
+using manipulation::schunk_wsg::SchunkWsgStatusSender;
 using systems::Context;
 using systems::Diagram;
 using systems::DiagramBuilder;
@@ -52,8 +52,7 @@ int DoMain() {
   const RigidBodyTree<double>& tree = plant->get_rigid_body_tree();
 
   drake::lcm::DrakeLcm lcm;
-  DrakeVisualizer* visualizer =
-      builder.AddSystem<DrakeVisualizer>(tree, &lcm);
+  DrakeVisualizer* visualizer = builder.AddSystem<DrakeVisualizer>(tree, &lcm);
   visualizer->set_name("visualizer");
   auto command_sub = builder.AddSystem(
       systems::lcm::LcmSubscriberSystem::Make<lcmt_schunk_wsg_command>(
@@ -80,8 +79,7 @@ int DoMain() {
   builder.Connect(wsg_controller->get_output_port(0),
                   plant->actuator_command_input_port());
   builder.Connect(plant->state_output_port(), visualizer->get_input_port(0));
-  builder.Connect(plant->state_output_port(),
-                  status_sender->get_input_port(0));
+  builder.Connect(plant->state_output_port(), status_sender->get_input_port(0));
   builder.Connect(plant->state_output_port(),
                   wsg_controller->get_state_input_port());
   builder.Connect(*status_sender, *status_pub);

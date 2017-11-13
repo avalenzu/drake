@@ -22,6 +22,7 @@
 #include "drake/common/trajectories/piecewise_polynomial_trajectory.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/lcmt_contact_results_for_viz.hpp"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/multibody/parsers/sdf_parser.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_frame.h"
@@ -103,7 +104,7 @@ GTEST_TEST(SchunkWsgLiftTest, BoxLiftTest) {
           BuildLiftTestTree(&lifter_instance_id, &gripper_instance_id));
   plant->set_name("plant");
 
-  ASSERT_EQ(plant->get_num_actuators(), 2);
+  ASSERT_EQ(plant->get_num_actuators(), 3);
   ASSERT_EQ(plant->get_num_model_instances(), 3);
 
   // Arbitrary contact parameters.
@@ -169,15 +170,24 @@ GTEST_TEST(SchunkWsgLiftTest, BoxLiftTest) {
   std::vector<Eigen::MatrixXd> grip_knots;
   grip_knots.push_back(Vector1d(0));
   grip_knots.push_back(Vector1d(0));
-  grip_knots.push_back(Vector1d(40));
+  grip_knots.push_back(Vector1d(-40));
   PiecewisePolynomialTrajectory grip_trajectory(
       PiecewisePolynomial<double>::FirstOrderHold(grip_breaks, grip_knots));
   auto grip_source =
       builder.AddSystem<systems::TrajectorySource>(grip_trajectory);
   grip_source->set_name("grip_source");
+
+  // Create a controller to coordinate the fingers of the gripper
+  auto gripper_controller =
+      builder
+          .AddSystem<manipulation::schunk_wsg::SchunkWsgController<double>>();
+  builder.Connect(plant->model_instance_state_output_port(gripper_instance_id),
+                  gripper_controller->get_state_input_port());
   builder.Connect(grip_source->get_output_port(),
-                  plant->model_instance_actuator_command_input_port(
-                      gripper_instance_id));
+                  gripper_controller->get_gripper_force_input_port());
+  builder.Connect(
+      gripper_controller->get_output_port(),
+      plant->model_instance_actuator_command_input_port(gripper_instance_id));
 
   // Creates and adds LCM publisher for visualization.  The test doesn't
   // require `drake_visualizer` but it is convenient to have when debugging.
@@ -216,8 +226,7 @@ GTEST_TEST(SchunkWsgLiftTest, BoxLiftTest) {
 
   const RigidBodyTreed& tree = plant->get_rigid_body_tree();
 
-  // Open the gripper.  Due to the number of links involved, this is
-  // surprisingly complicated.
+  // Open the gripper.
   systems::Context<double>& plant_context =
       model->GetMutableSubsystemContext(
           *plant, &simulator.get_mutable_context());
@@ -227,19 +236,9 @@ GTEST_TEST(SchunkWsgLiftTest, BoxLiftTest) {
       = tree.getZeroConfiguration();
 
   auto positions = tree.computePositionNameToIndexMap();
-  ASSERT_EQ(positions["left_finger_sliding_joint"], 1);
-
-  // The values below were extracted from the positions corresponding
-  // to an open gripper.  Dumping them here is significantly more
-  // magic than I (sam.creasey) would like.  If you find yourself
-  // tempted to cut and paste this, please consider creating a utility
-  // function which can set a segment of a state vector to an open
-  // gripper.
-  plant_initial_state(1) = -0.0550667;
-  plant_initial_state(2) = 0.009759;
-  plant_initial_state(3) = 1.27982;
-  plant_initial_state(4) = 0.0550667;
-  plant_initial_state(5) = 0.009759;
+  const double open_width = 0.1;
+  plant_initial_state(positions["left_finger_sliding_joint"]) = -open_width / 2;
+  plant_initial_state(positions["right_finger_sliding_joint"]) = open_width / 2;
   plant->set_state_vector(&plant_context, plant_initial_state);
 
   systems::Context<double>& context = simulator.get_mutable_context();

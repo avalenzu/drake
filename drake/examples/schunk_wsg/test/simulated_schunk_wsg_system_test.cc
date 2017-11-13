@@ -8,6 +8,7 @@
 #include "drake/common/eigen_types.h"
 #include "drake/common/text_logging.h"
 #include "drake/lcm/drake_lcm.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/multibody/rigid_body_plant/drake_visualizer.h"
 #include "drake/multibody/rigid_body_plant/rigid_body_plant.h"
 #include "drake/systems/analysis/simulator.h"
@@ -30,13 +31,12 @@ GTEST_TEST(SimulatedSchunkWsgSystemTest, OpenGripper) {
   ASSERT_NE(schunk, nullptr);
   const RigidBodyTree<double>& tree = schunk->get_rigid_body_tree();
 
-  // The simulated Schunk plant has seven links (the gripper body, two
-  // fingers, a nonphysical rotor, two nonphysical pushers, and the world
-  // link).
-  const int num_links = 7;
+  // The simulated Schunk plant has four links (the gripper body, the two
+  // fingers, and the world link).
+  const int num_links = 4;
 
-  // Of these only one is actuated (the left finger).
-  const int num_actuators = 1;
+  // The two fingers are actuated.
+  const int num_actuators = 2;
 
   // Number of movable bodies: num_links minus world and body links.
   const int num_movable_links = num_links - 2;
@@ -72,12 +72,22 @@ GTEST_TEST(SimulatedSchunkWsgSystemTest, OpenGripper) {
 
   // Set the input to a constant force.
   Vector1d input;
-  input << -1.0;  // Force, in Newtons.
+  input << 1.0;  // Force, in Newtons.
   const auto source =
       builder.template AddSystem<systems::ConstantVectorSource<double>>(
           input);
   source->set_name("source");
-  builder.Connect(source->get_output_port(), schunk->get_input_port(0));
+  // Create a controller to coordinate the fingers of the gripper
+  auto gripper_controller =
+      builder
+          .AddSystem<manipulation::schunk_wsg::SchunkWsgController<double>>();
+  builder.Connect(schunk->state_output_port(),
+                  gripper_controller->get_state_input_port());
+  builder.Connect(source->get_output_port(),
+                  gripper_controller->get_gripper_force_input_port());
+  builder.Connect(
+      gripper_controller->get_output_port(),
+      schunk->actuator_command_input_port());
 
   // Creates and adds LCM publisher for visualization.  The test doesn't
   // require `drake_visualizer` but it is convenient to have when debugging.

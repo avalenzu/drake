@@ -1,6 +1,7 @@
 #include "drake/manipulation/schunk_wsg/lcm_schunk_wsg_controller.h"
 
 #include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
 #include "drake/systems/controllers/pid_controller.h"
 #include "drake/systems/framework/diagram_builder.h"
@@ -19,30 +20,29 @@ LcmSchunkWsgController::LcmSchunkWsgController() {
       builder.AddSystem<SchunkWsgTrajectoryGenerator>(
           kSchunkWsgNumPositions + kSchunkWsgNumVelocities,
           kSchunkWsgPositionIndex);
-  command_input_port_ = builder.ExportInput(
-      wsg_trajectory_generator->get_command_input_port());
+  command_input_port_ =
+      builder.ExportInput(wsg_trajectory_generator->get_command_input_port());
 
-  auto state_pass_through =
-      builder.AddSystem<systems::PassThrough<double>>(
-          kSchunkWsgNumPositions + kSchunkWsgNumVelocities);
+  auto state_pass_through = builder.AddSystem<systems::PassThrough<double>>(
+      kSchunkWsgNumPositions + kSchunkWsgNumVelocities);
 
-  state_input_port_ =
-      builder.ExportInput(state_pass_through->get_input_port());
+  state_input_port_ = builder.ExportInput(state_pass_through->get_input_port());
   builder.Connect(state_pass_through->get_output_port(),
                   wsg_trajectory_generator->get_state_input_port());
 
-  const int kWsgActDim = kSchunkWsgNumActuators;
   // The p gain here is somewhat arbitrary.  The goal is to make sure
   // that the maximum force is generated except when very close to the
   // target.
-  const Eigen::VectorXd wsg_kp = Eigen::VectorXd::Constant(kWsgActDim, 2000.0);
-  const Eigen::VectorXd wsg_ki = Eigen::VectorXd::Constant(kWsgActDim, 0.0);
-  const Eigen::VectorXd wsg_kd = Eigen::VectorXd::Constant(kWsgActDim, 5.0);
-
+  const Eigen::VectorXd wsg_kp = Eigen::VectorXd::Constant(1, 2000.0);
+  const Eigen::VectorXd wsg_ki = Eigen::VectorXd::Constant(1, 0.0);
+  const Eigen::VectorXd wsg_kd = Eigen::VectorXd::Constant(1, 5.0);
+  MatrixX<double> P_q(1, 2);
+  P_q << -1, 1;
+  MatrixX<double> P_x(2, 4);
+  P_x << P_q, 0.0, 0.0, 0.0, 0.0, P_q;
   auto wsg_controller =
       builder.AddSystem<systems::controllers::PidController<double>>(
-          GetSchunkWsgFeedbackSelector<double>(),
-          wsg_kp, wsg_ki, wsg_kd);
+          P_x, wsg_kp, wsg_ki, wsg_kd);
 
   builder.Connect(state_pass_through->get_output_port(),
                   wsg_controller->get_input_port_estimated_state());
@@ -60,11 +60,15 @@ LcmSchunkWsgController::LcmSchunkWsgController() {
                   saturation->get_input_port());
   builder.Connect(wsg_trajectory_generator->get_max_force_output_port(),
                   saturation->get_max_value_port());
-  builder.Connect(gain->get_output_port(),
-                  saturation->get_min_value_port());
-  builder.ExportOutput(saturation->get_output_port());
+  builder.Connect(gain->get_output_port(), saturation->get_min_value_port());
+
+  auto finger_controller = builder.AddSystem<SchunkWsgController<double>>();
+  builder.Connect(saturation->get_output_port(),
+                  finger_controller->get_gripper_force_input_port());
+  builder.Connect(state_pass_through->get_output_port(),
+                  finger_controller->get_state_input_port());
+  builder.ExportOutput(finger_controller->get_output_port());
   builder.BuildInto(this);
-  set_name("LcmSchunkWsgController");
 }
 
 }  // namespace schunk_wsg

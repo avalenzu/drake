@@ -1,6 +1,7 @@
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_constants.h"
+#include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/manipulation/util/sim_diagram_builder.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/multibody/parsers/urdf_parser.h"
@@ -13,6 +14,7 @@ namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
 namespace {
+using manipulation::schunk_wsg::SchunkWsgController;
 using manipulation::util::ModelInstanceInfo;
 using manipulation::util::WorldSimTreeBuilder;
 using manipulation::util::SimDiagramBuilder;
@@ -132,14 +134,24 @@ void main() {
   const VectorX<double> wsg_kp = VectorX<double>::Constant(kWsgActDim, 300.0);
   const VectorX<double> wsg_ki = VectorX<double>::Constant(kWsgActDim, 0.0);
   const VectorX<double> wsg_kd = VectorX<double>::Constant(kWsgActDim, 5.0);
+  MatrixX<double> P_q(1, 2);
+  P_q << -1, 1;
+  MatrixX<double> P_x(2, 4);
+  P_x << P_q, 0.0, 0.0, 0.0, 0.0, P_q;
   for (const auto& info : wsg_info) {
-    auto controller = builder.template AddController<
-        systems::controllers::PidController<double>>(
-        info.instance_id,
-        manipulation::schunk_wsg::GetSchunkWsgFeedbackSelector<double>(),
-        wsg_kp, wsg_ki, wsg_kd);
-    diagram_builder->Connect(wsg_traj_src->get_output_port(),
-                             controller->get_input_port_desired_state());
+    auto finger_controller =
+        diagram_builder->AddSystem<SchunkWsgController<double>>();
+    auto gripper_controller =
+        diagram_builder->AddSystem<systems::controllers::PidController<double>>(
+            P_x, wsg_kp, wsg_ki, wsg_kd);
+    diagram_builder->Connect(
+        wsg_traj_src->get_output_port(),
+        gripper_controller->get_input_port_desired_state());
+    diagram_builder->Connect(gripper_controller->get_output_port_control(),
+                             finger_controller->get_gripper_force_input_port());
+    diagram_builder->Connect(finger_controller->get_output_port(),
+                             plant->model_instance_actuator_command_input_port(
+                                 info.instance_id));
   }
 
   // Simulates.
