@@ -5,7 +5,7 @@
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
 #include "drake/systems/controllers/pid_controller.h"
 #include "drake/systems/framework/diagram_builder.h"
-#include "drake/systems/primitives/gain.h"
+#include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/primitives/pass_through.h"
 #include "drake/systems/primitives/saturation.h"
 
@@ -33,16 +33,19 @@ LcmSchunkWsgController::LcmSchunkWsgController() {
   // The p gain here is somewhat arbitrary.  The goal is to make sure
   // that the maximum force is generated except when very close to the
   // target.
-  const Eigen::VectorXd wsg_kp = Eigen::VectorXd::Constant(1, 2000.0);
-  const Eigen::VectorXd wsg_ki = Eigen::VectorXd::Constant(1, 0.0);
-  const Eigen::VectorXd wsg_kd = Eigen::VectorXd::Constant(1, 5.0);
-  MatrixX<double> P_q(1, 2);
-  P_q << -1, 1;
+  const Eigen::VectorXd wsg_kp = Eigen::VectorXd::Constant(2, 2000.0);
+  const Eigen::VectorXd wsg_ki = Eigen::VectorXd::Constant(2, 0.0);
+  const Eigen::VectorXd wsg_kd = Eigen::VectorXd::Constant(2, 5.0);
+  MatrixX<double> P_q(2, 2);
+  P_q << -1, 1, 0.5, 0.5;
+  const MatrixX<double> zero_size_P_q{
+      MatrixX<double>::Zero(P_q.rows(), P_q.cols())};
   MatrixX<double> P_x(2, 4);
-  P_x << P_q, 0.0, 0.0, 0.0, 0.0, P_q;
+  P_x << P_q, zero_size_P_q, zero_size_P_q, P_q;
+  const MatrixX<double> P_y{P_q.transpose()};
   auto wsg_controller =
       builder.AddSystem<systems::controllers::PidController<double>>(
-          P_x, wsg_kp, wsg_ki, wsg_kd);
+          P_x, P_y, wsg_kp, wsg_ki, wsg_kd);
 
   builder.Connect(state_pass_through->get_output_port(),
                   wsg_controller->get_input_port_estimated_state());
@@ -51,23 +54,31 @@ LcmSchunkWsgController::LcmSchunkWsgController() {
 
   // Create a gain block to negate the max force (to produce a minimum
   // force).
-  auto gain = builder.AddSystem<systems::Gain<double>>(-1.0, 1);
+  auto positive_gain =
+      builder.AddSystem<systems::MatrixGain<double>>(Vector2<double>(1, 1));
+  auto negative_gain =
+      builder.AddSystem<systems::MatrixGain<double>>(Vector2<double>(-1, -1));
   builder.Connect(wsg_trajectory_generator->get_max_force_output_port(),
-                  gain->get_input_port());
-
-  auto saturation = builder.AddSystem<systems::Saturation<double>>(1);
-  builder.Connect(wsg_controller->get_output_port_control(),
-                  saturation->get_input_port());
+                  positive_gain->get_input_port());
   builder.Connect(wsg_trajectory_generator->get_max_force_output_port(),
-                  saturation->get_max_value_port());
-  builder.Connect(gain->get_output_port(), saturation->get_min_value_port());
+                  negative_gain->get_input_port());
 
   auto finger_controller = builder.AddSystem<SchunkWsgController<double>>();
-  builder.Connect(saturation->get_output_port(),
+  builder.Connect(wsg_controller->get_output_port_control(),
                   finger_controller->get_gripper_force_input_port());
   builder.Connect(state_pass_through->get_output_port(),
                   finger_controller->get_state_input_port());
-  builder.ExportOutput(finger_controller->get_output_port());
+
+  auto saturation = builder.AddSystem<systems::Saturation<double>>(2);
+  builder.Connect(finger_controller->get_output_port(),
+                  saturation->get_input_port());
+  builder.Connect(positive_gain->get_output_port(),
+                  saturation->get_max_value_port());
+  builder.Connect(negative_gain->get_output_port(),
+                  saturation->get_min_value_port());
+
+  builder.ExportOutput(saturation->get_output_port());
+
   builder.BuildInto(this);
 }
 
