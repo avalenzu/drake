@@ -1,7 +1,9 @@
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_state_machine.h"
 
+#include <algorithm>
 #include <limits>
 #include <random>
+#include <string>
 
 #include <spdlog/fmt/ostr.h>
 
