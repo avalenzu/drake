@@ -9,17 +9,17 @@
 
 #include "drake/common/find_resource.h"
 #include "drake/common/text_logging_gflags.h"
-#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
-#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/pick_and_place_configuration_parsing.h"
 #include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_plant.h"
+#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/pick_and_place_configuration_parsing.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
-#include "drake/examples/kuka_iiwa_arm/iiwa_world/iiwa_wsg_diagram_factory.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
+#include "drake/examples/kuka_iiwa_arm/iiwa_world/iiwa_wsg_diagram_factory.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/lcmt_contact_results_for_viz.hpp"
-#include "drake/lcmt_schunk_wsg_status.hpp"
-#include "drake/lcmt_schunk_wsg_command.hpp"
 #include "drake/lcmt_iiwa_command.hpp"
+#include "drake/lcmt_schunk_wsg_command.hpp"
+#include "drake/lcmt_schunk_wsg_status.hpp"
 #include "drake/manipulation/planner/robot_plan_interpolator.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_controller.h"
 #include "drake/manipulation/schunk_wsg/schunk_wsg_lcm.h"
@@ -41,10 +41,12 @@
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
               "Number of seconds to simulate.");
 DEFINE_double(dt, 5e-4, "Integration step size");
-DEFINE_double(realtime_rate, 1.0, "Rate at which to run the simulation, "
-    "relative to realtime");
-DEFINE_bool(quick, false, "Run only a brief simulation and return success "
-    "without executing the entire task");
+DEFINE_double(realtime_rate, 1.0,
+              "Rate at which to run the simulation, "
+              "relative to realtime");
+DEFINE_bool(quick, false,
+            "Run only a brief simulation and return success "
+            "without executing the entire task");
 DEFINE_string(configuration_file,
               "drake/examples/kuka_iiwa_arm/dev/pick_and_place/configuration/"
               "default.pick_and_place_configuration",
@@ -57,16 +59,16 @@ namespace examples {
 namespace kuka_iiwa_arm {
 namespace monolithic_pick_and_place {
 namespace {
+using manipulation::planner::RobotPlanInterpolator;
 using manipulation::schunk_wsg::SchunkWsgController;
 using manipulation::schunk_wsg::SchunkWsgStatusSender;
-using systems::RigidBodyPlant;
-using systems::RungeKutta2Integrator;
-using systems::Simulator;
 using manipulation::util::ModelInstanceInfo;
-using manipulation::planner::RobotPlanInterpolator;
 using manipulation::util::WorldSimTreeBuilder;
 using multibody::CreateLoadRobotMessage;
 using optitrack::optitrack_frame_t;
+using systems::RigidBodyPlant;
+using systems::RungeKutta2Integrator;
+using systems::Simulator;
 
 int DoMain(void) {
   // Parse configuration file
@@ -96,8 +98,8 @@ int DoMain(void) {
                   contact_results_publisher->get_input_port(0));
   contact_results_publisher->set_publish_period(kIiwaLcmStatusPeriod);
 
-  auto drake_visualizer = builder.AddSystem<systems::DrakeVisualizer>(
-      plant->get_tree(), &lcm);
+  auto drake_visualizer =
+      builder.AddSystem<systems::DrakeVisualizer>(plant->get_tree(), &lcm);
   drake_visualizer->set_publish_period(kIiwaLcmStatusPeriod);
 
   builder.Connect(plant->get_output_port_plant_state(),
@@ -149,8 +151,8 @@ int DoMain(void) {
   auto sys = builder.Build();
   Simulator<double> simulator(*sys);
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
-  simulator.reset_integrator<RungeKutta2Integrator<double>>(*sys,
-      FLAGS_dt, &simulator.get_mutable_context());
+  simulator.reset_integrator<RungeKutta2Integrator<double>>(
+      *sys, FLAGS_dt, &simulator.get_mutable_context());
   simulator.get_mutable_integrator()->set_maximum_step_size(FLAGS_dt);
   simulator.get_mutable_integrator()->set_fixed_step_mode(true);
 

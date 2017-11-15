@@ -11,9 +11,9 @@
 #include "drake/common/find_resource.h"
 #include "drake/common/proto/protobuf.h"
 #include "drake/common/text_logging_gflags.h"
-#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/pick_and_place_configuration_parsing.h"
-#include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/pick_and_place_planner.h"
 #include "drake/examples/kuka_iiwa_arm/dev/monolithic_pick_and_place/state_machine_system.h"
+#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_planner.h"
+#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/pick_and_place_configuration_parsing.h"
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/lcm/drake_lcm.h"
@@ -65,7 +65,8 @@ int DoMain(void) {
           : "";
 
   const pick_and_place::OptitrackConfiguration optitrack_configuration =
-      pick_and_place::ParseOptitrackConfigurationOrThrow(FLAGS_configuration_file);
+      pick_and_place::ParseOptitrackConfigurationOrThrow(
+          FLAGS_configuration_file);
 
   // The PickAndPlacePlanner block contains all of the demo logic.
   auto planner = builder.AddSystem<PickAndPlacePlanner>(
