@@ -2,8 +2,8 @@
 
 #include <functional>
 #include <memory>
-#include <utility>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include "robotlocomotion/robot_plan_t.hpp"
@@ -62,8 +62,6 @@ struct PostureInterpolationResult {
   // Success
   bool success;
 };
-
-
 
 /// A class which controls the pick and place actions for moving a
 /// single target in the environment.
@@ -137,13 +135,14 @@ class PickAndPlaceStateMachine {
   pick_and_place::PlannerConfiguration configuration_;
 
   // Desired end-effector end-pose for various states
-  std::map<PickAndPlaceState,Isometry3<double>> X_WE_desired_;
+  std::map<PickAndPlaceState, Isometry3<double>> X_WE_desired_;
 
   // Desired joint configuration for various states
-  std::map<PickAndPlaceState,VectorX<double>> nominal_q_map_;
+  std::map<PickAndPlaceState, VectorX<double>> nominal_q_map_;
 
   // Desired interpolation results for various states
-  std::map<PickAndPlaceState,PostureInterpolationResult> interpolation_result_map_;
+  std::map<PickAndPlaceState, PostureInterpolationResult>
+      interpolation_result_map_;
 
   // Measured location of object at planning time
   Isometry3<double> expected_object_pose_;
