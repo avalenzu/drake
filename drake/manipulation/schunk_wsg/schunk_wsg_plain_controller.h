@@ -23,7 +23,8 @@ enum class ControlMode {
 class SchunkWsgPlainController : public systems::Diagram<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SchunkWsgPlainController)
-  SchunkWsgPlainController(ControlMode control_mode = ControlMode::kPosition);
+  explicit SchunkWsgPlainController(
+      ControlMode control_mode = ControlMode::kPosition);
 
   const systems::InputPortDescriptor<double>& get_desired_state_input_port()
       const {

@@ -31,7 +31,7 @@ SchunkWsgController::SchunkWsgController() {
   builder.Connect(state_pass_through->get_output_port(),
                   wsg_controller->get_state_input_port());
   builder.Connect(wsg_trajectory_generator->get_target_output_port(),
-      wsg_controller->get_command_input_port());
+      wsg_controller->get_desired_state_input_port());
   builder.Connect(wsg_trajectory_generator->get_max_force_output_port(),
       wsg_controller->get_max_force_input_port());
 
