@@ -7,6 +7,12 @@ namespace drake {
 namespace manipulation {
 namespace schunk_wsg {
 
+enum class ControlMode {
+  kPosition = 0,
+  kForce = 1,
+  kPositionAndForce = 2,
+};
+
 /// This class implements a controller for a Schunk WSG gripper.  It
 /// has two input ports which receive lcmt_schunk_wsg_command messages
 /// and the current state, and an output port which emits the target
@@ -17,11 +23,16 @@ namespace schunk_wsg {
 class SchunkWsgPlainController : public systems::Diagram<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(SchunkWsgPlainController)
-  SchunkWsgPlainController();
+  SchunkWsgPlainController(ControlMode control_mode = ControlMode::kPosition);
 
-  const systems::InputPortDescriptor<double>& get_command_input_port()
+  const systems::InputPortDescriptor<double>& get_desired_state_input_port()
       const {
-    return this->get_input_port(command_input_port_);
+    return this->get_input_port(desired_state_input_port_);
+  }
+
+  const systems::InputPortDescriptor<double>&
+  get_feed_forward_force_input_port() const {
+    return this->get_input_port(feed_forward_force_input_port_);
   }
 
   const systems::InputPortDescriptor<double>& get_state_input_port() const {
@@ -33,9 +44,10 @@ class SchunkWsgPlainController : public systems::Diagram<double> {
   }
 
  private:
-  int command_input_port_{};
-  int state_input_port_{};
-  int max_force_input_port_{};
+  int desired_state_input_port_{-1};
+  int feed_forward_force_input_port_{-1};
+  int state_input_port_{-1};
+  int max_force_input_port_{-1};
 };
 
 }  // namespace schunk_wsg

@@ -4,6 +4,7 @@
 
 #include "drake/systems/controllers/pid_controller.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/systems/primitives/adder.h"
 #include "drake/systems/primitives/constant_vector_source.h"
 #include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/primitives/multiplexer.h"
@@ -14,7 +15,8 @@ namespace drake {
 namespace manipulation {
 namespace schunk_wsg {
 
-SchunkWsgPlainController::SchunkWsgPlainController() {
+SchunkWsgPlainController::SchunkWsgPlainController(
+    ControlMode control_mode) {
   systems::DiagramBuilder<double> builder;
 
   //  q0 = (qR - qL)
@@ -38,7 +40,7 @@ SchunkWsgPlainController::SchunkWsgPlainController() {
   auto concatenate_desired_states =
       builder.AddSystem<systems::Multiplexer<double>>(std::vector<int>({2, 2}));
 
-  command_input_port_ =
+  desired_state_input_port_ =
       builder.ExportInput(concatenate_desired_states->get_input_port(0));
   builder.Connect(desired_mean_finger_state->get_output_port(),
                   concatenate_desired_states->get_input_port(1));
@@ -101,8 +103,16 @@ SchunkWsgPlainController::SchunkWsgPlainController() {
                   negative_gain->get_input_port());
 
   auto saturation = builder.AddSystem<systems::Saturation<double>>(2);
-  builder.Connect(convert_to_u->get_output_port(),
-                  saturation->get_input_port());
+  if (use_desired_state && use_feed_forward_force) {
+    auto adder = builder.AddSystem<systems::Adder<double>>(2, 2);
+    builder.Connect(convert_to_u->get_output_port(), adder->get_input_port(0));
+    feed_forward_force_input_port_ =
+        builder.ExportInput(adder->get_input_port(1));
+    builder.Connect(adder->get_output_port(), saturation->get_input_port());
+  } else {
+    builder.Connect(convert_to_u->get_output_port(),
+                    saturation->get_input_port());
+  }
   builder.Connect(positive_gain->get_output_port(),
                   saturation->get_max_value_port());
   builder.Connect(negative_gain->get_output_port(),
