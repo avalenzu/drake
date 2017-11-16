@@ -179,7 +179,7 @@ int DoMain() {
       FLAGS_acceleration_tolerance * kOnesVector;
   const VectorX<double> kJerkTolerance = FLAGS_jerk_tolerance * kOnesVector;
 
-  KinematicTrajectoryOptimization program{&problem, kNumControlPoints,
+  KinematicTrajectoryOptimization program{&problem.tree(), kNumControlPoints,
                                           kNumEvaluationPoints, kSplineOrder,
                                           kDuration};
 

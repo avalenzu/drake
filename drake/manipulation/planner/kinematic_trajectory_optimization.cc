@@ -2,6 +2,7 @@
 #include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
+#include "drake/multibody/rigid_body_tree.h"
 
 namespace drake {
 namespace manipulation {
@@ -185,17 +186,17 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 }
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
-    const KinematicPlanningProblem* problem, int num_control_points,
+    const RigidBodyTree<double>* tree, int num_control_points,
     int num_evaluation_points, int spline_order, double duration)
-    : KinematicTrajectoryOptimization(problem->num_positions(),
+    : KinematicTrajectoryOptimization(tree->get_num_positions(),
                                       num_control_points, num_evaluation_points,
                                       spline_order, duration) {
-  problem_ = problem;
+  tree_ = tree;
   for (int i = 0; i < kNumControlPoints_; ++i) {
     AddLinearConstraint(control_points_.col(i) >=
-                        problem->tree().joint_limit_min);
+                        tree->joint_limit_min);
     AddLinearConstraint(control_points_.col(i) <=
-                        problem->tree().joint_limit_max);
+                        tree->joint_limit_max);
   }
 }
 
@@ -216,7 +217,7 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
         basis_[active_control_point_indices[i]].value(evaluation_time)(0);
   }
 
-  const RigidBody<double>* body = problem_->tree().FindBody(body_name);
+  const RigidBody<double>* body = tree_->FindBody(body_name);
   VectorXDecisionVariable vars{num_positions() *
                                active_control_point_indices.size()};
   for (int i = 0; i < kOrder_; ++i) {
@@ -224,7 +225,7 @@ void KinematicTrajectoryOptimization::AddBodyPoseConstraint(
         control_points_.col(active_control_point_indices[i]);
   }
   AddConstraint(std::make_shared<BodyPoseConstraint>(
-                    problem_->tree(), *body, X_WFd, orientation_tolerance,
+                    *tree_, *body, X_WFd, orientation_tolerance,
                     position_tolerance, X_BF, basis_function_values),
                 vars);
 }
@@ -252,7 +253,7 @@ void KinematicTrajectoryOptimization::AddCollisionAvoidanceConstraint(
           basis_[active_control_point_indices[j]].value(evaluation_times(i))(0);
     }
     auto constraint = std::make_shared<CollisionAvoidanceConstraint>(
-        problem_->tree(), collision_avoidance_threshold, basis_function_values);
+        *tree_, collision_avoidance_threshold, basis_function_values);
     VectorXDecisionVariable vars{num_positions() *
                                  active_control_point_indices.size()};
     for (int j = 0; j < kOrder_; ++j) {
