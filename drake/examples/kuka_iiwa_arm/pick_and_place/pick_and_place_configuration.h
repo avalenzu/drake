@@ -43,6 +43,9 @@ struct PlannerConfiguration {
   /// Number of tables for which the planner should expect to receive pose
   /// inputs.
   int num_tables{0};
+  /// Path (relative to DRAKE_RESOURCE_ROOT) to the model file describing each
+  /// table in the scenario.
+  std::vector<std::string> table_models;
 };
 
 /// Information required to set up a simulation of a pick-and-place scenario

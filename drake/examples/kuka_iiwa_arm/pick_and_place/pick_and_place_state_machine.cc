@@ -847,8 +847,20 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
     case PickAndPlaceState::kPlan: {
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
+      WorldSimTreeBuilder<double> tree_builder;
+      tree_builder.StoreModel("iiwa", configuration_.model_path);
+      for (int i = 0; i < configuration_.num_tables; ++i) {
+        const std::string table_tag{"table_" + std::to_string(i)};
+        tree_builder.StoreModel(table_tag, configuration_.table_models[i]);
+        Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
+        const Isometry3<double> X_WT = X_WS * env_state.get_table_poses()[i];
+        tree_builder.AddFixedModelInstance(
+            table_tag, X_WT.translation(),
+            drake::math::rotmat2rpy(X_WT.linear()));
+      }
+      tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
       std::unique_ptr<RigidBodyTree<double>> robot{
-          BuildTree(configuration_.model_path)};
+        tree_builder.Build()};
       if (ComputeTrajectories(*robot, env_state)) {
         // Proceed to execution
         state_ = PickAndPlaceState::kApproachPickPregrasp;

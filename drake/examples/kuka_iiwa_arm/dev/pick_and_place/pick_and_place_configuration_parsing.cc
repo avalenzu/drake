@@ -103,6 +103,18 @@ void ExtractModelPathsForModels(
       });
 }
 
+void ExtractPlanningModelPathsForModels(
+    const proto::PickAndPlaceConfiguration& configuration,
+    const google::protobuf::RepeatedPtrField<proto::ModelInstance>& models,
+    std::vector<std::string>* model_paths) {
+  DRAKE_DEMAND(model_paths != nullptr);
+  std::transform(
+      models.cbegin(), models.cend(), std::back_inserter(*model_paths),
+      [&configuration](const proto::ModelInstance& table) -> std::string {
+        return GetPlanningModelPathOrThrow(configuration, table);
+      });
+}
+
 pick_and_place::PlannerConfiguration DoParsePlannerConfiguration(
     const proto::PickAndPlaceConfiguration& configuration,
     const std::string& end_effector_name,
@@ -122,6 +134,10 @@ pick_and_place::PlannerConfiguration DoParsePlannerConfiguration(
   planner_configuration.model_path = GetPlanningModelPathOrThrow(
       configuration, configuration.robot(planner_configuration.robot_index));
   planner_configuration.end_effector_name = end_effector_name;
+
+  // Extract table model paths
+  ExtractPlanningModelPathsForModels(configuration, configuration.table(),
+                                     &planner_configuration.table_models);
 
   // Extract number of tables
   planner_configuration.num_tables = configuration.table_size();
@@ -200,11 +216,11 @@ ParsePlannerConfigurationsOrThrow(const std::string& filename) {
                  std::back_inserter(planner_configurations),
                  [&configuration](const proto::PickAndPlaceTask& task)
                      -> pick_and_place::PlannerConfiguration {
-                   return DoParsePlannerConfiguration(
-                       configuration, task.end_effector_name(),
-                       pick_and_place::RobotBaseIndex(task.robot_index()),
-                       pick_and_place::TargetIndex(task.target_index()));
-                 });
+                       return DoParsePlannerConfiguration(
+                           configuration, task.end_effector_name(),
+                           pick_and_place::RobotBaseIndex(task.robot_index()),
+                           pick_and_place::TargetIndex(task.target_index()));
+                     });
   return planner_configurations;
 }
 

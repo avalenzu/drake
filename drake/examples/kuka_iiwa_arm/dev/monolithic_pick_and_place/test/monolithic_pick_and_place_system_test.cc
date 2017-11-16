@@ -120,6 +120,10 @@ class SingleMoveTests : public ::testing::TestWithParam<std::tuple<int, int>> {
     planner_configuration_.end_effector_name = kEndEffectorName;
     planner_configuration_.target_dimensions = kTargetDimensions;
     planner_configuration_.num_tables = 2;
+    planner_configuration_.table_models.push_back(
+        kTableModelPaths[initial_table_index_]);
+    planner_configuration_.table_models.push_back(
+        kTableModelPaths[final_table_index_]);
   }
 
   void ValidateObjectStateAfterSingleMove() {
