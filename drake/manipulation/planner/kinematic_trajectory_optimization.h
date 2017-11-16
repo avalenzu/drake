@@ -4,7 +4,7 @@
 
 #include "drake/common/symbolic.h"
 #include "drake/common/trajectories/piecewise_polynomial_trajectory.h"
-#include "drake/manipulation/planner/kinematic_planning_problem.h"
+#include "drake/multibody/rigid_body_tree.h"
 #include "drake/solvers/mathematical_program.h"
 
 namespace drake {
@@ -33,7 +33,7 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
    * num_evaluation_points evenly spaced points along the trajectory, as well as
    * points corresponding to their start and end times.
    */
-  KinematicTrajectoryOptimization(const KinematicPlanningProblem* problem,
+  KinematicTrajectoryOptimization(const RigidBodyTree<double>* tree,
                                   int num_control_points,
                                   int num_evaluation_points = -1,
                                   int spline_order = 4, double duration = 1);
@@ -82,7 +82,7 @@ class KinematicTrajectoryOptimization : public solvers::MathematicalProgram {
   void AddCost(const solvers::Binding<solvers::Cost>& cost,
                const Vector2<double> plan_interval);
 
-  const KinematicPlanningProblem* problem_;
+  const RigidBodyTree<double>* tree_;
   const int kNumControlPoints_;
   const int kNumEvaluationPoints_;
   const int kOrder_;
