@@ -9,7 +9,9 @@
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/text_logging.h"
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/action.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
+#include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/math/rotation_matrix.h"
 #include "drake/multibody/parsers/urdf_parser.h"
@@ -22,6 +24,7 @@ namespace pick_and_place {
 namespace {
 
 using manipulation::util::WorldSimTreeBuilder;
+using symbolic::Expression;
 
 // Position the gripper 30cm above the object before grasp.
 const double kPreGraspHeightOffset = 0.3;
@@ -44,7 +47,8 @@ PostureInterpolationResult PlanInterpolatingMotion(
   const double& orientation_tolerance{request.orientation_tolerance};
   const bool& fall_back_to_joint_space_interpolation{
       request.fall_back_to_joint_space_interpolation};
-  const double max_joint_position_change{request.max_joint_position_change};
+  //const double max_joint_position_change{request.max_joint_position_change};
+  const int num_positions{original_robot.get_num_positions()};
 
   const int kNumKnots = times.size();
 
@@ -98,171 +102,94 @@ PostureInterpolationResult PlanInterpolatingMotion(
       Quaternion<double>(X_WE.first.linear()),
       Quaternion<double>(X_WE.second.linear())};
 
-  if (straight_line_motion) {
-    drake::log()->debug("Planning straight line from {} {} to {} {}",
-                        r_WE.first.transpose(),
-                        math::rotmat2rpy(X_WE.first.rotation()).transpose(),
-                        r_WE.second.transpose(),
-                        math::rotmat2rpy(X_WE.second.rotation()).transpose());
-  } else {
-    drake::log()->debug(
-        "Planning motion from {} to {}, above z = {}", r_WE.first.transpose(),
-        r_WE.second.transpose(),
-        (r_WE.first.z() < r_WE.second.z()) ? r_WE.first : r_WE.second);
+  // Set up a B-spline based planner.
+  // Note that "knots" above map to "control points" in standard B-spline nomenclature.
+  const int num_control_points{kNumKnots};
+  const int num_evaluation_points{2*num_control_points};
+  // Use 4-th order B-spline to get 𝐶² continuity.
+  const int spline_order{4};
+  const double duration{request.times.back()};
+  manipulation::planner::KinematicTrajectoryOptimization program{
+      &original_robot, num_control_points, num_evaluation_points, spline_order,
+      duration};
+  // For specifying constraints, times go from 0 to 1
+  const double t_0 = 0.0;
+  const double t_f = 1.0;
+
+  // Constrain the initial and final positions, velocities, and accelerations
+  program.AddLinearConstraint(program.position(t_0) == q_0);
+  program.AddLinearConstraint(program.position(t_f) == q_f);
+  program.AddLinearConstraint(program.velocity(t_0) ==
+                              VectorX<double>::Zero(num_positions));
+  program.AddLinearConstraint(program.velocity(t_f) ==
+                              VectorX<double>::Zero(num_positions));
+  program.AddLinearConstraint(program.acceleration(t_0) ==
+                              VectorX<double>::Zero(num_positions));
+  program.AddLinearConstraint(program.acceleration(t_f) ==
+                              VectorX<double>::Zero(num_positions));
+  double collision_avoidance_threshold{0.02};
+  if (request.state == PickAndPlaceState::kApproachPickPregrasp ||
+      request.state == PickAndPlaceState::kApproachPlacePregrasp) {
+    collision_avoidance_threshold = 0.10;
   }
+  program.AddCollisionAvoidanceConstraint(collision_avoidance_threshold);
 
-  // Define active times for intermediate and final constraints
-  const double& start_time = times.front();
-  const double& end_time = times.back();
-  const Vector2<double> intermediate_tspan{start_time, end_time};
-  const Vector2<double> final_tspan{end_time, end_time};
+  // Construct a cost on q⃛ ². Also, add  velocity limits.
+  VectorX<double> evaluation_times =
+      VectorX<double>::LinSpaced(num_evaluation_points, 0.0, 1.0);
+  VectorX<double> max_velocity(num_positions);
+  max_velocity << 1.483529, 1.483529, 1.745329, 1.308996, 2.268928, 2.268928,
+      2.356194;
 
-  // Constrain the configuration at the final knot point to match q_f.
-  posture_constraints.emplace_back(
-      new PostureConstraint(robot.get(), final_tspan));
-  const VectorX<double> q_lb{q_f};
-  const VectorX<double> q_ub{q_f};
-  posture_constraints.back()->setJointLimits(joint_indices, q_lb, q_ub);
-  constraint_array.push_back(posture_constraints.back().get());
-
-  // Construct intermediate constraints for via points
-  if (straight_line_motion) {
-    // We will impose a Point2LineSegDistConstraint and WorldGazeDirConstraint
-    // on the via points.
-    Eigen::Matrix<double, 3, 2> line_ends_W;
-    line_ends_W << r_WE.first, r_WE.second;
-
-    double dist_lb{0.0};
-    double dist_ub{position_tolerance};
-    point_to_line_seg_constraints.emplace_back(new Point2LineSegDistConstraint(
-        robot.get(), end_effector_idx, end_effector_points, world_idx,
-        line_ends_W, dist_lb, dist_ub, intermediate_tspan));
-    constraint_array.push_back(point_to_line_seg_constraints.back().get());
-
-    // Find axis-angle representation of the rotation from X_WE.first to
-    // X_WE.second.
-    Isometry3<double> X_second_first = X_WE.second.inverse() * X_WE.first;
-    Eigen::AngleAxis<double> aaxis{X_second_first.linear()};
-    Vector3<double> axis_E{aaxis.axis()};
-    Vector3<double> dir_W{X_WE.first.linear() * axis_E};
-
-    // If the intial and final end-effector orientations are close to each other
-    // (to within the orientation tolerance), fix the orientation for all via
-    // points. Otherwise, only allow the end-effector to rotate about the axis
-    // defining the rotation between the initial and final orientations.
-    if (std::abs(aaxis.angle()) < orientation_tolerance) {
-      orientation_constraints.emplace_back(new WorldQuatConstraint(
-          robot.get(), end_effector_idx,
-          Eigen::Vector4d(quat_WE.second.w(), quat_WE.second.x(),
-                          quat_WE.second.y(), quat_WE.second.z()),
-          orientation_tolerance, intermediate_tspan));
-      constraint_array.push_back(orientation_constraints.back().get());
-    } else {
-      gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
-          robot.get(), end_effector_idx, axis_E, dir_W, orientation_tolerance,
-          intermediate_tspan));
-      constraint_array.push_back(gaze_dir_constraints.back().get());
-    }
-
-    // Place limits on the change in joint angles between knots
-    const VectorX<double> ub_change =
-        max_joint_position_change * VectorX<double>::Ones(kNumJoints);
-    const VectorX<double> lb_change = -ub_change;
-    for (int i = 1; i < kNumKnots; ++i) {
-      const Vector2<double> segment_tspan{times[i - 1], times[i]};
-      posture_change_constraints.emplace_back(new PostureChangeConstraint(
-          robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
-      constraint_array.push_back(posture_change_constraints.back().get());
-    }
-  } else {
-    // We will constrain the z-component of the end-effector position to be
-    // above
-    // the lower of the two end points at all via points.
-    Isometry3<double> X_WL{Isometry3<double>::Identity()};  // World to fLoor
-    X_WL.translation() =
-        (r_WE.first.z() < r_WE.second.z()) ? r_WE.first : r_WE.second;
-
-    drake::log()->debug("Planning motion from {} to {}, above z = {}",
-                        r_WE.first.transpose(), r_WE.second.transpose(),
-                        X_WL.translation().z());
-
-    Vector3<double> lb{-std::numeric_limits<double>::infinity(),
-                       -std::numeric_limits<double>::infinity(),
-                       -position_tolerance};
-    Vector3<double> ub{std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity()};
-
-    position_in_frame_constraints.emplace_back(
-        new WorldPositionInFrameConstraint(robot.get(), end_effector_idx,
-                                           end_effector_points, X_WL.matrix(),
-                                           lb, ub, intermediate_tspan));
-    constraint_array.push_back(position_in_frame_constraints.back().get());
-  }
-
-  // Set the seed for the first attempt (and the nominal value for all attempts)
-  // to be the cubic interpolation between the initial and final
-  // configurations.
-  VectorX<double> q_dot0{VectorX<double>::Zero(kNumJoints)};
-  VectorX<double> q_dotf{VectorX<double>::Zero(kNumJoints)};
-  MatrixX<double> q_knots_seed{kNumJoints, kNumKnots};
-  PiecewisePolynomial<double> q_seed_traj{PiecewisePolynomial<double>::Cubic(
-      {times.front(), times.back()}, {q_0, q_f}, q_dot0, q_dotf)};
-  for (int i = 0; i < kNumKnots; ++i) {
-    q_knots_seed.col(i) = q_seed_traj.value(times[i]);
-  }
-  MatrixX<double> q_knots_nom{q_knots_seed};
-
-  // Get the time values into the format required by inverseKinTrajSimple
-  VectorX<double> t{kNumKnots};
-  for (int i = 0; i < kNumKnots; ++i) t(i) = times[i];
-
-  // Configure ik input and output structs.
-  IKoptions ikoptions(robot.get());
-  ikoptions.setFixInitialState(true);
-  ikoptions.setQa(MatrixX<double>::Identity(robot->get_num_positions(),
-                                            robot->get_num_positions()));
-  ikoptions.setQv(MatrixX<double>::Identity(robot->get_num_positions(),
-                                            robot->get_num_positions()));
-  ikoptions.setMajorOptimalityTolerance(straight_line_motion ? 1e-6 : 1e-4);
-  IKResults ik_res;
-
-  // Attempt to solve the ik traj problem multiple times. If falling back to
-  // joint-space interpolation is allowed, don't try as hard.
-  const int kNumRestarts =
-      (straight_line_motion && fall_back_to_joint_space_interpolation) ? 5 : 50;
-  std::default_random_engine rand_generator{1234};
-  for (int i = 0; i < kNumRestarts; ++i) {
-    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_knots_nom,
-                                  constraint_array, ikoptions);
-    if (ik_res.info[0] == 1) {
-      break;
-    } else {
-      VectorX<double> q_mid = robot->getRandomConfiguration(rand_generator);
-      q_seed_traj = PiecewisePolynomial<double>::Cubic(
-          {times.front(), 0.5 * (times.front() + times.back()), times.back()},
-          {q_0, q_mid, q_f}, q_dot0, q_dotf);
-      for (int j = 0; j < kNumKnots; ++j) {
-        q_knots_seed.col(j) = q_seed_traj.value(times[j]);
-      }
+  // If the intial and final end-effector orientations are close to each other
+  // (to within the orientation tolerance), fix the orientation for all via
+  // points. Otherwise, only allow the end-effector to rotate about the axis
+  // defining the rotation between the initial and final orientations.
+  // Find axis-angle representation of the rotation from X_WE.first to
+  // X_WE.second.
+  Isometry3<double> X_second_first = X_WE.second.inverse() * X_WE.first;
+  Eigen::AngleAxis<double> aaxis{X_second_first.linear()};
+  if (std::abs(aaxis.angle()) < orientation_tolerance) {
+    for (int i = 0; i < num_evaluation_points; ++i) {
+      program.AddBodyPoseConstraint(evaluation_times(i), "iiwa_link_ee",
+                                    X_WE.first, 10, 5.*M_PI/180., X_LE);
     }
   }
+
+  const double jerk_weight = 1.0;
+  symbolic::Substitution control_point_substitution;
+  for (int i = 0; i < num_positions; ++i) {
+    for (int j = 0; j < num_control_points; ++j) {
+      control_point_substitution.emplace(
+          program.control_points()(i, j),
+          std::sqrt(jerk_weight) * program.control_points()(i, j));
+    }
+  }
+  Expression jerk_squared_cost{Expression::Zero()};
+  for (int i = 0; i < num_evaluation_points; ++i) {
+    if (jerk_weight > 0 && i < num_evaluation_points - 1) {
+      VectorX<Expression> jerk0 = program.jerk(evaluation_times(i));
+      VectorX<Expression> jerk1 = program.jerk(evaluation_times(i + 1));
+      jerk_squared_cost +=
+          (evaluation_times(i + 1) - evaluation_times(i)) * 0.5 *
+          (jerk0.transpose() * jerk0 + jerk1.transpose() * jerk1)(0);
+    }
+    //program.AddLinearConstraint(program.velocity(evaluation_times(i)) <=
+                                //max_velocity);
+    //program.AddLinearConstraint(program.velocity(evaluation_times(i)) >=
+                                //-max_velocity);
+  }
+  program.AddQuadraticCost(
+      jerk_squared_cost.Substitute(control_point_substitution));
+
+  drake::log()->info("Calling program.Solve() ...");
+  solvers::SolutionResult solution_result = program.Solve();
+  drake::log()->info("... Done. Solver returned {}", solution_result);
+  drake::log()->info(" Success: {}", solution_result == solvers::SolutionResult::kSolutionFound);
+
   PostureInterpolationResult result;
-  result.success = (ik_res.info[0] == 1);
-  std::vector<MatrixX<double>> q_sol(kNumKnots);
-  if (result.success) {
-    for (int i = 0; i < kNumKnots; ++i) {
-      q_sol[i] = ik_res.q_sol[i];
-    }
-    result.q_traj =
-        PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot0, q_dotf);
-  } else if (straight_line_motion && fall_back_to_joint_space_interpolation) {
-    result = PlanInterpolatingMotion(request, original_robot,
-                                     false /*straight_line_motion*/);
-  } else {
-    result.q_traj = PiecewisePolynomial<double>::Cubic(
-        {times.front(), times.back()}, {q_0, q_0}, q_dot0, q_dotf);
-  }
+  result.success = solution_result == solvers::SolutionResult::kSolutionFound;
+  result.q_traj = program.ReconstructTrajectory().get_piecewise_polynomial();
   return result;
 }
 
@@ -349,7 +276,9 @@ bool ComputeInitialAndFinalObjectPoses(
     Vector3<double> r_WT_in_xy_plane{X_WT.translation()};
     r_WT_in_xy_plane.z() = 0;
     drake::log()->debug("Table {}: Distance: {} m", i, r_WT_in_xy_plane.norm());
-    if (r_WT_in_xy_plane.norm() < kMaxReach) {
+    if (r_WT_in_xy_plane.norm() < kMaxReach &&
+        std::abs<double>(math::rotmat2rpy(X_WT.linear())(0)) < M_PI_4 &&
+        std::abs<double>(math::rotmat2rpy(X_WT.linear())(1)) < M_PI_4) {
       Vector3<double> r_WO_in_xy_plane{
           X_WO_initial_and_final->first.translation()};
       r_WO_in_xy_plane.z() = 0;
@@ -644,7 +573,7 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(
       PickAndPlaceState::kApproachPlace,
       PickAndPlaceState::kLiftFromPlace};
   VectorX<double> q_0{iiwa.get_num_positions()};
-  if (interpolation_result_map_.empty()) {
+  if (true || interpolation_result_map_.empty()) {
     q_0 << env_state.get_iiwa_q();
     drake::log()->debug("Using current configuration as q_0.");
   } else {
@@ -702,10 +631,11 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(
       request.max_joint_position_change = 0.5 * M_PI_4;
       request.q_initial = q_0;
       request.q_final = q_f;
-      double max_delta_q{
-          (request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
-      int num_via_points = std::min<int>(
-          3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
+      request.state = state;
+      //double max_delta_q{
+          //(request.q_final - request.q_initial).cwiseAbs().maxCoeff()};
+      int num_via_points = 7; //std::min<int>(
+          //3, std::ceil(2 * max_delta_q / request.max_joint_position_change));
       double dt{duration / static_cast<double>(num_via_points)};
       request.times.resize(num_via_points + 1);
       request.times.front() = 0.0;
@@ -719,6 +649,9 @@ bool PickAndPlaceStateMachine::ComputeTrajectories(
           fall_back_to_joint_space_interpolation;
 
       result = PlanInterpolatingMotion(request, iiwa);
+      if (!result.success) {
+        return false;
+      }
     }
 
     interpolation_result_map_.emplace(state, result);
@@ -858,9 +791,22 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
             table_tag, X_WT.translation(),
             drake::math::rotmat2rpy(X_WT.linear()));
       }
-      tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
-      std::unique_ptr<RigidBodyTree<double>> robot{
-        tree_builder.Build()};
+      //int robot_id =
+          tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
+      // Add the gripper.
+      tree_builder.StoreModel("wsg",
+          "drake/manipulation/models/wsg_50_description"
+          "/sdf/schunk_wsg_50_fixed_fingers.sdf");
+      auto frame_ee = tree_builder.tree().findFrame(
+          "iiwa_frame_ee", robot_id);
+      auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
+      wsg_frame->get_mutable_transform_to_body()->rotate(
+          Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
+      wsg_frame->get_mutable_transform_to_body()->translate(
+          0.04 * Eigen::Vector3d::UnitY());
+      tree_builder.AddModelInstanceToFrame(
+          "wsg", wsg_frame, drake::multibody::joints::kFixed);
+      std::unique_ptr<RigidBodyTree<double>> robot{tree_builder.Build()};
       if (ComputeTrajectories(*robot, env_state)) {
         // Proceed to execution
         state_ = PickAndPlaceState::kApproachPickPregrasp;

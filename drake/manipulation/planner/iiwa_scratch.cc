@@ -82,9 +82,20 @@ int DoMain() {
   const std::string kModelPath = FindResourceOrThrow(
       "drake/manipulation/models/iiwa_description/urdf/"
       "iiwa14_sphere_collision.urdf");
+
+  const std::string kWsgModelPath = FindResourceOrThrow(
+      "drake/manipulation/models/wsg_50_description/urdf/"
+      "schunk_wsg_50_fixed_fingers.urdf");
   auto iiwa = std::make_unique<RigidBodyTree<double>>();
   drake::parsers::urdf::AddModelInstanceFromUrdfFile(
       kModelPath, multibody::joints::kFixed, nullptr, iiwa.get());
+  auto frame_ee = iiwa->findFrame("iiwa_frame_ee");
+  auto wsg_frame = frame_ee->Clone(frame_ee->get_mutable_rigid_body());
+  wsg_frame->get_mutable_transform_to_body()->rotate(
+      Eigen::AngleAxisd(-0.39269908, Eigen::Vector3d::UnitY()));
+  wsg_frame->get_mutable_transform_to_body()->translate(
+      0.04 * Eigen::Vector3d::UnitY());
+  drake::parsers::urdf::AddModelInstanceFromUrdfFile(kWsgModelPath, multibody::joints::kFixed, wsg_frame, iiwa.get());
   if (FLAGS_flat_terrain) {
     drake::multibody::AddFlatTerrainToWorld(iiwa.get());
   }

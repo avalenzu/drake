@@ -43,6 +43,7 @@ drake_cc_library(
         "//drake/lcmtypes:schunk",
         "//drake/lcmtypes:viewer",
         "//drake/manipulation/util:world_sim_tree_builder",
+        "//drake/manipulation/planner:kinematic_trajectory_optimization",
         "//drake/multibody:inverse_kinematics",
         "//drake/multibody:rigid_body_tree",
         "//drake/multibody/parsers",

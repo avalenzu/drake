@@ -45,6 +45,7 @@ struct PostureInterpolationRequest {
   MatrixX<double> q_final;
   // Knots
   std::vector<double> times;
+  PickAndPlaceState state;
   // Maximum allowable deviation from straight line end-effector path at knot
   // points
   double position_tolerance;

@@ -70,6 +70,7 @@ drake_cc_binary(
     srcs = ["iiwa_scratch.cc"],
     data = [
         "//drake/manipulation/models/iiwa_description:models",
+        "//drake/manipulation/models/wsg_50_description:models",
     ],
     deps = [
         ":kinematic_trajectory_optimization",
