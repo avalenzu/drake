@@ -1,20 +1,22 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
+#include <random>
 #include <utility>
 #include <vector>
 
 #include "robotlocomotion/robot_plan_t.hpp"
 
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_optional.h"
 #include "drake/common/eigen_types.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/action.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/world_state.h"
 #include "drake/lcmt_schunk_wsg_command.hpp"
-#include "drake/manipulation/planner/constraint_relaxing_ik.h"
-
 namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
@@ -22,8 +24,9 @@ namespace pick_and_place {
 
 
 /// Different states for the pick and place task.
-enum PickAndPlaceState {
+enum class PickAndPlaceState {
   kOpenGripper,
+  kPlan,
   kApproachPickPregrasp,
   kApproachPick,
   kGrasp,
@@ -32,6 +35,7 @@ enum PickAndPlaceState {
   kApproachPlace,
   kPlace,
   kLiftFromPlace,
+  kReset,
   kDone,
 };
 
@@ -75,17 +79,6 @@ class PickAndPlaceStateMachine {
 
   PickAndPlaceState state_;
 
-  // Poses used for storing end-points of Iiwa trajectories at various states
-  // of the demo.
-  Isometry3<double> X_Wend_effector_0_;
-  Isometry3<double> X_Wend_effector_1_;
-
-  // Desired object end pose relative to the base of the iiwa arm.
-  Isometry3<double> X_IIWAobj_desired_;
-
-  // Desired object end pose in the world frame.
-  Isometry3<double> X_Wobj_desired_;
-
   Vector3<double> tight_pos_tol_;
   double tight_rot_tol_;
 
@@ -94,8 +87,20 @@ class PickAndPlaceStateMachine {
 
   pick_and_place::PlannerConfiguration configuration_;
 
-  Isometry3<double> X_WO_initial_;
-  Isometry3<double> X_WO_final_;
+  // Desired interpolation results for various states
+  optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
+      interpolation_result_map_{};
+
+  // Measured location of object at planning time
+  Isometry3<double> expected_object_pose_;
+
+  // Joint position seed
+  optional<PiecewisePolynomial<double>> q_traj_seed_;
+
+  // Counter for number of planning failures
+  int planning_failure_count_{0};
+
+  std::default_random_engine rand_generator_{1234};
 };
 
 }  // namespace pick_and_place
