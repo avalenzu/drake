@@ -27,32 +27,6 @@ using manipulation::util::WorldSimTreeBuilder;
 
 const char kGraspFrameName[] = "grasp_frame";
 
-struct PostureInterpolationRequest {
-  // Initial configuration
-  MatrixX<double> q_initial;
-  // Final configuration
-  MatrixX<double> q_final;
-  // Knots
-  std::vector<double> times;
-  // Maximum allowable deviation from straight line end-effector path at knot
-  // points
-  double position_tolerance;
-  // Maximum allowable angular deviation at knot points
-  double orientation_tolerance;
-  // If true, interpolate in joint space if the planner fails to find an
-  // interpolation that provides a
-  // straight-line end-effector path
-  bool fall_back_to_joint_space_interpolation;
-  VectorX<double> max_joint_position_change;
-};
-
-struct PostureInterpolationResult {
-  // Configuration trajectory
-  PiecewisePolynomial<double> q_traj;
-  // Success
-  bool success;
-};
-
 void OpenGripper(const WorldState& env_state, WsgAction* wsg_act,
                  lcmt_schunk_wsg_command* msg) {
   wsg_act->OpenGripper(env_state, msg);
@@ -222,10 +196,10 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
 
 optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
 ComputeTrajectories(const WorldState& env_state,
-                             const PiecewisePolynomial<double>& q_traj_seed,
-                             const double orientation_tolerance,
-                             const Vector3<double>& position_tolerance,
-                             RigidBodyTree<double>* robot) {
+                    const PiecewisePolynomial<double>& q_traj_seed,
+                    const double orientation_tolerance,
+                    const Vector3<double>& position_tolerance,
+                    RigidBodyTree<double>* robot) {
   //  Create vectors to hold the constraint objects
   std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
   std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
