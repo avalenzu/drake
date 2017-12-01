@@ -116,15 +116,16 @@ ComputeInitialAndFinalObjectPoses(const WorldState& env_state) {
   const Isometry3<double> X_WO_final = X_WT * X_TO_final;
   return std::make_pair(X_WO_initial, X_WO_final);
 }
-
+/**
+              LiftFromPick 2───────────────────────────3 ApproachPlacePregrasp
+                           │                           │
+   ApproachPickPregrasp 0  │                           │  5 LiftFromPlace
+                         ╲ │                           │ ╱
+                          ╲│                           │╱
+              ApproachPick 1                           4 ApproachPlacePregrasp
+**/
 optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     const WorldState& env_state, double yaw_offset, double pitch_offset) {
-  //       (ApproachPickPregrasp,                         (ApproachPlacePregrasp
-  //        LiftFromPick ),                                LiftFromPlace)
-  //       +--------------------------------------------------------+
-  //       |                                                        |
-  //       |                                                        |
-  //       + (ApproachPick)                         (ApproachPlace) +
   //
   // W  - World frame, coincides with kuka base frame.
   // O  - Object frame
