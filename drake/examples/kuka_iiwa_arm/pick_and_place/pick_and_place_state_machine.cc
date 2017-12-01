@@ -208,7 +208,7 @@ ComputeTrajectories(const WorldState& env_state,
       posture_change_constraints;
   std::vector<std::unique_ptr<Point2PointDistanceConstraint>>
       point_to_point_constraints;
-  std::vector<std::unique_ptr<WorldGazeDirConstraint>> gaze_dir_constraints;
+  std::vector<std::unique_ptr<WorldGazeOrientConstraint>> gaze_dir_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_arrays;
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::vector<double> pitch_offsets{M_PI / 8};
@@ -229,7 +229,7 @@ ComputeTrajectories(const WorldState& env_state,
       PickAndPlaceState::kLiftFromPlace};
   const double kShortDuration = 1;
   const double kLongDuration = 3;
-  const double kFewKnots = 3;
+  const double kFewKnots = 2;
   const double kManyKnots = 5;
   std::map<PickAndPlaceState, double> per_state_durations{
       {PickAndPlaceState::kApproachPickPregrasp, kLongDuration},
@@ -297,6 +297,7 @@ ComputeTrajectories(const WorldState& env_state,
           const Vector3<double>& r_WG_final = X_WG_final.translation();
           const Quaternion<double>& quat_WG_final{X_WG_final.rotation()};
           const Vector3<double>& r_WG_initial = X_WG_initial.translation();
+          const Quaternion<double>& quat_WG_initial{X_WG_initial.rotation()};
 
           // Constrain the end-effector position and orientation at the end of
           // this state.
@@ -319,7 +320,7 @@ ComputeTrajectories(const WorldState& env_state,
               (state == PickAndPlaceState::kApproachPickPregrasp &&
                (r_WG_final - r_WG_initial).norm() > 0.2)) {
             intermediate_orientation_tolerance = 30 * M_PI / 180.0;
-            intermediate_position_tolerance = Vector3<double>::Constant(0.1);
+            intermediate_position_tolerance = Vector3<double>::Constant(0.05);
           }
 
           // Constrain the position of the grasp frame at intermediate points.
@@ -330,6 +331,9 @@ ComputeTrajectories(const WorldState& env_state,
           // base_avoidance_threshold.
           auto r_WG_traj = PiecewisePolynomial<double>::Pchip(
               {start_time, end_time}, {r_WG_initial, r_WG_final}, true);
+
+          Quaternion<double> quat_WG_intermediate =
+              quat_WG_initial.slerp(0.5, quat_WG_final);
           constexpr double base_avoidance_threshold{0.6};
           for (int j = start_knot + 1; j < end_knot; ++j) {
             Vector3<double> r_WG_intermediate = r_WG_traj.value(t(j));
@@ -367,9 +371,13 @@ ComputeTrajectories(const WorldState& env_state,
             constraint_arrays.back().push_back(
                 orientation_constraints.back().get());
           } else {
-            gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
-                robot, grasp_frame_index, axis_E, dir_W,
-                intermediate_orientation_tolerance, intermediate_tspan));
+            gaze_dir_constraints.emplace_back(new WorldGazeOrientConstraint(
+                robot, grasp_frame_index, axis_E,
+                Eigen::Vector4d(
+                    quat_WG_intermediate.w(), quat_WG_intermediate.x(),
+                    quat_WG_intermediate.y(), quat_WG_intermediate.z()),
+                intermediate_orientation_tolerance, 0.6 * aaxis.angle(),
+                intermediate_tspan));
             constraint_arrays.back().push_back(
                 gaze_dir_constraints.back().get());
           }
@@ -408,8 +416,8 @@ ComputeTrajectories(const WorldState& env_state,
   ikoptions.setFixInitialState(true);
   ikoptions.setMajorIterationsLimit(5e2);
   // ikoptions.setIterationsLimit(1e5);
-  ikoptions.setQ(MatrixX<double>::Zero(num_positions, num_positions));
-  ikoptions.setQa(MatrixX<double>::Identity(num_positions, num_positions));
+  //ikoptions.setQ(MatrixX<double>::Zero(num_positions, num_positions));
+  //ikoptions.setQa(MatrixX<double>::Identity(num_positions, num_positions));
   // ikoptions.setQv(MatrixX<double>::Identity(num_positions,
   // num_positions));
   bool success = false;
@@ -582,7 +590,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
           q.push_back(q_traj.value(t));
         }
         std::unique_ptr<RigidBodyTree<double>> robot{
-            BuildTree(configuration_.model_path)};
+            BuildTree(configuration_.drake_relative_model_path)};
 
         iiwa_move_.MoveJoints(env_state, *robot, times, q, &plan);
         iiwa_callback(&plan);
@@ -640,7 +648,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
       std::unique_ptr<RigidBodyTree<double>> robot{
-          BuildTree(configuration_.model_path)};
+          BuildTree(configuration_.drake_relative_model_path)};
 
       // Add the grasp frame as a RigidBody. This allows it to be used in IK
       // constraints.
