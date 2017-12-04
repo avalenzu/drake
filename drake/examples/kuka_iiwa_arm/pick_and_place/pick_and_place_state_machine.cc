@@ -647,6 +647,10 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       // Compute all the desired configurations
       expected_object_pose_ = env_state.get_object_pose();
+      // Set log level to warn to silence unnecessary logging statements from
+      // RigidBodyTree.
+      auto previous_log_level = drake::log()->level();
+      drake::log()->set_level(spdlog::level::warn);
       std::unique_ptr<RigidBodyTree<double>> robot{
           BuildTree(configuration_.drake_relative_model_path)};
 
@@ -675,6 +679,8 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
                              std::move(grasp_frame_fixed_joint));
       robot->add_rigid_body(std::move(grasp_frame));
       robot->compile();
+      // Reset the log level.
+      drake::log()->set_level(previous_log_level);
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
       double duration = 1.0;
