@@ -283,32 +283,35 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree(
 
   if (add_grasp_frame) {
     std::unique_ptr<RigidBodyTree<double>> robot{tree_builder.Build()};
-    // Add the grasp frame as a RigidBody. This allows it to be used in IK
-    // constraints.
-    // TODO(avalenzu): Add a planning model for the gripper that includes the
-    // grasp frame as a named frame.
-    auto grasp_frame = std::make_unique<RigidBody<double>>();
-    grasp_frame->set_name(kGraspFrameName);
-    // The gripper (and therfore the grasp frame) is rotated relative to the end
-    // effector link.
+    // The gripper (and therfore the grasp frame) is rotated relative to the
+    // end effector link.
     const double grasp_frame_angular_offset{-M_PI / 8};
-    // The grasp frame is located between the fingertips of the gripper, which
-    // puts it grasp_frame_translational_offset from the origin of the
+    // The grasp frame is located between the fingertips of the gripper
+    // which is grasp_frame_translational_offset from the origin of the
     // end-effector link.
     const double grasp_frame_translational_offset{0.19};
-    // Define the pose of the grasp frame (G) relative to the end effector (E).
     Isometry3<double> X_EG{Isometry3<double>::Identity()};
     X_EG.rotate(Eigen::AngleAxisd(grasp_frame_angular_offset,
                                   Eigen::Vector3d::UnitX()));
     X_EG.translation().x() = grasp_frame_translational_offset;
-    // Rigidly affix the grasp frame RigidBody to the end effector RigidBody.
-    std::string grasp_frame_joint_name = kGraspFrameName;
-    grasp_frame_joint_name += "_joint";
-    auto grasp_frame_fixed_joint =
-        std::make_unique<FixedJoint>(grasp_frame_joint_name, X_EG);
-    grasp_frame->add_joint(robot->FindBody(configuration.end_effector_name),
-                           std::move(grasp_frame_fixed_joint));
-    robot->add_rigid_body(std::move(grasp_frame));
+
+    for (int i = 0; i < num_arms; ++i) {
+      // Add the grasp frame as a RigidBody. This allows it to be used in IK
+      // constraints.
+      // TODO(avalenzu): Add a planning model for the gripper that includes
+      // the grasp frame as a named frame.
+      auto grasp_frame = std::make_unique<RigidBody<double>>();
+      grasp_frame->set_name(kGraspFrameName);
+      // Rigidly affix the grasp frame RigidBody to the end effector RigidBody.
+      std::string grasp_frame_joint_name = kGraspFrameName;
+      grasp_frame_joint_name += "_joint";
+      auto grasp_frame_fixed_joint =
+          std::make_unique<FixedJoint>(grasp_frame_joint_name, X_EG);
+      grasp_frame->add_joint(robot->FindBody(configuration.end_effector_name,
+                                             "", arm_instance_ids[i]),
+                             std::move(grasp_frame_fixed_joint));
+      robot->add_rigid_body(std::move(grasp_frame));
+    }
     robot->compile();
     drake::log()->set_level(previous_log_level);
     return robot;
@@ -468,11 +471,11 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
 }
 
 optional<std::map<PickAndPlaceState, VectorX<double>>>
-ComputeNominalConfigurations(const WorldState& env_state,
-                             const PiecewisePolynomial<double>& q_traj_seed,
-                             const double orientation_tolerance,
-                             const Vector3<double>& position_tolerance,
-                             RigidBodyTree<double>* robot) {
+ComputeNominalConfigurations(
+    const WorldState& env_state, const PiecewisePolynomial<double>& q_traj_seed,
+    const double orientation_tolerance,
+    const Vector3<double>& position_tolerance,
+    const pick_and_place::PlannerConfiguration& configuration) {
   //  Create vectors to hold the constraint objects.
   std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
   std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
@@ -481,6 +484,7 @@ ComputeNominalConfigurations(const WorldState& env_state,
   std::vector<std::vector<RigidBodyConstraint*>> constraint_arrays;
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::vector<double> pitch_offsets{M_PI / 8};
+  std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration)};
   int num_joints = robot->get_num_positions();
 
   int grasp_frame_index = robot->FindBodyIndex(kGraspFrameName);
@@ -519,14 +523,14 @@ ComputeNominalConfigurations(const WorldState& env_state,
 
           // Constrain the end-effector position for all knots.
           position_constraints.emplace_back(new WorldPositionConstraint(
-              robot, grasp_frame_index, end_effector_points,
+              robot.get(), grasp_frame_index, end_effector_points,
               r_WG - position_tolerance, r_WG + position_tolerance,
               knot_tspan));
           constraint_arrays.back().push_back(position_constraints.back().get());
 
           // Constrain the end-effector orientation for all knots.
           orientation_constraints.emplace_back(
-              new WorldQuatConstraint(robot, grasp_frame_index,
+              new WorldQuatConstraint(robot.get(), grasp_frame_index,
                                       Eigen::Vector4d(quat_WG.w(), quat_WG.x(),
                                                       quat_WG.y(), quat_WG.z()),
                                       orientation_tolerance, knot_tspan));
@@ -549,7 +553,7 @@ ComputeNominalConfigurations(const WorldState& env_state,
                                             VectorX<double>::Ones(num_joints)};
             const VectorX<double> lb_change{-ub_change};
             posture_change_constraints.emplace_back(new PostureChangeConstraint(
-                robot, joint_indices, lb_change, ub_change, segment_tspan));
+                robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
             constraint_arrays.back().push_back(
                 posture_change_constraints.back().get());
           }
@@ -563,7 +567,7 @@ ComputeNominalConfigurations(const WorldState& env_state,
   // Solve the IK problem. Re-seed with random values if the initial seed is
   // unsuccessful.
   IKResults ik_res;
-  IKoptions ikoptions(robot);
+  IKoptions ikoptions(robot.get());
   ikoptions.setFixInitialState(true);
   bool success = false;
   VectorX<double> q_initial{env_state.get_iiwa_q()};
@@ -573,7 +577,7 @@ ComputeNominalConfigurations(const WorldState& env_state,
       double s = static_cast<double>(j) / static_cast<double>(num_knots - 1);
       q_knots_seed.col(j) = q_traj_seed.value(s);
     }
-    ik_res = inverseKinTrajSimple(robot, t, q_knots_seed, q_nom,
+    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
                                   constraint_array, ikoptions);
     success = ik_res.info[0] == 1;
     if (success) {
@@ -648,9 +652,12 @@ PickAndPlaceStateMachine::~PickAndPlaceStateMachine() {}
 optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
 PickAndPlaceStateMachine::ComputeTrajectories(
     const WorldState& env_state, const PiecewisePolynomial<double>& q_traj_seed,
-    RigidBodyTree<double>* robot) const {
-  if (auto nominal_q_map = ComputeNominalConfigurations(
-          env_state, q_traj_seed, tight_rot_tol_, tight_pos_tol_, robot)) {
+    const pick_and_place::PlannerConfiguration& configuration) const {
+  if (auto nominal_q_map =
+          ComputeNominalConfigurations(env_state, q_traj_seed, tight_rot_tol_,
+                                       tight_pos_tol_, configuration_)) {
+    std::unique_ptr<RigidBodyTree<double>> robot{
+        BuildTree(configuration_, true /*add_grasp_frame*/)};
     std::vector<PickAndPlaceState> states{
         PickAndPlaceState::kApproachPickPregrasp,
         PickAndPlaceState::kApproachPick,
@@ -724,7 +731,7 @@ PickAndPlaceStateMachine::ComputeTrajectories(
         request.fall_back_to_joint_space_interpolation =
             fall_back_to_joint_space_interpolation;
 
-        result = PlanInterpolatingMotion(request, robot);
+        result = PlanInterpolatingMotion(request, robot.get());
         if (!result.success) {
           drake::log()->warn(
               "Attempt {} failed while computing trajectory for {}.",
@@ -873,15 +880,13 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       // Compute all the desired configurations.
       expected_object_pose_ = env_state.get_object_pose();
-      std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(
-          configuration_, true /*add_grasp_frame*/)};
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
       interpolation_result_map_ = ComputeTrajectories(
           env_state,
           q_traj_seed_.value_or(PiecewisePolynomial<double>::ZeroOrderHold(
               {0.0, 1.0}, {q_initial, q_initial})),
-          robot.get());
+          configuration_);
       if (interpolation_result_map_) {
         // Proceed to execution.
         state_ = PickAndPlaceState::kApproachPickPregrasp;
@@ -889,6 +894,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       } else {
         // otherwise re-plan on next call to Update.
         // Set a random seed for the next call to ComputeNominalConfigurations.
+        std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration_)};
         VectorX<double> q_seed = robot->getRandomConfiguration(rand_generator_);
         q_traj_seed_.emplace(PiecewisePolynomial<double>::FirstOrderHold(
             {0.0, 1.0}, {q_initial, q_seed}));

@@ -74,9 +74,10 @@ class PickAndPlaceStateMachine {
 
  private:
   optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
-  ComputeTrajectories(const WorldState& env_state,
-                      const PiecewisePolynomial<double>& q_traj_seed,
-                      RigidBodyTree<double>* iiwa) const;
+  ComputeTrajectories(
+      const WorldState& env_state,
+      const PiecewisePolynomial<double>& q_traj_seed,
+      const pick_and_place::PlannerConfiguration& configuration) const;
 
   bool single_move_;
 
