@@ -686,7 +686,7 @@ SolutionResult GurobiSolver::Solve(MathematicalProgram& prog) const {
 
   int error = 0;
   // TODO(naveenoid) : This needs access externally.
-  double sparseness_threshold = 1e-14;
+  double sparseness_threshold = 1e-13;
   double constant_cost = 0;
   error = AddCosts(model, &constant_cost, prog, sparseness_threshold);
   DRAKE_DEMAND(!error);

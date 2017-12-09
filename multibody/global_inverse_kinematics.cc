@@ -96,7 +96,7 @@ GlobalInverseKinematics::GlobalInverseKinematics(
             if (dynamic_cast<const RevoluteJoint*>(joint) != nullptr) {
               // Adding McCormick Envelope will add binary variables into
               // the program.
-              solvers::AddRotationMatrixMcCormickEnvelopeMilpConstraints(
+              solvers::AddRotationMatrixBilinearMcCormickMilpConstraints(
                   this, R_WB_[body_idx], num_binary_vars_per_half_axis);
 
               const RevoluteJoint* revolute_joint =

@@ -12,9 +12,11 @@
 #include "drake/common/trajectories/piecewise_quaternion.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/multibody/global_inverse_kinematics.h"
 #include "drake/multibody/joints/fixed_joint.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_ik.h"
+#include "drake/solvers/gurobi_solver.h"
 
 namespace drake {
 namespace examples {
@@ -25,6 +27,13 @@ namespace {
 using manipulation::util::WorldSimTreeBuilder;
 
 const char kGraspFrameName[] = "grasp_frame";
+
+std::vector<PickAndPlaceState> states{PickAndPlaceState::kApproachPickPregrasp,
+                                      PickAndPlaceState::kApproachPick /*,
+      PickAndPlaceState::kLiftFromPick,
+      PickAndPlaceState::kApproachPlacePregrasp,
+      PickAndPlaceState::kApproachPlace,
+      PickAndPlaceState::kLiftFromPlace*/};
 
 struct PostureInterpolationRequest {
   // Initial configuration
@@ -270,14 +279,15 @@ void CloseGripper(const WorldState& env_state, WsgAction* wsg_act,
 
 std::unique_ptr<RigidBodyTree<double>> BuildTree(
     const pick_and_place::PlannerConfiguration& configuration,
-    bool add_grasp_frame = false, int num_arms = 1) {
+    bool add_grasp_frame = false, int num_arms = 1,
+    std::vector<int>* arm_instance_ids = nullptr) {
   WorldSimTreeBuilder<double> tree_builder;
   tree_builder.StoreModel("iiwa", configuration.absolute_model_path());
-  std::vector<int> arm_instance_ids(num_arms, 0);
+  arm_instance_ids->resize(num_arms, 0);
   auto previous_log_level = drake::log()->level();
   drake::log()->set_level(spdlog::level::warn);
   for (int i = 0; i < num_arms; ++i) {
-    arm_instance_ids[i] =
+    (*arm_instance_ids)[i] =
         tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
   }
 
@@ -301,6 +311,7 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree(
       // TODO(avalenzu): Add a planning model for the gripper that includes
       // the grasp frame as a named frame.
       auto grasp_frame = std::make_unique<RigidBody<double>>();
+      grasp_frame->set_model_instance_id((*arm_instance_ids)[i]);
       grasp_frame->set_name(kGraspFrameName);
       // Rigidly affix the grasp frame RigidBody to the end effector RigidBody.
       std::string grasp_frame_joint_name = kGraspFrameName;
@@ -308,7 +319,7 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree(
       auto grasp_frame_fixed_joint =
           std::make_unique<FixedJoint>(grasp_frame_joint_name, X_EG);
       grasp_frame->add_joint(robot->FindBody(configuration.end_effector_name,
-                                             "", arm_instance_ids[i]),
+                                             "", (*arm_instance_ids)[i]),
                              std::move(grasp_frame_fixed_joint));
       robot->add_rigid_body(std::move(grasp_frame));
     }
@@ -319,6 +330,13 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree(
     drake::log()->set_level(previous_log_level);
     return tree_builder.Build();
   }
+}
+
+std::unique_ptr<RigidBodyTree<double>> BuildTree(
+    const pick_and_place::PlannerConfiguration& configuration,
+    bool add_grasp_frame, int num_arms) {
+  std::vector<int> arm_instance_ids;
+  return BuildTree(configuration, add_grasp_frame, num_arms, &arm_instance_ids);
 }
 
 optional<std::pair<Isometry3<double>, Isometry3<double>>>
@@ -476,28 +494,19 @@ ComputeNominalConfigurations(
     const double orientation_tolerance,
     const Vector3<double>& position_tolerance,
     const pick_and_place::PlannerConfiguration& configuration) {
-  //  Create vectors to hold the constraint objects.
-  std::vector<std::unique_ptr<WorldPositionConstraint>> position_constraints;
-  std::vector<std::unique_ptr<WorldQuatConstraint>> orientation_constraints;
-  std::vector<std::unique_ptr<PostureChangeConstraint>>
-      posture_change_constraints;
-  std::vector<std::vector<RigidBodyConstraint*>> constraint_arrays;
-  std::vector<double> yaw_offsets{M_PI, 0.0};
+  //  Create vector to hold the global IK problems.
+  std::vector<std::unique_ptr<multibody::GlobalInverseKinematics>>
+      global_ik_problems;
+  std::vector<double> yaw_offsets{0.0, M_PI};
   std::vector<double> pitch_offsets{M_PI / 8};
-  std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration)};
-  int num_joints = robot->get_num_positions();
 
-  int grasp_frame_index = robot->FindBodyIndex(kGraspFrameName);
-  Vector3<double> end_effector_points{0, 0, 0};
-
-  std::vector<PickAndPlaceState> states{
-      PickAndPlaceState::kApproachPickPregrasp,
-      PickAndPlaceState::kApproachPick,
-      PickAndPlaceState::kLiftFromPick,
-      PickAndPlaceState::kApproachPlacePregrasp,
-      PickAndPlaceState::kApproachPlace,
-      PickAndPlaceState::kLiftFromPlace};
+  std::vector<int> arm_instance_ids;
   int num_knots = states.size() + 1;
+  std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(
+      configuration, true /*add_grasp_frame*/, num_knots, &arm_instance_ids)};
+  int num_joints = robot->get_num_positions() / num_knots;
+  Vector3<double> end_effector_points{0, 0, 0};
+  VectorX<double> q_initial{q_traj_seed.value(0)};
 
   VectorX<double> t{VectorX<double>::LinSpaced(num_knots, 0, num_knots - 1)};
   // Set up an inverse kinematics trajectory problem with one knot for each
@@ -505,91 +514,143 @@ ComputeNominalConfigurations(
   MatrixX<double> q_nom =
       MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
 
+  auto kinematics_cache_initial = robot->doKinematics(q_initial);
+
+  drake::log()->trace("Creating global IK problems ...");
   for (double pitch_offset : pitch_offsets) {
     for (double yaw_offset : yaw_offsets) {
+      drake::log()->trace("Pitch offset: {}, Yaw offset {}", pitch_offset,
+                          yaw_offset);
       if (auto X_WG_desired =
               ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
-        constraint_arrays.emplace_back();
+        drake::log()->trace("Calling GlobalInverseKinematics constructor ...");
+        global_ik_problems.emplace_back(new multibody::GlobalInverseKinematics(
+            *robot, 2 /*num_binary_variables_per_half_axis*/));
+        drake::log()->trace("Done with GlobalInverseKinematics constructor.");
+        multibody::GlobalInverseKinematics& global_ik =
+            *global_ik_problems.back();
+        global_ik.SetSolverOption(solvers::GurobiSolver::id(), "OutputFlag", 1);
+        global_ik.SetSolverOption(solvers::GurobiSolver::id(), "MIPGap", 0.5);
+
+        // Fix the initial configuration
+        std::vector<const RigidBody<double>*> initial_knot_bodies =
+            robot->FindModelInstanceBodies(arm_instance_ids[0]);
+        int world_idx = robot->FindBodyIndex("world");
+        for (const auto& body : initial_knot_bodies) {
+          Isometry3<double> X_WB = robot->relativeTransform(
+              kinematics_cache_initial, world_idx, body->get_body_index());
+          global_ik.AddWorldOrientationConstraint(
+              body->get_body_index(), Quaternion<double>(X_WB.linear()),
+              orientation_tolerance);
+          global_ik.AddWorldPositionConstraint(
+              body->get_body_index(), Vector3<double>::Zero(),
+              Vector3<double>::Zero(), Vector3<double>::Zero(), X_WB);
+        }
 
         for (int i = 1; i < num_knots; ++i) {
           const PickAndPlaceState state{states[i - 1]};
           const Vector2<double> knot_tspan{t(i), t(i)};
+          drake::log()->trace("Adding constraints for {}", state);
 
           // Extract desired position and orientation of end effector at the
           // given state.
           const Isometry3<double>& X_WG = X_WG_desired->at(state);
           const Vector3<double>& r_WG = X_WG.translation();
+          drake::log()->trace("r_WG_desired = {}", r_WG.transpose());
           const Quaternion<double>& quat_WG{X_WG.rotation()};
 
           // Constrain the end-effector position for all knots.
-          position_constraints.emplace_back(new WorldPositionConstraint(
-              robot.get(), grasp_frame_index, end_effector_points,
-              r_WG - position_tolerance, r_WG + position_tolerance,
-              knot_tspan));
-          constraint_arrays.back().push_back(position_constraints.back().get());
+          int grasp_frame_index =
+              robot->FindBodyIndex(kGraspFrameName, arm_instance_ids[i]);
+          global_ik.AddWorldPositionConstraint(
+              grasp_frame_index, end_effector_points, -position_tolerance,
+              position_tolerance, X_WG);
 
           // Constrain the end-effector orientation for all knots.
-          orientation_constraints.emplace_back(
-              new WorldQuatConstraint(robot.get(), grasp_frame_index,
-                                      Eigen::Vector4d(quat_WG.w(), quat_WG.x(),
-                                                      quat_WG.y(), quat_WG.z()),
-                                      orientation_tolerance, knot_tspan));
-          constraint_arrays.back().push_back(
-              orientation_constraints.back().get());
+          global_ik.AddWorldOrientationConstraint(grasp_frame_index, quat_WG,
+                                                  orientation_tolerance);
 
           // For each pair of adjacent knots, add a constraint on the change in
-          // joint positions.
-          if (i > 1) {
-            const VectorX<int> joint_indices =
-                VectorX<int>::LinSpaced(num_joints, 0, num_joints - 1);
-            const Vector2<double> segment_tspan{t(i - 1), t(i)};
-            // The move to ApproachPlacePregrasp can require large joint
-            // motions.
-            const double max_joint_position_change =
-                (state == PickAndPlaceState::kApproachPlacePregrasp)
-                    ? 0.75 * M_PI
-                    : M_PI_4;
-            const VectorX<double> ub_change{max_joint_position_change *
-                                            VectorX<double>::Ones(num_joints)};
-            const VectorX<double> lb_change{-ub_change};
-            posture_change_constraints.emplace_back(new PostureChangeConstraint(
-                robot.get(), joint_indices, lb_change, ub_change, segment_tspan));
-            constraint_arrays.back().push_back(
-                posture_change_constraints.back().get());
+          // body positions.
+          // if (i > 1) {
+          std::vector<const RigidBody<double>*> previous_knot_bodies =
+              robot->FindModelInstanceBodies(arm_instance_ids[i - 1]);
+          std::vector<const RigidBody<double>*> current_knot_bodies =
+              robot->FindModelInstanceBodies(arm_instance_ids[i]);
+          const int num_bodies = current_knot_bodies.size();
+          DRAKE_THROW_UNLESS(previous_knot_bodies.size() == num_bodies);
+          // double max_distance{
+          //(r_WG - X_WG_desired->at(states[i - 2]).translation()).norm()};
+          // VectorX<double> distance_limits =
+          // VectorX<double>::LinSpaced(num_bodies, 0, max_distance);
+          for (int j = 4; j < num_bodies; ++j) {
+            auto p_WB_0 = global_ik.body_position(
+                previous_knot_bodies[j]->get_body_index());
+            auto p_WB_1 = global_ik.body_position(
+                current_knot_bodies[j]->get_body_index());
+            auto R_WB_0 = global_ik.body_rotation_matrix(
+                previous_knot_bodies[j]->get_body_index());
+            auto R_WB_1 = global_ik.body_rotation_matrix(
+                current_knot_bodies[j]->get_body_index());
+            // global_ik.AddQuadraticCost((p_WB_1 - p_WB_0).squaredNorm());
+            // global_ik.AddQuadraticCost((R_WB_1 - R_WB_0).trace() * (R_WB_1 -
+            // R_WB_0).trace());
+            double alpha = M_PI;
+            global_ik.AddLorentzConeConstraint(
+                2 * sin(alpha / 2),
+                (R_WB_1.col(0) - R_WB_0.col(0)).squaredNorm());
+            global_ik.AddLorentzConeConstraint(
+                2 * sin(alpha / 2),
+                (R_WB_1.col(1) - R_WB_0.col(1)).squaredNorm());
+            global_ik.AddLorentzConeConstraint(
+                2 * sin(alpha / 2),
+                (R_WB_1.col(2) - R_WB_0.col(2)).squaredNorm());
+            // p_WB_1 - p_WB_0 <=
+            // global_ik.AddLinearConstraint(
+            // p_WB_0 - p_WB_1 <=
+            // Vector3<double>::Constant(distance_limits(j)));
           }
+          //}
         }
       }
     }
   }
 
-  if (constraint_arrays.empty()) return nullopt;
+  if (global_ik_problems.empty()) return nullopt;
 
-  // Solve the IK problem. Re-seed with random values if the initial seed is
-  // unsuccessful.
-  IKResults ik_res;
-  IKoptions ikoptions(robot.get());
-  ikoptions.setFixInitialState(true);
   bool success = false;
-  VectorX<double> q_initial{env_state.get_iiwa_q()};
-  for (const auto& constraint_array : constraint_arrays) {
-    MatrixX<double> q_knots_seed{robot->get_num_positions(), num_knots};
-    for (int j = 0; j < num_knots; ++j) {
-      double s = static_cast<double>(j) / static_cast<double>(num_knots - 1);
-      q_knots_seed.col(j) = q_traj_seed.value(s);
-    }
-    ik_res = inverseKinTrajSimple(robot.get(), t, q_knots_seed, q_nom,
-                                  constraint_array, ikoptions);
-    success = ik_res.info[0] == 1;
+  const multibody::GlobalInverseKinematics* successful_global_ik{};
+  solvers::GurobiSolver gurobi_solver;
+  for (auto& global_ik : global_ik_problems) {
+    drake::log()->trace("Calling Solve()");
+    solvers::SolutionResult sol_result = gurobi_solver.Solve(*global_ik);
+    drake::log()->trace("Solver returned {}", sol_result);
+    success = sol_result == solvers::SolutionResult::kSolutionFound;
     if (success) {
+      successful_global_ik = global_ik.get();
       break;
     }
   }
   if (!success) {
     return nullopt;
   }
+
+  const Eigen::VectorXd q_sol_all =
+      successful_global_ik->ReconstructGeneralizedPositionSolution();
+  drake::log()->trace("q_sol_all.size() = {}", q_sol_all.size());
+
   std::map<PickAndPlaceState, VectorX<double>> nominal_q_map;
   for (int i = 1; i < num_knots; ++i) {
-    nominal_q_map.emplace(states[i - 1], ik_res.q_sol[i]);
+    int grasp_frame_index =
+        robot->FindBodyIndex(kGraspFrameName, arm_instance_ids[i]);
+    VectorX<double> q_state = q_sol_all.segment(i * num_joints, num_joints);
+    drake::log()->trace("q[{}] = {}", states[i - 1], q_state.transpose());
+    drake::log()->trace("r_WG_actual = {}",
+                        successful_global_ik
+                            ->GetSolution(successful_global_ik->body_position(
+                                grasp_frame_index))
+                            .transpose());
+    nominal_q_map.emplace(states[i - 1], q_state);
   }
   return nominal_q_map;
 }
@@ -656,15 +717,7 @@ PickAndPlaceStateMachine::ComputeTrajectories(
   if (auto nominal_q_map =
           ComputeNominalConfigurations(env_state, q_traj_seed, tight_rot_tol_,
                                        tight_pos_tol_, configuration_)) {
-    std::unique_ptr<RigidBodyTree<double>> robot{
-        BuildTree(configuration_, true /*add_grasp_frame*/)};
-    std::vector<PickAndPlaceState> states{
-        PickAndPlaceState::kApproachPickPregrasp,
-        PickAndPlaceState::kApproachPick,
-        PickAndPlaceState::kLiftFromPick,
-        PickAndPlaceState::kApproachPlacePregrasp,
-        PickAndPlaceState::kApproachPlace,
-        PickAndPlaceState::kLiftFromPlace};
+    std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration_, 1)};
     VectorX<double> q_0{robot->get_num_positions()};
     q_0 << env_state.get_iiwa_q();
     std::map<PickAndPlaceState, PiecewisePolynomial<double>>
@@ -710,6 +763,9 @@ PickAndPlaceStateMachine::ComputeTrajectories(
           default:  // No action needed for other cases.
             break;
         }
+        // result.success = true;
+        // result.q_traj =
+        // PiecewisePolynomial<double>::Pchip({0, duration}, {q_0, q_f}, true);
         PostureInterpolationRequest request;
 
         request.max_joint_position_change = 0.5 * M_PI_4;
