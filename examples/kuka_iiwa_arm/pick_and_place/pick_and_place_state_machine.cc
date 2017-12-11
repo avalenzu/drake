@@ -11,6 +11,7 @@
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
+#include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/math/rotation_matrix.h"
 #include "drake/multibody/joints/fixed_joint.h"
 #include "drake/multibody/parsers/urdf_parser.h"
@@ -23,6 +24,7 @@ namespace pick_and_place {
 namespace {
 
 using manipulation::util::WorldSimTreeBuilder;
+using manipulation::planner::KinematicTrajectoryOptimization;
 
 const char kGraspFrameName[] = "grasp_frame";
 
@@ -490,6 +492,9 @@ ComputeNominalConfigurations(const WorldState& env_state,
   std::vector<std::unique_ptr<PostureChangeConstraint>>
       posture_change_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_arrays;
+
+  std::vector<std::unique_ptr<KinematicTrajectoryOptimization>> programs;
+
   std::vector<double> yaw_offsets{M_PI, 0.0};
   std::vector<double> pitch_offsets{M_PI / 8};
   int num_joints = robot->get_num_positions();
@@ -504,7 +509,31 @@ ComputeNominalConfigurations(const WorldState& env_state,
       PickAndPlaceState::kApproachPlacePregrasp,
       PickAndPlaceState::kApproachPlace,
       PickAndPlaceState::kLiftFromPlace};
-  int num_knots = states.size() + 1;
+  const double kShortDuration = 1;
+  const double kLongDuration = 3;
+  const double kFewKnots = 2;
+  const double kManyKnots = 5;
+  std::map<PickAndPlaceState, double> per_state_durations{
+      {PickAndPlaceState::kApproachPickPregrasp, kLongDuration},
+      {PickAndPlaceState::kApproachPick, kShortDuration},
+      {PickAndPlaceState::kLiftFromPick, kShortDuration},
+      {PickAndPlaceState::kApproachPlacePregrasp, kLongDuration},
+      {PickAndPlaceState::kApproachPlace, kShortDuration},
+      {PickAndPlaceState::kLiftFromPlace, kShortDuration}};
+  std::map<PickAndPlaceState, double> per_state_number_of_knots{
+      {PickAndPlaceState::kApproachPickPregrasp, kManyKnots},
+      {PickAndPlaceState::kApproachPick, kFewKnots},
+      {PickAndPlaceState::kLiftFromPick, kFewKnots},
+      {PickAndPlaceState::kApproachPlacePregrasp, kManyKnots},
+      {PickAndPlaceState::kApproachPlace, kFewKnots},
+      {PickAndPlaceState::kLiftFromPlace, kFewKnots}};
+  const int num_states = states.size();
+  int num_knots = 1;
+  int num_control_points = 1;
+  for (int i = 0; i < num_states; ++i) {
+    num_knots += per_state_number_of_knots.at(states[i]);
+    num_control_points += per_state_number_of_knots.at(states[i]);
+  }
 
   VectorX<double> t{VectorX<double>::LinSpaced(num_knots, 0, num_knots - 1)};
   // Set up an inverse kinematics trajectory problem with one knot for each
@@ -517,6 +546,9 @@ ComputeNominalConfigurations(const WorldState& env_state,
       if (auto X_WG_desired =
               ComputeDesiredPoses(env_state, yaw_offset, pitch_offset)) {
         constraint_arrays.emplace_back();
+        programs.emplace_back(new KinematicTrajectoryOptimization(
+            robot, num_control_points, -1 /*num_evaluation_points*/,
+            4 /*spline_order*/, duration));
 
         for (int i = 1; i < num_knots; ++i) {
           const PickAndPlaceState state{states[i - 1]};
@@ -524,11 +556,17 @@ ComputeNominalConfigurations(const WorldState& env_state,
 
           // Extract desired position and orientation of end effector at the
           // given state.
-          const Isometry3<double>& X_WG = X_WG_desired->at(state);
-          const Vector3<double>& r_WG = X_WG.translation();
-          const Quaternion<double>& quat_WG{X_WG.rotation()};
+          const Isometry3<double>& X_WG_final = X_WG_desired->at(state);
+          const Vector3<double>& r_WG_final = X_WG_final.translation();
+          const Quaternion<double>& quat_WG_final{X_WG_final.rotation()};
+          const Vector3<double>& r_WG_initial = X_WG_initial.translation();
+          const Quaternion<double>& quat_WG_initial{X_WG_initial.rotation()};
 
-          // Constrain the end-effector position for all knots.
+          // Constrain the end-effector position and orientation at the end of
+          // this state.
+          programs.back()->AddBodyPoseConstraint(
+              start_time / duration, kGraspFrameName, X_WG_final, position_tolerance.x(),
+              orientation_tolerance);
           position_constraints.emplace_back(new WorldPositionConstraint(
               robot, grasp_frame_index, end_effector_points,
               r_WG - position_tolerance, r_WG + position_tolerance,
