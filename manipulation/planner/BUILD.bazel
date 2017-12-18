@@ -88,6 +88,40 @@ drake_cc_library(
     ],
 )
 
+drake_cc_binary(
+    name = "kin_traj_opt_scratch",
+    srcs = ["kin_traj_opt_scratch.cc"],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//common:text_logging_gflags",
+        "//common/proto:call_python",
+        "@gflags",
+    ],
+)
+
+drake_cc_binary(
+    name = "kin_traj_opt_iiwa_scratch",
+    srcs = ["kin_traj_opt_iiwa_scratch.cc"],
+    data = [
+        "//manipulation/models/iiwa_description:models",
+        "//manipulation/models/wsg_50_description:models",
+    ],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//common:find_resource",
+        "//common/proto:call_python",
+        "//common:text_logging_gflags",
+        "//examples/kuka_iiwa_arm:iiwa_common",
+        "//lcm",
+        "//multibody/parsers",
+        "//multibody:inverse_kinematics",
+        "//multibody:rigid_body_tree",
+        "//multibody:rigid_body_tree_construction",
+        "//multibody/rigid_body_plant:drake_visualizer",
+        "@gflags",
+    ],
+)
+
 # === test/ ===
 
 drake_cc_googletest(
