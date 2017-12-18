@@ -2,6 +2,7 @@
 
 load(
     "//tools:drake.bzl",
+    "drake_cc_binary",
     "drake_cc_library",
     "drake_cc_googletest",
 )
@@ -46,6 +47,44 @@ drake_cc_library(
         "//systems/framework:leaf_system",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_library(
+    name = "bspline_basis",
+    srcs = [
+        "bspline_basis.cc",
+    ],
+    hdrs = [
+        "bspline_basis.h",
+    ],
+    deps = [
+        "//common/trajectories:piecewise_polynomial",
+        "//common:symbolic",
+    ],
+)
+
+drake_cc_library(
+    name = "bspline_curve",
+    srcs = [
+        "bspline_curve.cc",
+    ],
+    hdrs = [
+        "bspline_curve.h",
+    ],
+    deps = [
+        ":bspline_basis",
+    ],
+)
+
+drake_cc_library(
+    name = "kinematic_trajectory_optimization",
+    srcs = ["kinematic_trajectory_optimization.cc"],
+    hdrs = ["kinematic_trajectory_optimization.h"],
+    deps = [
+        ":bspline_curve",
+        "//math:gradient",
+        "//solvers:mathematical_program",
     ],
 )
 
@@ -96,6 +135,22 @@ drake_cc_googletest(
         "//systems/framework",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_googletest(
+    name = "bspline_basis_test",
+    deps = [
+        ":bspline_basis",
+        "//common:find_resource",
+    ],
+)
+
+drake_cc_googletest(
+    name = "kinematic_trajectory_optimization_test",
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//common:find_resource",
     ],
 )
 
