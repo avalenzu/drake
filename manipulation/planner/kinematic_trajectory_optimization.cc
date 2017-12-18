@@ -2,19 +2,18 @@
 
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
-#include "drake/systems/trajectory_optimization/direct_collocation.h"
+#include "drake/multibody/rigid_body_tree.h"
 
 using Eigen::MatrixXd;
 using drake::solvers::Constraint;
 using drake::solvers::Cost;
+using drake::solvers::MathematicalProgram;
 using drake::solvers::SolutionResult;
 using drake::solvers::VectorXDecisionVariable;
 using drake::symbolic::Expression;
 using drake::symbolic::Formula;
 using drake::systems::LinearSystem;
 using drake::systems::System;
-using drake::systems::trajectory_optimization::DirectCollocation;
-using drake::systems::trajectory_optimization::MultipleShooting;
 
 namespace drake {
 namespace manipulation {
@@ -71,14 +70,17 @@ class BodyPoseConstraint : public Constraint {
                      const RigidBody<double>& body,
                      const Isometry3<double>& X_WFd,
                      double orientation_tolerance, double position_tolerance,
-                     Isometry3<double> X_BF = Isometry3<double>::Identity())
-      : Constraint(2, tree.get_num_positions(),
+                     Isometry3<double> X_BF,
+                     const VectorX<double> spline_weights)
+      : Constraint(2, spline_weights.size() * tree.get_num_positions(),
                    Vector2<double>(cos(orientation_tolerance), 0.0),
                    Vector2<double>(1.0, std::pow(position_tolerance, 2.0))),
         tree_(tree),
         body_(body),
         X_WFd_(X_WFd),
-        X_BF_(X_BF) {}
+        X_BF_(X_BF),
+        spline_weights_(spline_weights),
+        kNumActiveControlPoints_(spline_weights.size()) {}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
@@ -91,7 +93,11 @@ class BodyPoseConstraint : public Constraint {
   virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       AutoDiffVecXd& y) const {
-    const AutoDiffVecXd q = x.head(tree_.get_num_positions());
+    const int kNumPositions{tree_.get_num_positions()};
+    AutoDiffVecXd q{x.head(kNumPositions) * spline_weights_(0)};
+    for (int i = 1; i < spline_weights_.size(); ++i) {
+      q += x.segment(i * kNumPositions, kNumPositions) * spline_weights_(i);
+    }
 
     KinematicsCache<AutoDiffXd> cache = tree_.doKinematics(q);
     const Isometry3<AutoDiffXd> X_WF{tree_.CalcFramePoseInWorldFrame(
@@ -112,16 +118,75 @@ class BodyPoseConstraint : public Constraint {
   const RigidBody<double>& body_;
   const Isometry3<double> X_WFd_;
   const Isometry3<double> X_BF_;
+  const VectorX<double> spline_weights_;
+  const int kNumActiveControlPoints_;
 };
+
+AutoDiffVecXd CollisionAvoidancePenalty(const RigidBodyTree<double>& tree,
+                          double collision_avoidance_threshold,
+                          const Eigen::Ref<const AutoDiffVecXd>& q) {
+  const VectorX<double> q_value = math::autoDiffToValueMatrix(q);
+
+  KinematicsCache<AutoDiffXd> autodiff_cache = tree.doKinematics(q);
+  KinematicsCache<double> cache = tree.doKinematics(q_value);
+  VectorX<double> distance_value;
+  Matrix3X<double> xA, xB, normal;
+  std::vector<int> idxA_tmp;
+  std::vector<int> idxB_tmp;
+  const_cast<RigidBodyTree<double>&>(tree).collisionDetect(
+      cache, distance_value, normal, xA, xB, idxA_tmp, idxB_tmp);
+  const int num_pairs = distance_value.size();
+  AutoDiffVecXd y(1);
+  y(0) = 0;
+  y(0).derivatives().resize(q(0).derivatives().size());
+  y(0).derivatives().setZero();
+  if (num_pairs > 0) {
+    VectorX<int> idxA(num_pairs);
+    VectorX<int> idxB(num_pairs);
+    for (int i = 0; i < num_pairs; ++i) {
+      idxA(i) = idxA_tmp[i];
+      idxB(i) = idxB_tmp[i];
+    }
+    MatrixX<double> J;
+    tree.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
+    MatrixX<double> ddist_dq{num_pairs, q(0).derivatives().size()};
+    for (int i = 0; i < num_pairs; ++i) {
+      ddist_dq.row(i) = normal.col(i).transpose() * J.middleRows(3 * i, 3) *
+                        math::autoDiffToGradientMatrix(q);
+    }
+    AutoDiffVecXd distance{num_pairs};
+    math::initializeAutoDiffGivenGradientMatrix(distance_value, ddist_dq,
+                                                distance);
+    for (int i = 0; i < num_pairs; ++i) {
+      if (distance(i) < 2 * collision_avoidance_threshold) {
+        distance(i) /= collision_avoidance_threshold;
+        distance(i) -= 2;
+        y(0) += -distance(i) * exp(1 / distance(i));
+      }
+    }
+  }
+  return y;
+}
+
+double CollisionAvoidancePenalty(const RigidBodyTree<double>& tree,
+                                 double collision_avoidance_threshold,
+                                 const Eigen::Ref<const VectorX<double>>& q) {
+  return CollisionAvoidancePenalty(tree, collision_avoidance_threshold,
+                                   math::initializeAutoDiff(q))(0)
+      .value();
+}
 
 class CollisionAvoidanceConstraint : public Constraint {
  public:
   CollisionAvoidanceConstraint(const RigidBodyTree<double>& tree,
-                               double collision_avoidance_threshold)
-      : Constraint(1, tree.get_num_positions(), Vector1<double>(0),
-                   Vector1<double>(exp(-1))),
+                               double collision_avoidance_threshold,
+                               const VectorX<double> spline_weights)
+      : Constraint(1, spline_weights.size() * tree.get_num_positions(),
+                   Vector1<double>(0), Vector1<double>(exp(-1))),
         tree_(tree),
-        collision_avoidance_threshold_(collision_avoidance_threshold) {}
+        collision_avoidance_threshold_(collision_avoidance_threshold),
+        spline_weights_(spline_weights),
+        kNumActiveControlPoints_(spline_weights.size()) {}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
@@ -134,45 +199,12 @@ class CollisionAvoidanceConstraint : public Constraint {
   virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       AutoDiffVecXd& y) const {
-    const AutoDiffVecXd q = x.head(tree_.get_num_positions());
-    const VectorX<double> q_value = math::autoDiffToValueMatrix(q);
-
-    KinematicsCache<AutoDiffXd> autodiff_cache = tree_.doKinematics(q);
-    KinematicsCache<double> cache = tree_.doKinematics(q_value);
-    VectorX<double> distance_value;
-    Matrix3X<double> xA, xB, normal;
-    std::vector<int> idxA_tmp;
-    std::vector<int> idxB_tmp;
-    const_cast<RigidBodyTree<double>&>(tree_).collisionDetect(
-        cache, distance_value, normal, xA, xB, idxA_tmp, idxB_tmp);
-    const int kNumPairs = distance_value.size();
-    y(0) = 0;
-    y(0).derivatives().resize(q.size());
-    y(0).derivatives().setZero();
-    if (kNumPairs > 0) {
-      VectorX<int> idxA(kNumPairs);
-      VectorX<int> idxB(kNumPairs);
-      for (int i = 0; i < kNumPairs; ++i) {
-        idxA(i) = idxA_tmp[i];
-        idxB(i) = idxB_tmp[i];
-      }
-      MatrixX<double> J;
-      tree_.computeContactJacobians(cache, idxA, idxB, xA, xB, J);
-      MatrixX<double> ddist_dq{kNumPairs, q.size()};
-      for (int i = 0; i < kNumPairs; ++i) {
-        ddist_dq.row(i) = normal.col(i).transpose() * J.middleRows(3 * i, 3);
-      }
-      AutoDiffVecXd distance{kNumPairs};
-      math::initializeAutoDiffGivenGradientMatrix(distance_value, ddist_dq,
-                                                  distance);
-      for (int i = 0; i < kNumPairs; ++i) {
-        if (distance(i) < 2 * collision_avoidance_threshold_) {
-          distance(i) /= collision_avoidance_threshold_;
-          distance(i) -= 2;
-          y(0) += -distance(i) * exp(1 / distance(i));
-        }
-      }
+    const int kNumPositions{tree_.get_num_positions()};
+    AutoDiffVecXd q{x.head(kNumPositions) * spline_weights_(0)};
+    for (int i = 1; i < spline_weights_.size(); ++i) {
+      q += x.segment(i * kNumPositions, kNumPositions) * spline_weights_(i);
     }
+    y = CollisionAvoidancePenalty(tree_, collision_avoidance_threshold_, q);
   }
 
   int numOutputs() const { return 1; };
@@ -180,6 +212,8 @@ class CollisionAvoidanceConstraint : public Constraint {
  private:
   const RigidBodyTree<double>& tree_;
   double collision_avoidance_threshold_;
+  const VectorX<double> spline_weights_;
+  const int kNumActiveControlPoints_;
 };
 
 solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
@@ -198,11 +232,11 @@ bool KinematicTrajectoryOptimization::IsPositionTrajectoryCollisionFree(
   const double kEndTime{position_trajectory_.get_end_time()};
   const VectorX<double> kTimesToCheck{
       VectorX<double>::LinSpaced(kNumTimesToCheck, kStartTime, kEndTime)};
-  const CollisionAvoidanceConstraint kConstraint{*tree_, threshold};
 
   for (int i = 0; i < kNumTimesToCheck; ++i) {
-    if (!kConstraint.CheckSatisfied(
-            position_trajectory_.value(kTimesToCheck(i)))) {
+    if (CollisionAvoidancePenalty(
+            tree(), threshold, position_trajectory_.value(kTimesToCheck(i))) >
+        0.0) {
       return false;
     }
   }
@@ -220,8 +254,6 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
       placeholder_v_vars_(MakeNamedVariables("v", tree_->get_num_velocities())),
       placeholder_a_vars_(MakeNamedVariables("a", tree_->get_num_velocities())),
       placeholder_j_vars_(MakeNamedVariables("j", tree_->get_num_velocities())),
-      minimum_timestep_(minimum_timestep),
-      maximum_timestep_(maximum_timestep),
       initial_position_trajectory_(PiecewisePolynomial<double>::ZeroOrderHold(
           {0, 1},
           {tree_->getZeroConfiguration(), tree_->getZeroConfiguration()})),
@@ -334,121 +366,35 @@ void KinematicTrajectoryOptimization::AddRunningCost(
   running_cost_expressions_.emplace_back(new symbolic::Expression(g));
 };
 
-std::unique_ptr<systems::System<double>>
-KinematicTrajectoryOptimization::CreateSystem() const {
-  MatrixX<double> A, B, C, D;
-  switch (system_order_) {
-    case 1: {
-      // State is q. Input is v.
-      const int kNumStates{num_positions()};
-      const int kNumSpatialVelocityInputs(
-          6 * placeholder_spatial_velocity_vars_.size());
-      const int kNumInputs(num_velocities() + kNumSpatialVelocityInputs);
-      const int kNumOutputs{0};
-
-      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
-      const MatrixXd kIdentity{
-          MatrixXd::Identity(num_positions(), num_positions())};
-
-      A.resize(kNumStates, kNumStates);
-      A << kZero;
-
-      B.resize(kNumStates, kNumInputs);
-      B.setZero();
-      B.block(0, 0, num_velocities(), num_velocities()) = kIdentity;
-
-      C.resize(kNumOutputs, kNumStates);
-      D.resize(kNumOutputs, kNumInputs);
-    } break;
-    case 2: {
-      // State is (q, v). Input is a.
-      const int kNumStates{2 * num_positions()};
-      const int kNumSpatialVelocityInputs(
-          6 * placeholder_spatial_velocity_vars_.size());
-      const int kNumInputs(num_velocities() + kNumSpatialVelocityInputs);
-      const int kNumOutputs{0};
-
-      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
-      const MatrixXd kIdentity{
-          MatrixXd::Identity(num_positions(), num_positions())};
-
-      A.resize(kNumStates, kNumStates);
-      A << kZero, kIdentity, kZero, kZero;
-
-      B.resize(kNumStates, kNumInputs);
-      B.setZero();
-      B.block(num_positions(), 0, num_velocities(), num_velocities()) =
-          kIdentity;
-
-      C.resize(kNumOutputs, kNumStates);
-      D.resize(kNumOutputs, kNumInputs);
-    } break;
-    case 3: {
-      const int kNumStates{3 * num_positions()};
-      const int kNumSpatialVelocityInputs(
-          6 * placeholder_spatial_velocity_vars_.size());
-      const int kNumInputs(num_positions() + kNumSpatialVelocityInputs);
-      const int kNumOutputs{0};
-
-      const MatrixXd kZero{MatrixXd::Zero(num_positions(), num_positions())};
-      const MatrixXd kIdentity{
-          MatrixXd::Identity(num_positions(), num_positions())};
-
-      A.resize(kNumStates, kNumStates);
-      A << kZero, kIdentity, kZero, kZero, kZero, kIdentity, kZero, kZero,
-          kZero;
-
-      B.resize(kNumStates, kNumInputs);
-      B.setZero();
-      B.block(num_positions() + num_velocities(), 0, num_velocities(),
-              num_velocities()) = kIdentity;
-
-      C.resize(kNumOutputs, kNumStates);
-      D.resize(kNumOutputs, kNumInputs);
-    } break;
-    default: { DRAKE_THROW_UNLESS(false); } break;
+const VectorX<Expression>
+KinematicTrajectoryOptimization::GetSplineVariableExpression(
+    double evaluation_time, int derivative_order) const {
+  evaluation_time = ScaleTime(evaluation_time);
+  VectorX<Expression> expression(kNumPositions_);
+  for (int i = 0; i < kNumPositions_; ++i) {
+    expression(i) = Expression::Zero();
+    for (int j = 0; j < kNumControlPoints_; ++j) {
+      if (knots_[j] <= evaluation_time &&
+          evaluation_time <= knots_[j + kOrder_]) {
+        const double basis_function_value{
+            basis_[j].derivative(derivative_order).value(evaluation_time)(0)};
+        if (std::abs<double>(basis_function_value) > 1e-6) {
+          expression(i) += control_points_(i, j) * basis_function_value;
+        }
+      }
+    }
   }
-
-  return std::make_unique<LinearSystem<double>>(A, B, C, D);
+  return expression;
 }
 
-std::unique_ptr<MultipleShooting>
-KinematicTrajectoryOptimization::CreateMathematicalProgram() const {
-  return std::make_unique<DirectCollocation>(
-      system_.get(), *(system_->CreateDefaultContext()), num_time_samples_,
-      minimum_timestep_, maximum_timestep_);
-}
-
-const solvers::VectorXDecisionVariable
-KinematicTrajectoryOptimization::GetStateVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
-  if (index < 0) {
-    return prog.state();
-  } else {
-    return prog.state(index);
-  }
-}
-
-const solvers::VectorXDecisionVariable
-KinematicTrajectoryOptimization::GetInputVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
-  if (index < 0) {
-    return prog.input();
-  } else {
-    return prog.input(index);
-  }
-}
-
-const solvers::VectorXDecisionVariable
-KinematicTrajectoryOptimization::GetPositionVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
+const Expression KinematicTrajectoryOptimization::ConstructPositionExpression(
+    const MathematicalProgram& prog, double time) const {
   // Position variables are always at the head of the state.
   return GetStateVariablesFromProgram(prog, index).head(num_positions());
 }
 
-const solvers::VectorXDecisionVariable
-KinematicTrajectoryOptimization::GetVelocityVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
+const Expression KinematicTrajectoryOptimization::ConstructVelocityExpression(
+    const MathematicalProgram& prog, double time) const {
   // For first-order systems, velocity variables are the first inputs. For all
   // others, they follow the position variables in the state.
   if (system_order_ < 2) {
@@ -461,7 +407,7 @@ KinematicTrajectoryOptimization::GetVelocityVariablesFromProgram(
 
 const solvers::VectorXDecisionVariable
 KinematicTrajectoryOptimization::GetAccelerationVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
+    const MathematicalProgram& prog, int index) const {
   // For first-order systems, acceleration variables are ignored. For
   // second-order systems, they are the first inputs. For all others, they
   // follow the velocity variables in the state.
@@ -477,7 +423,7 @@ KinematicTrajectoryOptimization::GetAccelerationVariablesFromProgram(
 
 const solvers::VectorXDecisionVariable
 KinematicTrajectoryOptimization::GetJerkVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
+    const MathematicalProgram& prog, int index) const {
   // For less-than-third-order systems, jerk variables are ignored. For
   // third-order systems, they are the first inputs.
   if (system_order_ < 3) {
@@ -489,7 +435,7 @@ KinematicTrajectoryOptimization::GetJerkVariablesFromProgram(
 
 const solvers::VectorXDecisionVariable
 KinematicTrajectoryOptimization::GetBodySpatialVelocityVariablesFromProgram(
-    const MultipleShooting& prog, int index) const {
+    const MathematicalProgram& prog, int index) const {
   // For {first, second, third}-order systems, the body spatial velocity
   // variables come after the {velocity, acceleration, jerk} variables in the
   // input.
@@ -499,41 +445,11 @@ KinematicTrajectoryOptimization::GetBodySpatialVelocityVariablesFromProgram(
 
 symbolic::Substitution
 KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
-    const MultipleShooting& prog, int index) const {
+    const VectorXDecisionVariable& position_variables, int index) const {
   symbolic::Substitution sub;
-  if (index < 0) {
-    sub.emplace(placeholder_t_var_(0), prog.time()(0));
-  }
   // Get the actual decision variables from the mathematical program.
-  VectorXDecisionVariable program_q_vars{
-      GetPositionVariablesFromProgram(prog, index)};
-  VectorXDecisionVariable program_v_vars{
-      GetVelocityVariablesFromProgram(prog, index)};
-  VectorXDecisionVariable program_a_vars{
-      GetAccelerationVariablesFromProgram(prog, index)};
-  VectorXDecisionVariable program_j_vars{
-      GetJerkVariablesFromProgram(prog, index)};
-  VectorXDecisionVariable program_body_spatial_velocity_vars{
-      GetBodySpatialVelocityVariablesFromProgram(prog, index)};
   for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_q_vars_(i), program_q_vars(i));
-  }
-  for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_v_vars_(i), program_v_vars(i));
-  }
-  for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_a_vars_(i), program_a_vars(i));
-  }
-  for (int i = 0; i < num_positions(); ++i) {
-    sub.emplace(placeholder_j_vars_(i), program_j_vars(i));
-  }
-  int input_index = 0;
-  for (auto& placeholder_vars : placeholder_spatial_velocity_vars_) {
-    for (int i = 0; i < 6; ++i) {
-      sub.emplace(placeholder_vars.second(i),
-                  program_body_spatial_velocity_vars(input_index));
-      ++input_index;
-    }
+    sub.emplace(placeholder_q_vars_(i), position_variables.col(index)(i));
   }
   return sub;
 }
@@ -541,32 +457,32 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
 solvers::VectorXDecisionVariable
 KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
     const solvers::VectorXDecisionVariable& vars,
-    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+    const VectorXDecisionVariable& position_variables, int index) {
   VectorXDecisionVariable vars_out{vars.size()};
   for (int i = 0; i < vars.size(); ++i) {
-    vars_out(i) =
-        *vars.cast<symbolic::Expression>()(i)
-             .Substitute(ConstructPlaceholderVariableSubstitution(prog, index))
-             .GetVariables()
-             .begin();
+    vars_out(i) = *vars.cast<symbolic::Expression>()(i)
+                       .Substitute(ConstructPlaceholderVariableSubstitution(
+                           position_variables, index))
+                       .GetVariables()
+                       .begin();
   }
   return vars_out;
 }
 
 Formula KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
     const Formula& f,
-    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+    const MathematicalProgram& prog, int index) {
   return f.Substitute(ConstructPlaceholderVariableSubstitution(prog, index));
 }
 
 Expression KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
     const Expression& g,
-    const systems::trajectory_optimization::MultipleShooting& prog, int index) {
+    const MathematicalProgram& prog, int index) {
   return g.Substitute(ConstructPlaceholderVariableSubstitution(prog, index));
 }
 
 std::vector<int> KinematicTrajectoryOptimization::ActiveKnotsForPlanInterval(
-    const systems::trajectory_optimization::MultipleShooting& prog,
+    const MathematicalProgram& prog,
     const Vector2<double>& plan_interval) {
   std::vector<int> active_knots;
   if (plan_interval(1) - plan_interval(0) < 1.0 / num_time_samples_) {
@@ -606,7 +522,7 @@ bool KinematicTrajectoryOptimization::AreVariablesPresentInProgram(
 }
 
 void KinematicTrajectoryOptimization::AddConstraintToProgram(
-    const ConstraintWrapper& constraint, MultipleShooting* prog) {
+    const ConstraintWrapper& constraint, MathematicalProgram* prog) {
   // Ignore constraints on higher order terms not present in the model.
   if (!AreVariablesPresentInProgram(symbolic::Variables(constraint.vars)))
     return;
@@ -620,7 +536,7 @@ void KinematicTrajectoryOptimization::AddConstraintToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
-    const FormulaWrapper& constraint, MultipleShooting* prog) {
+    const FormulaWrapper& constraint, MathematicalProgram* prog) {
   if (!AreVariablesPresentInProgram(constraint.formula.GetFreeVariables()))
     return;
   std::vector<int> active_knots{
@@ -632,7 +548,7 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddRunningCostToProgram(
-    const Expression& cost, MultipleShooting* prog) {
+    const Expression& cost, MathematicalProgram* prog) {
   if (!AreVariablesPresentInProgram(cost.GetVariables())) return;
   drake::log()->debug("Adding cost: {}",
                       SubstitutePlaceholderVariables(cost, *prog));
@@ -640,7 +556,7 @@ void KinematicTrajectoryOptimization::AddRunningCostToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddFinalCostToProgram(
-    const Expression& cost, MultipleShooting* prog) {
+    const Expression& cost, MathematicalProgram* prog) {
   if (!AreVariablesPresentInProgram(cost.GetVariables())) return;
   drake::log()->debug("Adding cost: {}",
                       SubstitutePlaceholderVariables(cost, *prog));
@@ -648,7 +564,7 @@ void KinematicTrajectoryOptimization::AddFinalCostToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
-                                                       MultipleShooting* prog) {
+                                                       MathematicalProgram* prog) {
   if (!AreVariablesPresentInProgram(symbolic::Variables(cost.vars))) return;
   std::vector<int> active_knots{
       ActiveKnotsForPlanInterval(*prog, cost.plan_interval)};
@@ -659,7 +575,7 @@ void KinematicTrajectoryOptimization::AddCostToProgram(const CostWrapper& cost,
 }
 
 void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
-    MultipleShooting* prog) {
+    MathematicalProgram* prog) {
   // Set initial guess
   const std::vector<double> t_values{
       initial_position_trajectory_.getSegmentTimes()};
@@ -744,8 +660,25 @@ void KinematicTrajectoryOptimization::SetInitialTrajectoryOnProgram(
 }
 
 SolutionResult KinematicTrajectoryOptimization::Solve() {
-  system_ = CreateSystem();
-  std::unique_ptr<MultipleShooting> prog{CreateMathematicalProgram()};
+  DRAKE_THROW_UNLESS(num_control_points >= spline_order);
+  // Populate the knots vector. The knots vector has the form:
+  //
+  // 	(t[0] ..., t[kOrder], ..., t[kNumControlPoints], ...,
+  //    					t[kNumControlPoints + kOrder])
+  // where, t[0] == t[1] == ... == t[kOrder-1] == 0, t[kNumControlPoints
+  const double kInteriorInterval{kDuration_ / kNumInternalIntervals_};
+  knots_.resize(kNumKnots_, 0.0);
+  for (int i = spline_order; i < kNumKnots_; ++i) {
+    knots_[i] = std::min(kDuration_, knots_[i - 1] + kInteriorInterval);
+  }
+  for (int i = 0; i < num_control_points; ++i) {
+    basis_.emplace_back(
+        PiecewisePolynomial<double>::BSpline(i, spline_order, knots_));
+    drake::log()->debug("B_{},{}(t) = {}", i, spline_order,
+                        basis_.back().getPolynomial(0));
+  }
+
+  MathematicalProgram prog{};
   for (const auto& solver_id : solver_options_solver_ids_) {
     for (const auto& option_pair :
          solver_options_container_.GetSolverOptionsInt(solver_id)) {
@@ -760,37 +693,44 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
       prog->SetSolverOption(solver_id, option_pair.first, option_pair.second);
     }
   }
+  auto position_variables{
+      prog.NewContinuousVariables(num_positions(), num_control_points, "q")};
   auto position_variables{GetPositionVariablesFromProgram(*prog)};
-  prog->AddConstraintToAllKnotPoints(position_variables >=
-                                     tree_->joint_limit_min);
-  prog->AddConstraintToAllKnotPoints(position_variables <=
-                                     tree_->joint_limit_max);
-  if (has_equal_time_intervals_) {
-    prog->AddEqualTimeIntervalsConstraints();
+  // Add joint limits
+  for (int i = 0; i < num_control_points; ++i) {
+    prog.AddLinearConstraint(position_variables.col(i) >=
+                                       tree_->joint_limit_min);
+    prog.AddLinearConstraint(position_variables.col(i) <=
+                                       tree_->joint_limit_max);
   }
-  prog->AddDurationBounds(duration_lower_bound_, duration_upper_bound_);
 
   for (const auto& constraint : object_constraints_) {
-    AddConstraintToProgram(*constraint, prog.get());
+    std::vector<int> active_knots{
+        ActiveKnotsForPlanInterval(*prog, constraint.plan_interval)};
+    for (int index : active_knots) {
+      prog->AddConstraint(constraint.constraint,
+                          SubstitutePlaceholderVariables(
+                              constraint.vars, position_variables, index));
+    }
   }
   for (const auto& constraint : formula_linear_constraints_) {
-    AddLinearConstraintToProgram(*constraint, prog.get());
+    AddLinearConstraintToProgram(*constraint, &prog);
   }
-  for (const auto& cost : running_cost_objects_) {
-    AddCostToProgram(*cost, prog.get());
-  }
-  for (const auto& cost : running_cost_expressions_) {
-    AddRunningCostToProgram(*cost, prog.get());
-  }
-  for (const auto& cost : final_cost_expressions_) {
-    AddFinalCostToProgram(*cost, prog.get());
-  }
+  //for (const auto& cost : running_cost_objects_) {
+    //AddCostToProgram(*cost, &prog);
+  //}
+  //for (const auto& cost : running_cost_expressions_) {
+    //AddRunningCostToProgram(*cost, &prog);
+  //}
+  //for (const auto& cost : final_cost_expressions_) {
+    //AddFinalCostToProgram(*cost, &prog);
+  //}
 
-  SetInitialTrajectoryOnProgram(prog.get());
+  SetInitialTrajectoryOnProgram(&prog);
 
   drake::log()->debug("Solving MathematicalProgram with {} decision variables.",
                       prog->decision_variables().size());
-  SolutionResult result{prog->Solve()};
+  SolutionResult result{prog.Solve()};
 
   UpdatePositionTrajectory(*prog);
 
@@ -798,7 +738,7 @@ SolutionResult KinematicTrajectoryOptimization::Solve() {
 }
 
 void KinematicTrajectoryOptimization::UpdatePositionTrajectory(
-    const systems::trajectory_optimization::MultipleShooting& prog) {
+    const MathematicalProgram& prog) {
   VectorX<double> times{prog.GetSampleTimes()};
   std::vector<double> times_vec(num_time_samples_);
   std::vector<MatrixX<double>> positions(num_time_samples_);

@@ -1,21 +1,16 @@
 #pragma once
 
 #include "drake/common/drake_copyable.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
+#include "drake/common/trajectories/piecewise_polynomial_trajectory.h"
 #include "drake/multibody/rigid_body_tree.h"
+#include "drake/solvers/mathematical_program.h"
 #include "drake/systems/primitives/linear_system.h"
-#include "drake/systems/trajectory_optimization/multiple_shooting.h"
 
 namespace drake {
 namespace manipulation {
 namespace planner {
 
-/// This class implements a plant with the following dynamics:
-///
-/// ⌈ qdot ⌉ = ⌈ 0 I 0 ⌉ ⌈ q ⌉   ⌈ 0 ⌉
-/// | vdot | = | 0 0 I | | v | + | 0 | u
-/// ⌊ adot ⌋ = ⌊ 0 0 0 ⌋ ⌊ a ⌋   ⌊ I ⌋
-///
-///
 class KinematicTrajectoryOptimization {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(KinematicTrajectoryOptimization)
@@ -102,13 +97,7 @@ class KinematicTrajectoryOptimization {
     spatial_velocity_tolerance_ = spatial_velocity_tolerance;
   }
 
-  int system_order() const { return system_order_; };
-  void set_system_order(int system_order) {
-    DRAKE_THROW_UNLESS(1 <= system_order && system_order <= 3);
-    system_order_ = system_order;
-  }
-
-  const RigidBodyTree<double>& tree() { return *tree_; };
+  const RigidBodyTree<double>& tree() const { return *tree_; };
 
   int num_positions() const { return tree_->get_num_positions(); };
 
@@ -202,91 +191,76 @@ class KinematicTrajectoryOptimization {
 
   // Helper method that performs the work for SubstitutePlaceHolderVariables
   symbolic::Substitution ConstructPlaceholderVariableSubstitution(
-      const systems::trajectory_optimization::MultipleShooting&,
+      const solvers::VectorXDecisionVariable& position_variables,
       int index = -1) const;
 
   solvers::VectorXDecisionVariable SubstitutePlaceholderVariables(
       const solvers::VectorXDecisionVariable& vars,
-      const systems::trajectory_optimization::MultipleShooting& prog,
+      const solvers::VectorXDecisionVariable& position_variables,
       int index = -1);
 
   symbolic::Formula SubstitutePlaceholderVariables(
       const symbolic::Formula& f,
-      const systems::trajectory_optimization::MultipleShooting& prog,
+      const solvers::MathematicalProgram& prog,
       int index = -1);
 
   symbolic::Expression SubstitutePlaceholderVariables(
       const symbolic::Expression& g,
-      const systems::trajectory_optimization::MultipleShooting& prog,
+      const solvers::MathematicalProgram& prog,
       int index = -1);
 
   void AddConstraintToProgram(
       const ConstraintWrapper& constraint,
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
   void AddLinearConstraintToProgram(
       const FormulaWrapper& constraint,
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
   void AddRunningCostToProgram(
       const symbolic::Expression& cost,
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
   void AddFinalCostToProgram(
       const symbolic::Expression& cost,
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
   void AddCostToProgram(
       const CostWrapper&,
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
   void SetInitialTrajectoryOnProgram(
-      systems::trajectory_optimization::MultipleShooting* prog);
+      solvers::MathematicalProgram* prog);
 
-  std::unique_ptr<systems::System<double>> CreateSystem() const;
+  const VectorX<symbolic::Expression> GetSplineVariableExpression(
+      double time, int derivative_order) const;
 
-  std::unique_ptr<systems::trajectory_optimization::MultipleShooting>
-  CreateMathematicalProgram() const;
+  const symbolic::Expression ConstructPositionExpression(
+      const solvers::MathematicalProgram& prog,
+      double time) const;
 
-  const solvers::VectorXDecisionVariable GetStateVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
+  const symbolic::Expression ConstructVelocityExpression(
+      const solvers::MathematicalProgram& prog,
+      double time) const;
 
-  const solvers::VectorXDecisionVariable GetInputVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
+  const symbolic::Expression ConstructAccelerationExpression(
+      const solvers::MathematicalProgram& prog,
+      double time) const;
 
-  const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
-
-  const solvers::VectorXDecisionVariable GetVelocityVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
-
-  const solvers::VectorXDecisionVariable GetAccelerationVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
-
-  const solvers::VectorXDecisionVariable GetJerkVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
-
-  const solvers::VectorXDecisionVariable
-  GetBodySpatialVelocityVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog,
-      int index = -1) const;
+  const symbolic::Expression ConstructJerkExpression(
+      const solvers::MathematicalProgram& prog,
+      double time) const;
 
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
 
   static bool IsValidPlanInterval(const Vector2<double>&);
 
   std::vector<int> ActiveKnotsForPlanInterval(
-      const systems::trajectory_optimization::MultipleShooting& prog,
+      const solvers::MathematicalProgram& prog,
       const Vector2<double>& plan_interval);
 
   void UpdatePositionTrajectory(
-      const systems::trajectory_optimization::MultipleShooting& prog);
+      const solvers::MathematicalProgram& prog);
 
   std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
@@ -316,10 +290,8 @@ class KinematicTrajectoryOptimization {
   double duration_upper_bound_{std::numeric_limits<double>::infinity()};
 
   bool has_equal_time_intervals_{false};
-  int system_order_{3};
-
-  double minimum_timestep_;
-  double maximum_timestep_;
+  int spline_order_{4};
+  int num_control_points_{4};
 
   PiecewisePolynomial<double> initial_position_trajectory_;
   PiecewisePolynomialTrajectory position_trajectory_;
