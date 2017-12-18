@@ -78,9 +78,9 @@ class KinematicTrajectoryOptimization {
 
   /// Returns a placeholder decision variable (not actually declared as a
   /// decision variable in the MathematicalProgram) associated with the
-  /// spatial velocity vector of @p body_name.  This variable will be substituted for
-  /// real decision variables at particular times in methods like
-  /// AddRunningCost.  Passing this variable directly into
+  /// spatial velocity vector of @p body_name.  This variable will be
+  /// substituted for real decision variables at particular times in methods
+  /// like AddRunningCost.  Passing this variable directly into
   /// objectives/constraints for the parent classes will result in an error.
   const solvers::VectorXDecisionVariable spatial_velocity_of_body(
       const std::string& body_name) const {
@@ -141,10 +141,11 @@ class KinematicTrajectoryOptimization {
   template <typename Derived>
   void AddRunningCost(const Eigen::MatrixBase<Derived>& g) {
     DRAKE_DEMAND(g.rows() == 1 && g.cols() == 1);
-    AddRunningCost(g(0,0));
+    AddRunningCost(g(0, 0));
   }
 
-  void TrackSpatialVelocityOfBody(const std::string& body_name, double tolerance = 0);
+  void TrackSpatialVelocityOfBody(const std::string& body_name,
+                                  double tolerance = 0);
 
   void AddSpatialVelocityCost(const std::string& body_name, double weight);
 
@@ -170,16 +171,16 @@ class KinematicTrajectoryOptimization {
 
   PiecewisePolynomialTrajectory GetPositionTrajectory() const;
 
-  template<typename T>
+  template <typename T>
   void SetSolverOption(const solvers::SolverId& solver_id,
-                       const std::string& solver_option,
-                       T option_value);
+                       const std::string& solver_option, T option_value);
 
   void AddLinearConstraint(const symbolic::Formula& f);
 
   void AddLinearConstraint(const symbolic::Formula& f, double time);
 
-  void AddLinearConstraint(const symbolic::Formula& f, Vector2<double> plan_interval);
+  void AddLinearConstraint(const symbolic::Formula& f,
+                           Vector2<double> plan_interval);
 
  private:
   struct FormulaWrapper {
@@ -248,25 +249,33 @@ class KinematicTrajectoryOptimization {
   CreateMathematicalProgram() const;
 
   const solvers::VectorXDecisionVariable GetStateVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetInputVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetPositionVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetVelocityVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetAccelerationVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   const solvers::VectorXDecisionVariable GetJerkVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
-  const solvers::VectorXDecisionVariable GetBodySpatialVelocityVariablesFromProgram(
-      const systems::trajectory_optimization::MultipleShooting& prog, int index = -1) const;
+  const solvers::VectorXDecisionVariable
+  GetBodySpatialVelocityVariablesFromProgram(
+      const systems::trajectory_optimization::MultipleShooting& prog,
+      int index = -1) const;
 
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
 
@@ -276,7 +285,8 @@ class KinematicTrajectoryOptimization {
       const systems::trajectory_optimization::MultipleShooting& prog,
       const Vector2<double>& plan_interval);
 
-  void UpdatePositionTrajectory(const systems::trajectory_optimization::MultipleShooting& prog);
+  void UpdatePositionTrajectory(
+      const systems::trajectory_optimization::MultipleShooting& prog);
 
   std::unique_ptr<RigidBodyTree<double>> tree_;
   int num_time_samples_{0};
@@ -293,10 +303,13 @@ class KinematicTrajectoryOptimization {
   std::map<std::string, solvers::VectorDecisionVariable<6>>
       placeholder_spatial_velocity_vars_;
 
-  std::vector<std::unique_ptr<const symbolic::Expression>> running_cost_expressions_;
+  std::vector<std::unique_ptr<const symbolic::Expression>>
+      running_cost_expressions_;
   std::vector<std::unique_ptr<const CostWrapper>> running_cost_objects_;
-  std::vector<std::unique_ptr<const symbolic::Expression>> final_cost_expressions_;
-  std::vector<std::unique_ptr<const FormulaWrapper>> formula_linear_constraints_;
+  std::vector<std::unique_ptr<const symbolic::Expression>>
+      final_cost_expressions_;
+  std::vector<std::unique_ptr<const FormulaWrapper>>
+      formula_linear_constraints_;
   std::vector<std::unique_ptr<const ConstraintWrapper>> object_constraints_;
 
   double duration_lower_bound_{0};
@@ -304,7 +317,7 @@ class KinematicTrajectoryOptimization {
 
   bool has_equal_time_intervals_{false};
   int system_order_{3};
-  
+
   double minimum_timestep_;
   double maximum_timestep_;
 

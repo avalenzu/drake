@@ -25,27 +25,29 @@ DEFINE_double(min_timestep, 0.01, "Minimum duration of a single timestep.");
 DEFINE_double(max_timestep, 1.0, "Maximum duration of a single timestep.");
 DEFINE_double(spatial_velocity_weight, 1e0,
               "Relative weight of end-effector spatial velocity cost");
-DEFINE_double(velocity_weight, 0e0,
-              "Relative weight of velocity-squared cost");
+DEFINE_double(velocity_weight, 0e0, "Relative weight of velocity-squared cost");
 DEFINE_double(acceleration_weight, 0e0,
               "Relative weight of acceleration-squared cost");
-DEFINE_double(jerk_weight, 1e0,
-              "Relative weight of jerk-squared cost");
-DEFINE_double(tfinal_weight, 1e1,
-              "Relative weight of final-time cost");
+DEFINE_double(jerk_weight, 1e0, "Relative weight of jerk-squared cost");
+DEFINE_double(tfinal_weight, 1e1, "Relative weight of final-time cost");
 DEFINE_double(orientation_tolerance, 1.0, "Orientation tolerance (degrees)");
 DEFINE_double(position_tolerance, 0.001, "Position tolerance");
 DEFINE_double(realtime_rate, 1.0, "Playback speed relative to real-time");
-DEFINE_double(collision_avoidance_threshold, 0.05, "Minimum distance to obstacles at all points.");
+DEFINE_double(collision_avoidance_threshold, 0.05,
+              "Minimum distance to obstacles at all points.");
 DEFINE_double(collision_avoidance_knot_threshold, 0.1,
               "Minimum distance to obstacles at knot points. Should be greater "
               "than collsion_avoidance_threshold.");
 DEFINE_double(max_velocity, 1.5, "Maximum joint-velocity for all joints");
-DEFINE_double(optimality_tolerance, 1e-6, "Major optimality tolerance for solver");
-DEFINE_string(initial_ee_position, "0.5 0.5 0.5", "Initial end-effector position");
+DEFINE_double(optimality_tolerance, 1e-6,
+              "Major optimality tolerance for solver");
+DEFINE_string(initial_ee_position, "0.5 0.5 0.5",
+              "Initial end-effector position");
 DEFINE_string(final_ee_position, "0.5 -0.5 0.5", "Final end-effector position");
-DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0", "Initial end-effector orientation (RPY in degrees)");
-DEFINE_string(final_ee_orientation, "0.0 0.0 0.0", "Final end-effector position (RPY in degrees)");
+DEFINE_string(initial_ee_orientation, "0.0 0.0 0.0",
+              "Initial end-effector orientation (RPY in degrees)");
+DEFINE_string(final_ee_orientation, "0.0 0.0 0.0",
+              "Final end-effector position (RPY in degrees)");
 DEFINE_string(obstacle_0_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_0_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_1_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
@@ -54,8 +56,10 @@ DEFINE_string(obstacle_2_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_2_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_3_position, "0.5 0.0 0.0", "Dimensions of obstacle (m)");
 DEFINE_string(obstacle_3_size, "0.2 0.2 1.0", "Dimensions of obstacle (m)");
-DEFINE_string(velocity_cost_body, "iiwa_link_ee", "Name of the body whose spatial velocity will be penalized.");
-DEFINE_bool(animate_with_zoh, false, "If true, use a zero-order hold to display trajectory");
+DEFINE_string(velocity_cost_body, "iiwa_link_ee",
+              "Name of the body whose spatial velocity will be penalized.");
+DEFINE_bool(animate_with_zoh, false,
+            "If true, use a zero-order hold to display trajectory");
 DEFINE_bool(loop_animation, true, "If true, repeat playback indefinitely");
 DEFINE_bool(flat_terrain, true, "If true, add flat terrain to the world.");
 DEFINE_int32(iteration_limit, 1e3, "Number of iterations allowed");
@@ -64,13 +68,13 @@ DEFINE_int32(initial_num_knots, 2, "Number of knot points.");
 DEFINE_int32(system_order, 3, "Order of the dynamics model for the system.");
 
 using drake::solvers::SolutionResult;
-using drake::systems::trajectory_optimization::MultipleShooting;
 using drake::systems::Diagram;
 using drake::systems::DiagramBuilder;
-using drake::systems::SignalLogger;
-using drake::systems::TrajectorySource;
 using drake::systems::DrakeVisualizer;
+using drake::systems::SignalLogger;
 using drake::systems::Simulator;
+using drake::systems::TrajectorySource;
+using drake::systems::trajectory_optimization::MultipleShooting;
 
 namespace drake {
 namespace manipulation {
@@ -86,7 +90,6 @@ int DoMain() {
     drake::multibody::AddFlatTerrainToWorld(iiwa.get());
   }
 
-
   const double kDuration{FLAGS_duration};
   const double kMinimumTimestep{FLAGS_min_timestep};
   const double kMaximumTimestep{FLAGS_max_timestep};
@@ -98,7 +101,7 @@ int DoMain() {
       std::move(iiwa), num_knots, kMinimumTimestep, kMaximumTimestep};
   kin_traj_opt.set_system_order(FLAGS_system_order);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
-                        "Major iterations limit", FLAGS_iteration_limit);
+                               "Major iterations limit", FLAGS_iteration_limit);
   kin_traj_opt.SetSolverOption(drake::solvers::SnoptSolver::id(),
                                "Major optimality tolerance",
                                FLAGS_optimality_tolerance);
@@ -181,8 +184,7 @@ int DoMain() {
 
   // q[0] = q0
   VectorX<double> q0 = kin_traj_opt.tree().getZeroConfiguration();
-  kin_traj_opt.AddLinearConstraint(
-      kin_traj_opt.position() == q0, 0);
+  kin_traj_opt.AddLinearConstraint(kin_traj_opt.position() == q0, 0);
 
   const VectorX<double> kZeroNumVelocity{
       VectorX<double>::Zero(kin_traj_opt.num_velocities())};
@@ -213,21 +215,21 @@ int DoMain() {
 
   if (FLAGS_velocity_weight > 0) {
     kin_traj_opt.AddRunningCost(FLAGS_velocity_weight *
-        kin_traj_opt.velocity().transpose() *
-        kin_traj_opt.velocity());
+                                kin_traj_opt.velocity().transpose() *
+                                kin_traj_opt.velocity());
   }
   if (FLAGS_acceleration_weight > 0) {
     kin_traj_opt.AddRunningCost(FLAGS_acceleration_weight *
-        kin_traj_opt.acceleration().transpose() *
-        kin_traj_opt.acceleration());
+                                kin_traj_opt.acceleration().transpose() *
+                                kin_traj_opt.acceleration());
   }
   if (FLAGS_jerk_weight > 0) {
     kin_traj_opt.AddRunningCost(FLAGS_jerk_weight *
-        kin_traj_opt.jerk().transpose() *
-        kin_traj_opt.jerk());
+                                kin_traj_opt.jerk().transpose() *
+                                kin_traj_opt.jerk());
   }
   if (FLAGS_tfinal_weight > 0) {
-    kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight*kin_traj_opt.time()(0));
+    kin_traj_opt.AddFinalCost(FLAGS_tfinal_weight * kin_traj_opt.time()(0));
   }
 
   // Add spatial velocity cost
@@ -255,10 +257,10 @@ int DoMain() {
     iss_final_ee_orientation >> rpy_WFf(i);
     DRAKE_THROW_UNLESS(!iss_final_ee_orientation.fail());
   }
-  X_WF0.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WF0);
-  X_WFf.linear() = drake::math::rpy2rotmat(M_PI/180*rpy_WFf);
+  X_WF0.linear() = drake::math::rpy2rotmat(M_PI / 180 * rpy_WF0);
+  X_WFf.linear() = drake::math::rpy2rotmat(M_PI / 180 * rpy_WFf);
 
-  const double kOrientationTolerance{FLAGS_orientation_tolerance*M_PI/180};
+  const double kOrientationTolerance{FLAGS_orientation_tolerance * M_PI / 180};
 
   kin_traj_opt.AddBodyPoseConstraint(0.5, "iiwa_link_ee", X_WF0,
                                      kOrientationTolerance,
@@ -269,10 +271,13 @@ int DoMain() {
 
   // Add collision avoidance constraints
   double kCollisionAvoidanceThreshold{FLAGS_collision_avoidance_threshold};
-  double kCollisionAvoidanceKnotThreshold{FLAGS_collision_avoidance_knot_threshold};
-  DRAKE_THROW_UNLESS(kCollisionAvoidanceThreshold <= kCollisionAvoidanceKnotThreshold);
+  double kCollisionAvoidanceKnotThreshold{
+      FLAGS_collision_avoidance_knot_threshold};
+  DRAKE_THROW_UNLESS(kCollisionAvoidanceThreshold <=
+                     kCollisionAvoidanceKnotThreshold);
   if (kCollisionAvoidanceThreshold > 0) {
-    kin_traj_opt.AddCollisionAvoidanceConstraint(kCollisionAvoidanceKnotThreshold);
+    kin_traj_opt.AddCollisionAvoidanceConstraint(
+        kCollisionAvoidanceKnotThreshold);
   }
 
   SolutionResult result{drake::solvers::kUnknownError};
@@ -306,7 +311,7 @@ int DoMain() {
     drake::log()->info("Refining trajectory ...");
     kin_traj_opt.SetInitialTrajectory(
         kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-    num_knots = num_knots + (num_knots-1);
+    num_knots = num_knots + (num_knots - 1);
     kin_traj_opt.set_num_time_samples(num_knots);
   }
 
@@ -329,7 +334,7 @@ int DoMain() {
     drake::log()->info("Refining trajectory ...");
     kin_traj_opt.SetInitialTrajectory(
         kin_traj_opt.GetPositionTrajectory().get_piecewise_polynomial());
-    num_knots = num_knots + (num_knots-1);
+    num_knots = num_knots + (num_knots - 1);
     kin_traj_opt.set_num_time_samples(num_knots);
   }
 
@@ -369,9 +374,9 @@ int DoMain() {
 
   return result;
 }
-}  // namespace drake
-}  // namespace manipulation
 }  // namespace planner
+}  // namespace manipulation
+}  // namespace drake
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);

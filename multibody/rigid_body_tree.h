@@ -356,8 +356,8 @@ class RigidBodyTree {
   template <typename CacheT>
   drake::Isometry3<CacheT> CalcBodyPoseInWorldFrame(
       const KinematicsCache<CacheT>& cache, const RigidBody<T>& body) const {
-    return CalcFramePoseInWorldFrame(
-        cache, body, drake::Isometry3<CacheT>::Identity());
+    return CalcFramePoseInWorldFrame(cache, body,
+                                     drake::Isometry3<CacheT>::Identity());
   }
 
   /// Computes the pose `X_WF` of @p frame_F in the world frame W. @p frame_F

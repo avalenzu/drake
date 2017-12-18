@@ -20,7 +20,8 @@ GTEST_TEST(KinematicTrajectoryOptimizationTest, ConstructorTest) {
       "drake/manipulation/models/iiwa_description/urdf/"
       "iiwa14_polytope_collision.urdf");
   RigidBodyTree<double> tree{};
-  drake::parsers::urdf::AddModelInstanceFromUrdfFile(kModelPath, multibody::joints::kFixed, nullptr, &tree);
+  drake::parsers::urdf::AddModelInstanceFromUrdfFile(
+      kModelPath, multibody::joints::kFixed, nullptr, &tree);
   const int kNumSampleTimes{2};
 
   KinematicTrajectoryOptimization prog{tree, kNumSampleTimes};
@@ -34,7 +35,8 @@ GTEST_TEST(KinematicTrajectoryOptimizationTest, SolveTest) {
       "drake/manipulation/models/iiwa_description/urdf/"
       "iiwa14_polytope_collision.urdf");
   RigidBodyTree<double> tree{};
-  drake::parsers::urdf::AddModelInstanceFromUrdfFile(kModelPath, multibody::joints::kFixed, nullptr, &tree);
+  drake::parsers::urdf::AddModelInstanceFromUrdfFile(
+      kModelPath, multibody::joints::kFixed, nullptr, &tree);
   const int kNumSampleTimes{2};
 
   KinematicTrajectoryOptimization kin_traj_opt{tree, kNumSampleTimes};
@@ -46,7 +48,7 @@ GTEST_TEST(KinematicTrajectoryOptimizationTest, SolveTest) {
   prog->AddLinearConstraint(prog->initial_state() == x0);
 
   const solvers::VectorXDecisionVariable& u = prog->input();
-  prog->AddRunningCost( u.transpose() * u );
+  prog->AddRunningCost(u.transpose() * u);
 
   solvers::SolutionResult result{prog->Solve()};
 
@@ -59,8 +61,6 @@ GTEST_TEST(KinematicTrajectoryOptimizationTest, SolveTest) {
       EXPECT_EQ(prog->GetSolution(prog->input(i)[j]), 0.0);
     }
   }
-
-
 }
 }  // namespace
 }  // namespace planner
