@@ -16,6 +16,12 @@ import numpy as np
 # @ref https://www.datadoghq.com/blog/engineering/protobuf-parsing-in-python/
 from google.protobuf.internal.decoder import _DecodeVarint32
 
+from google.protobuf import descriptor as _descriptor
+import sys
+sys.stderr.write(_descriptor.__file__ + '\n')
+for p in sys.path:
+    sys.stderr.write(p + '\n')
+
 from drake.common.proto.matlab_rpc_pb2 import MatlabArray, MatlabRPC
 
 
