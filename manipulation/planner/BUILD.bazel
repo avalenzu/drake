@@ -39,6 +39,19 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "bspline_basis",
+    srcs = [
+        "bspline_basis.cc",
+    ],
+    hdrs = [
+        "bspline_basis.h",
+    ],
+    deps = [
+        "//drake/common/trajectories:piecewise_polynomial",
+    ],
+)
+
+drake_cc_library(
     name = "kinematic_trajectory_optimization",
     srcs = ["kinematic_trajectory_optimization.cc"],
     hdrs = ["kinematic_trajectory_optimization.h"],
@@ -82,6 +95,14 @@ drake_cc_googletest(
         "//drake/systems/framework",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_googletest(
+    name = "bspline_basis_test",
+    deps = [
+        ":bspline_basis",
+        "//drake/common:find_resource",
     ],
 )
 
