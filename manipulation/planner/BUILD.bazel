@@ -2,6 +2,7 @@
 
 load(
     "//tools:drake.bzl",
+    "drake_cc_binary",
     "drake_cc_library",
     "drake_cc_googletest",
 )
@@ -37,6 +38,18 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "kinematic_trajectory_optimization",
+    srcs = ["kinematic_trajectory_optimization.cc"],
+    hdrs = ["kinematic_trajectory_optimization.h"],
+    deps = [
+        "//drake/common/trajectories:piecewise_polynomial",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody/parsers",
+        "//drake/solvers:mathematical_program",
+    ],
+)
+
 # === test/ ===
 
 drake_cc_googletest(
@@ -69,6 +82,14 @@ drake_cc_googletest(
         "//drake/systems/framework",
         "@lcmtypes_bot2_core",
         "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_googletest(
+    name = "kinematic_trajectory_optimization_test",
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//drake/common:find_resource",
     ],
 )
 
