@@ -34,7 +34,8 @@ int DoMain() {
   // Plot a B-spline curve for random control points in R².
   std::default_random_engine rand_generator{1234};
   std::uniform_real_distribution<double> rand_distribution{};
-  auto control_points = MatrixX<double>(2, num_control_points);
+  const int num_y = 2;
+  auto control_points = MatrixX<double>(num_y, num_control_points);
   for (int i = 0; i < control_points.rows(); ++i) {
     for (int j = 0; j < control_points.cols(); ++j) {
       control_points(i, j) = rand_distribution(rand_generator);
@@ -45,22 +46,55 @@ int DoMain() {
       basis.ConstructBsplineCurve(control_points);
   MatrixX<double> curve_values(2, x.size());
   for (int j = 0; j < num_plotting_points; ++j) {
-    curve_values(0,j) = curve.value(x(j))(0);
-    curve_values(1,j) = curve.value(x(j))(1);
+    curve_values(0, j) = curve.value(x(j))(0);
+    curve_values(1, j) = curve.value(x(j))(1);
   }
   CallPython("figure", 2);
   CallPython("clf");
   CallPython("plot", control_points.row(0).transpose(),
              control_points.row(1).transpose());
   drake::log()->debug("Start point: ({}, {})", control_points(0, 0),
-             control_points(1,0));
-  drake::log()->debug("End point:   ({}, {})", control_points(0, num_control_points-1),
-             control_points(1,num_control_points-1));
-  CallPython("plot", control_points(0, 0),
-             control_points(1,0), ToPythonKwargs("marker", "v"));
-  CallPython("plot", control_points(0, num_control_points-1),
-             control_points(1,num_control_points-1), ToPythonKwargs("marker", "^"));
-  CallPython("plot", curve_values.row(0).transpose(), curve_values.row(1).transpose());
+                      control_points(1, 0));
+  drake::log()->debug("End point:   ({}, {})",
+                      control_points(0, num_control_points - 1),
+                      control_points(1, num_control_points - 1));
+  CallPython("plot", control_points(0, 0), control_points(1, 0),
+             ToPythonKwargs("marker", "v"));
+  CallPython("plot", control_points(0, num_control_points - 1),
+             control_points(1, num_control_points - 1),
+             ToPythonKwargs("marker", "^"));
+  CallPython("plot", curve_values.row(0).transpose(),
+             curve_values.row(1).transpose());
+
+  // Try ploting a sparser set of points on the curve by constructing and
+  // evaluating an expression.
+  std::vector<MatrixX<symbolic::Variable>> control_points_symbolic(
+      num_control_points);
+  symbolic::Environment control_points_environment;
+  for (int j = 0; j < num_control_points; ++j) {
+    control_points_symbolic[j].resize(num_y, 1);
+    for (int i = 0; i < num_y; ++i) {
+      control_points_symbolic[j](i,0) =
+          symbolic::Variable("y_" + std::to_string(i) + std::to_string(j));
+      control_points_environment[control_points_symbolic[j](i,0)] =
+          control_points(i, j);
+    }
+  }
+  const int num_sparse_plotting_points = 10;
+  const VectorX<double> x_sparse{
+      VectorX<double>::LinSpaced(num_sparse_plotting_points, 0, 1)};
+  MatrixX<double> sparse_curve_values(num_y, num_sparse_plotting_points);
+  for (int j = 0; j < num_sparse_plotting_points; ++j) {
+    MatrixX<symbolic::Expression> expression =
+        basis.ConstructExpressionForCurveValue(control_points_symbolic,
+                                               x_sparse(j));
+    for (int i = 0; i < num_y; ++i) {
+      sparse_curve_values(i, j) =
+          expression(i, 0).Evaluate(control_points_environment);
+    }
+  }
+  CallPython("scatter", sparse_curve_values.row(0).transpose(),
+             sparse_curve_values.row(1).transpose(), ToPythonKwargs("marker", "o"));
 
   // Plot basis.
   CallPython("figure", 1);
