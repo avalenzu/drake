@@ -42,6 +42,39 @@ PiecewisePolynomial<double> BsplineBasis::ConstructBsplineCurve(
   return PiecewisePolynomial<double>(polynomials,
                                      basis_.front().getSegmentTimes());
 }
+
+MatrixX<symbolic::Expression> BsplineBasis::ConstructExpressionForCurveValue(
+    const std::vector<MatrixX<symbolic::Variable>>& control_points,
+    double time, int derivative_order) const {
+  // Compute the basis values at evaluation_time
+  VectorX<double> basis_function_values(order_);
+  const std::vector<int> active_control_point_indices =
+      ComputeActiveControlPointIndices(time);
+  MatrixX<symbolic::Expression> ret{control_points.front().rows(),
+                                    control_points.front().cols()};
+  for (int i = 0; i < order_; ++i) {
+    ret += basis_[active_control_point_indices[i]].value(time)(0) *
+           control_points[active_control_point_indices[i]];
+  }
+  return ret;
+}
+
+std::vector<int> BsplineBasis::ComputeActiveControlPointIndices(
+    double time) const {
+  std::vector<int> active_control_point_indices(order_);
+  for (int i = 0; i < num_control_points_; ++i) {
+    if (knots_[i] <= time + kEpsilonTime_ &&
+        time <= knots_[i + order_] + kEpsilonTime_) {
+      active_control_point_indices[0] = i;
+      break;
+    }
+  }
+  for (int i = 1; i < order_; ++i) {
+    active_control_point_indices[i] = active_control_point_indices[i - 1] + 1;
+  }
+  return active_control_point_indices;
+}
+
 }  // namespace planner
 }  // namespace manipulation
 }  // namespace drake
