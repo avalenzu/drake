@@ -3,20 +3,28 @@
 namespace drake {
 namespace manipulation {
 namespace planner {
-BsplineBasis::BsplineBasis(int order, int num_control_points)
-    : order_(order), num_control_points_(num_control_points) {
-  // The knot vector will be [0, 0, 0, ..., 0, t₁
-  const int num_knots{num_control_points_ + order_};
-  knots_.resize(num_knots, 0.0);
+namespace {
+std::vector<double> ConstructDefaultKnots(int order, int num_control_points) {
+  const int num_knots{num_control_points + order};
+  std::vector<double> knots(num_knots, 0.0);
   const double knot_interval =
-      1.0 / static_cast<double>(num_control_points_ - (order_ - 1));
+      1.0 / static_cast<double>(num_control_points - (order - 1));
   for (int i = order; i < num_knots; ++i) {
-    knots_[i] = std::min(1.0, knots_[i - 1] + knot_interval);
+    knots[i] = std::min(1.0, knots[i - 1] + knot_interval);
   }
-  for (int i = 0; i < num_control_points; ++i) {
+  return knots;
+}
+}  // namespace
+BsplineBasis::BsplineBasis(int order, std::vector<double> knots)
+    : order_(order), num_control_points_(knots.size() - order), knots_(knots) {
+  // The knot vector will be [0, 0, 0, ..., 0, t₁
+  for (int i = 0; i < num_control_points_; ++i) {
     basis_.push_back(PiecewisePolynomial<double>::BSpline(i, order_, knots_));
   }
 }
+
+BsplineBasis::BsplineBasis(int order, int num_control_points)
+    : BsplineBasis(order, ConstructDefaultKnots(order, num_control_points)) {}
 
 PiecewisePolynomial<double> BsplineBasis::ConstructBsplineCurve(
     const MatrixX<double>& control_points, int derivative_order) const {
@@ -44,8 +52,8 @@ PiecewisePolynomial<double> BsplineBasis::ConstructBsplineCurve(
 }
 
 MatrixX<symbolic::Expression> BsplineBasis::ConstructExpressionForCurveValue(
-    const std::vector<MatrixX<symbolic::Variable>>& control_points,
-    double time, int derivative_order) const {
+    const std::vector<MatrixX<symbolic::Variable>>& control_points, double time,
+    int derivative_order) const {
   // Compute the basis values at evaluation_time
   VectorX<double> basis_function_values(order_);
   const std::vector<int> active_control_point_indices =

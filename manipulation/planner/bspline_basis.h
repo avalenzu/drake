@@ -11,6 +11,8 @@ namespace manipulation {
 namespace planner {
 class BsplineBasis {
  public:
+  BsplineBasis(int order, std::vector<double> knots);
+
   BsplineBasis(int order, int num_control_points);
 
   int order() const { return order_; }
