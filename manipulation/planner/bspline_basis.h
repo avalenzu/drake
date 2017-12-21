@@ -26,7 +26,7 @@ class BsplineBasis {
   }
 
   PiecewisePolynomial<double> ConstructBsplineCurve(
-      const MatrixX<double>& control_points, int derivative_order = 0) const;
+      const std::vector<MatrixX<double>>& control_points) const;
 
   MatrixX<symbolic::Expression> ConstructExpressionForCurveValue(
       const std::vector<MatrixX<symbolic::Variable>>& control_points,

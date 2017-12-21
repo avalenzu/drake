@@ -27,22 +27,28 @@ BsplineBasis::BsplineBasis(int order, int num_control_points)
     : BsplineBasis(order, ConstructDefaultKnots(order, num_control_points)) {}
 
 PiecewisePolynomial<double> BsplineBasis::ConstructBsplineCurve(
-    const MatrixX<double>& control_points, int derivative_order) const {
-  DRAKE_THROW_UNLESS(control_points.cols() == num_control_points_);
-  const int num_y = control_points.rows();
-  const int num_internal_intervals = num_control_points_ - order_ + 1;
-  std::vector<MatrixX<Polynomial<double>>> polynomials(num_internal_intervals);
-  for (int i = 0; i < num_internal_intervals; ++i) {
-    polynomials[i] =
-        MatrixX<Polynomial<double>>::Zero((derivative_order + 1) * num_y, 1);
-    for (int j = 0; j < num_y; ++j) {
-      // TODO(avalenzu): Only do this for the elements of the basis whose
-      // support includes the i-th interval.
-      for (int k = 0; k < num_control_points_; ++k) {
-        for (int ii = 0; ii <= derivative_order; ++ii) {
-          polynomials[i](ii * num_y + j) +=
-              basis_[k].derivative(ii).getPolynomial(i, 0, 0) *
-              control_points(j, k);
+    const std::vector<MatrixX<double>>& control_points) const {
+  DRAKE_THROW_UNLESS(control_points.size() == num_control_points_);
+  const int control_point_rows = control_points.front().rows();
+  const int control_point_cols = control_points.front().cols();
+  const int num_segments = basis_.front().getNumberOfSegments();
+  std::vector<MatrixX<Polynomial<double>>> polynomials(num_segments);
+  for (int segment_index = 0; segment_index < num_segments; ++segment_index) {
+    polynomials[segment_index] = MatrixX<Polynomial<double>>::Zero(
+        control_point_rows, control_point_cols);
+    // TODO(avalenzu): Only do this for the elements of the basis whose
+    // support includes the segment_index-th interval.
+    for (int control_point_index = 0; control_point_index < num_control_points_;
+         ++control_point_index) {
+      DRAKE_THROW_UNLESS(control_points[control_point_index].rows() ==
+                         control_point_rows);
+      DRAKE_THROW_UNLESS(control_points[control_point_index].cols() ==
+                         control_point_cols);
+      for (int i = 0; i < control_point_rows; ++i) {
+        for (int j = 0; j < control_point_cols; ++j) {
+          polynomials[segment_index](i, j) +=
+              basis_[control_point_index].getPolynomial(segment_index, 0, 0) *
+              control_points[control_point_index](i, j);
         }
       }
     }
