@@ -74,9 +74,9 @@ int DoMain() {
   for (int j = 0; j < num_control_points; ++j) {
     control_points_symbolic[j].resize(num_y, 1);
     for (int i = 0; i < num_y; ++i) {
-      control_points_symbolic[j](i,0) =
+      control_points_symbolic[j](i, 0) =
           symbolic::Variable("y_" + std::to_string(i) + std::to_string(j));
-      control_points_environment[control_points_symbolic[j](i,0)] =
+      control_points_environment[control_points_symbolic[j](i, 0)] =
           control_points(i, j);
     }
   }
@@ -94,7 +94,8 @@ int DoMain() {
     }
   }
   CallPython("scatter", sparse_curve_values.row(0).transpose(),
-             sparse_curve_values.row(1).transpose(), ToPythonKwargs("marker", "o"));
+             sparse_curve_values.row(1).transpose(),
+             ToPythonKwargs("marker", "o"));
 
   // Plot basis.
   CallPython("figure", 1);
