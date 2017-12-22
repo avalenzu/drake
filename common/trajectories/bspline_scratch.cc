@@ -77,46 +77,52 @@ int DoMain() {
   BsplineCurve<symbolic::Expression> curve_symbolic{basis,
                                                     control_points_symbolic};
 
+  // Differentiate both the numeric and symbolic curves.
+  auto derivative_curve = curve.Derivative();
+  auto derivative_curve_symbolic = curve_symbolic.Derivative();
+
   CallPython("figure", 2);
   CallPython("clf");
+  CallPython("figure", 3);
+  CallPython("clf");
   for (int j = 0; j < control_point_cols; ++j) {
-    MatrixX<double> curve_values(2, t.size());
+    MatrixX<double> curve_values(control_point_rows, t.size());
+    MatrixX<double> curve_values2(control_point_rows, t.size());
+    MatrixX<double> derivative_curve_values(control_point_rows, t.size());
     for (int plotting_point_index = 0;
          plotting_point_index < num_plotting_points; ++plotting_point_index) {
-      curve_values(0, plotting_point_index) =
-          curve.value(t(plotting_point_index))(0, j);
-      curve_values(1, plotting_point_index) =
-          curve.value(t(plotting_point_index))(1, j);
+      for (int i = 0; i < control_point_rows; ++i) {
+        curve_values(i, plotting_point_index) =
+            curve.value(t(plotting_point_index))(i, j);
+        curve_values2(i, plotting_point_index) =
+            curve2.value(t(plotting_point_index))(i, j);
+        derivative_curve_values(i, plotting_point_index) =
+            derivative_curve.value(t(plotting_point_index))(i, j);
+      }
     }
     VectorX<double> control_points_x(num_control_points);
     VectorX<double> control_points_y(num_control_points);
+    VectorX<double> control_points_x2(num_control_points + 1);
+    VectorX<double> control_points_y2(num_control_points + 1);
     for (int control_point_index = 0; control_point_index < num_control_points;
          ++control_point_index) {
       control_points_x(control_point_index) =
           control_points[control_point_index](0, j);
       control_points_y(control_point_index) =
           control_points[control_point_index](1, j);
-    }
-    MatrixX<double> curve_values2(2, t.size());
-    for (int plotting_point_index = 0;
-         plotting_point_index < num_plotting_points; ++plotting_point_index) {
-      curve_values2(0, plotting_point_index) =
-          curve2.value(t(plotting_point_index))(0, j);
-      curve_values2(1, plotting_point_index) =
-          curve2.value(t(plotting_point_index))(1, j);
-    }
-    VectorX<double> control_points_x2(num_control_points + 1);
-    VectorX<double> control_points_y2(num_control_points + 1);
-    for (int control_point_index = 0;
-         control_point_index < num_control_points + 1; ++control_point_index) {
       control_points_x2(control_point_index) =
           control_points2[control_point_index](0, j);
       control_points_y2(control_point_index) =
           control_points2[control_point_index](1, j);
     }
+    control_points_x2(num_control_points) =
+        control_points2[num_control_points](0, j);
+    control_points_y2(num_control_points) =
+        control_points2[num_control_points](1, j);
     drake::log()->debug("control_points = \n{}\n{}",
                         control_points_x.transpose(),
                         control_points_y.transpose());
+    CallPython("figure", 2);
     CallPython("plot", control_points_x, control_points_y,
                ToPythonKwargs("marker", "x"));
     CallPython("plot", curve_values.row(0).transpose(),
@@ -125,27 +131,47 @@ int DoMain() {
                ToPythonKwargs("marker", "D"));
     CallPython("plot", curve_values2.row(0).transpose(),
                curve_values2.row(1).transpose());
+    CallPython("figure", 3);
+    CallPython("plot", t, curve_values.row(0).transpose(),
+               ToPythonKwargs("label", "$C_{" + std::to_string(j) + "x}(t)$"));
+    CallPython(
+        "plot", t, derivative_curve_values.row(0).transpose(),
+        ToPythonKwargs("label", "$C_{" + std::to_string(j) + "x}\'(t)$"));
+    CallPython("legend");
 
     // Try ploting a sparser set of points on the curve by constructing and
     // evaluating an expression.
     const int num_sparse_plotting_points = basis.knots().size();
+    const VectorX<double> t_sparse{
+        VectorX<double>::LinSpaced(num_sparse_plotting_points, 0, 1)};
     MatrixX<double> sparse_curve_values(control_point_rows,
                                         num_sparse_plotting_points);
+    MatrixX<double> sparse_derivative_curve_values(control_point_rows,
+                                                   num_sparse_plotting_points);
     for (int sparse_plotting_point_index = 0;
          sparse_plotting_point_index < num_sparse_plotting_points;
          ++sparse_plotting_point_index) {
       for (int i = 0; i < control_point_rows; ++i) {
         sparse_curve_values(i, sparse_plotting_point_index) =
             curve_symbolic
-                .value(basis.knots()[sparse_plotting_point_index])(i, j)
+                .value(t_sparse(sparse_plotting_point_index))(i, j)
+                .Evaluate(control_points_environment);
+        sparse_derivative_curve_values(i, sparse_plotting_point_index) =
+            derivative_curve_symbolic
+                .value(t_sparse(sparse_plotting_point_index))(i, j)
                 .Evaluate(control_points_environment);
       }
     }
+    CallPython("figure", 2);
     CallPython("scatter", sparse_curve_values.row(0).transpose(),
                sparse_curve_values.row(1).transpose(),
                ToPythonKwargs("marker", "o"));
     drake::log()->debug("sparse_curve_values = \n{}\n{}",
                         sparse_curve_values.row(0), sparse_curve_values.row(1));
+    CallPython("figure", 3);
+    CallPython("scatter", t_sparse,
+               sparse_derivative_curve_values.row(0).transpose(),
+               ToPythonKwargs("marker", "o"));
   }
   // Plot basis.
   CallPython("figure", 1);
