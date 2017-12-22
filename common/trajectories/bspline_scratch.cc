@@ -50,11 +50,32 @@ int DoMain() {
       }
     }
   }
-  BsplineCurve curve{basis, control_points};
-  BsplineCurve curve2{curve};
+  BsplineCurve<double> curve{basis, control_points};
+  BsplineCurve<double> curve2{curve};
   curve2.InsertKnot(0.5 * (basis.knots()[basis.knots().size() / 2] +
                            basis.knots()[basis.knots().size() / 2 + 1]));
   const std::vector<MatrixX<double>>& control_points2 = curve2.control_points();
+
+  // Create a symbolic curve.
+  std::vector<MatrixX<symbolic::Variable>> control_points_symbolic(
+      num_control_points);
+  symbolic::Environment control_points_environment;
+  for (int control_point_index = 0; control_point_index < num_control_points;
+       ++control_point_index) {
+    control_points_symbolic[control_point_index].resize(control_point_rows,
+                                                        control_point_cols);
+    for (int i = 0; i < control_point_rows; ++i) {
+      for (int j = 0; j < control_point_cols; ++j) {
+        control_points_symbolic[control_point_index](i, j) =
+            symbolic::Variable("y[" + std::to_string(control_point_index) +
+                               "_" + std::to_string(i) + std::to_string(j));
+        control_points_environment[control_points_symbolic[control_point_index](
+            i, j)] = control_points[control_point_index](i, j);
+      }
+    }
+  }
+  BsplineCurve<symbolic::Expression> curve_symbolic{basis,
+                                                    control_points_symbolic};
 
   CallPython("figure", 2);
   CallPython("clf");
@@ -86,8 +107,8 @@ int DoMain() {
     }
     VectorX<double> control_points_x2(num_control_points + 1);
     VectorX<double> control_points_y2(num_control_points + 1);
-    for (int control_point_index = 0; control_point_index < num_control_points + 1;
-         ++control_point_index) {
+    for (int control_point_index = 0;
+         control_point_index < num_control_points + 1; ++control_point_index) {
       control_points_x2(control_point_index) =
           control_points2[control_point_index](0, j);
       control_points_y2(control_point_index) =
@@ -105,40 +126,19 @@ int DoMain() {
     CallPython("plot", curve_values2.row(0).transpose(),
                curve_values2.row(1).transpose());
 
-
     // Try ploting a sparser set of points on the curve by constructing and
     // evaluating an expression.
-    std::vector<MatrixX<symbolic::Variable>> control_points_symbolic(
-        num_control_points);
-    symbolic::Environment control_points_environment;
-    for (int control_point_index = 0; control_point_index < num_control_points;
-         ++control_point_index) {
-      control_points_symbolic[control_point_index].resize(control_point_rows,
-                                                          control_point_cols);
-      for (int i = 0; i < control_point_rows; ++i) {
-        for (int j = 0; j < control_point_cols; ++j) {
-          control_points_symbolic[control_point_index](i, j) =
-              symbolic::Variable("y[" + std::to_string(control_point_index) +
-                                 "_" + std::to_string(i) + std::to_string(j));
-          control_points_environment
-              [control_points_symbolic[control_point_index](i, j)] =
-                  control_points[control_point_index](i, j);
-        }
-      }
-    }
     const int num_sparse_plotting_points = basis.knots().size();
     MatrixX<double> sparse_curve_values(control_point_rows,
                                         num_sparse_plotting_points);
     for (int sparse_plotting_point_index = 0;
          sparse_plotting_point_index < num_sparse_plotting_points;
          ++sparse_plotting_point_index) {
-      MatrixX<symbolic::Expression> expression =
-          basis.ConstructExpressionForCurveValue(
-              control_points_symbolic,
-              basis.knots()[sparse_plotting_point_index]);
       for (int i = 0; i < control_point_rows; ++i) {
         sparse_curve_values(i, sparse_plotting_point_index) =
-            expression(i, j).Evaluate(control_points_environment);
+            curve_symbolic
+                .value(basis.knots()[sparse_plotting_point_index])(i, j)
+                .Evaluate(control_points_environment);
       }
     }
     CallPython("scatter", sparse_curve_values.row(0).transpose(),
