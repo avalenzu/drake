@@ -70,7 +70,7 @@ drake_cc_library(
     srcs = ["kinematic_trajectory_optimization.cc"],
     hdrs = ["kinematic_trajectory_optimization.h"],
     deps = [
-        "//drake/common/trajectories:piecewise_polynomial",
+        ":bspline_curve",
         "//drake/multibody:rigid_body_tree",
         "//drake/multibody/parsers",
         "//drake/solvers:mathematical_program",
