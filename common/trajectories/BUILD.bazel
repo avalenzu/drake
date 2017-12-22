@@ -54,7 +54,7 @@ drake_cc_binary(
         "//drake/common",
         "//drake/common:polynomial",
         "//drake/common/proto:call_python",
-        "//drake/manipulation/planner:bspline_basis",
+        "//drake/manipulation/planner:bspline_curve",
         "@com_github_gflags_gflags//:gflags",
     ],
 )

@@ -9,10 +9,12 @@
 #include "drake/common/text_logging_gflags.h"
 #include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/manipulation/planner/bspline_basis.h"
+#include "drake/manipulation/planner/bspline_curve.h"
 
 using drake::common::CallPython;
 using drake::common::ToPythonKwargs;
 using drake::manipulation::planner::BsplineBasis;
+using drake::manipulation::planner::BsplineCurve;
 
 DEFINE_int32(order, 4, "Order of the B-splines");
 DEFINE_int32(num_control_points, 11, "Number of unique knot points");
@@ -48,8 +50,11 @@ int DoMain() {
       }
     }
   }
-  PiecewisePolynomial<double> curve =
-      basis.ConstructBsplineCurve(control_points);
+  BsplineCurve curve{basis, control_points};
+  BsplineCurve curve2{curve};
+  curve2.InsertKnot(0.5 * (basis.knots()[basis.knots().size() / 2] +
+                           basis.knots()[basis.knots().size() / 2 + 1]));
+  const std::vector<MatrixX<double>>& control_points2 = curve2.control_points();
 
   CallPython("figure", 2);
   CallPython("clf");
@@ -62,7 +67,6 @@ int DoMain() {
       curve_values(1, plotting_point_index) =
           curve.value(t(plotting_point_index))(1, j);
     }
-
     VectorX<double> control_points_x(num_control_points);
     VectorX<double> control_points_y(num_control_points);
     for (int control_point_index = 0; control_point_index < num_control_points;
@@ -72,6 +76,23 @@ int DoMain() {
       control_points_y(control_point_index) =
           control_points[control_point_index](1, j);
     }
+    MatrixX<double> curve_values2(2, t.size());
+    for (int plotting_point_index = 0;
+         plotting_point_index < num_plotting_points; ++plotting_point_index) {
+      curve_values2(0, plotting_point_index) =
+          curve2.value(t(plotting_point_index))(0, j);
+      curve_values2(1, plotting_point_index) =
+          curve2.value(t(plotting_point_index))(1, j);
+    }
+    VectorX<double> control_points_x2(num_control_points + 1);
+    VectorX<double> control_points_y2(num_control_points + 1);
+    for (int control_point_index = 0; control_point_index < num_control_points + 1;
+         ++control_point_index) {
+      control_points_x2(control_point_index) =
+          control_points2[control_point_index](0, j);
+      control_points_y2(control_point_index) =
+          control_points2[control_point_index](1, j);
+    }
     drake::log()->debug("control_points = \n{}\n{}",
                         control_points_x.transpose(),
                         control_points_y.transpose());
@@ -79,6 +100,11 @@ int DoMain() {
                ToPythonKwargs("marker", "x"));
     CallPython("plot", curve_values.row(0).transpose(),
                curve_values.row(1).transpose());
+    CallPython("plot", control_points_x2, control_points_y2,
+               ToPythonKwargs("marker", "D"));
+    CallPython("plot", curve_values2.row(0).transpose(),
+               curve_values2.row(1).transpose());
+
 
     // Try ploting a sparser set of points on the curve by constructing and
     // evaluating an expression.
@@ -112,8 +138,7 @@ int DoMain() {
               basis.knots()[sparse_plotting_point_index]);
       for (int i = 0; i < control_point_rows; ++i) {
         sparse_curve_values(i, sparse_plotting_point_index) =
-            expression(i, j)
-                .Evaluate(control_points_environment);
+            expression(i, j).Evaluate(control_points_environment);
       }
     }
     CallPython("scatter", sparse_curve_values.row(0).transpose(),
