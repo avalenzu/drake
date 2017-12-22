@@ -24,12 +24,19 @@ class BsplineCurve {
     return control_points_;
   }
 
+  int num_control_points() const { return basis_.num_control_points(); };
+
   const MatrixX<T> value(double time) const;
 
   const std::vector<double>& knots() const { return basis_.knots(); }
+
   int order() const { return basis_.order(); }
+
   int degree() const { return order() - 1; }
+
   void InsertKnot(double time);
+
+  BsplineCurve<T> Derivative() const;
 
  private:
   void UpdatePiecewisePolynomial();

@@ -38,8 +38,9 @@ BsplineCurve<T>::BsplineCurve(const BsplineBasis& basis,
 
 template <typename T>
 template <typename T_input>
-BsplineCurve<T>::BsplineCurve(const BsplineBasis& basis,
-                              const std::vector<MatrixX<T_input>>& control_points)
+BsplineCurve<T>::BsplineCurve(
+    const BsplineBasis& basis,
+    const std::vector<MatrixX<T_input>>& control_points)
     : BsplineCurve(basis, CastControlPoints<T>(control_points)) {}
 
 template <>
@@ -94,6 +95,22 @@ void BsplineCurve<T>::InsertKnot(double time) {
   // TODO(avalenzu): Figure out the right way to handle this. This method is
   // only for BsplineCurve<double>.
   DRAKE_THROW_UNLESS(false);
+}
+
+template <typename T>
+BsplineCurve<T> BsplineCurve<T>::Derivative() const {
+  std::vector<MatrixX<T>> derivative_control_points;
+  std::vector<double> derivative_knots;
+  for (int i = 1; i < knots().size() - 1; ++i) {
+    derivative_knots.push_back(knots()[i]);
+  }
+  for (int i = 0; i < num_control_points() - 1; ++i) {
+    derivative_control_points.push_back(
+        degree() / (knots()[i + order()] - knots()[i + 1]) *
+        (control_points()[i + 1] - control_points()[i]));
+  }
+  return BsplineCurve(BsplineBasis(order() - 1, derivative_knots),
+                      derivative_control_points);
 }
 
 template class BsplineCurve<double>;
