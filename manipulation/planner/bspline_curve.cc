@@ -4,13 +4,57 @@
 namespace drake {
 namespace manipulation {
 namespace planner {
-BsplineCurve::BsplineCurve(BsplineBasis basis,
-                           std::vector<MatrixX<double>> control_points)
-    : basis_(basis),
-      control_points_(control_points),
-      piecwise_polynomial_(basis.ConstructBsplineCurve(control_points)) {}
+namespace {
+template <typename T, typename T_input>
+std::vector<MatrixX<T>> CastControlPoints(
+    const std::vector<MatrixX<T_input>>& control_points) {
+  std::vector<MatrixX<T>> control_points_cast;
+  std::transform(control_points.begin(), control_points.end(),
+                 std::back_inserter(control_points_cast),
+                 [](const MatrixX<T_input>& var) -> MatrixX<T> {
+                   return var.template cast<T>();
+                 });
+  return control_points_cast;
+}
+}  // namespace
 
-void BsplineCurve::InsertKnot(double time) {
+template <>
+void BsplineCurve<double>::UpdatePiecewisePolynomial() {
+  piecwise_polynomial_ = basis_.ConstructBsplineCurve(control_points_);
+}
+
+template <typename T>
+void BsplineCurve<T>::UpdatePiecewisePolynomial() {
+  // Piecewise polynomial doesn't support symbolic::{Expression,Variable}, so do
+  // nothing here.
+}
+
+template <typename T>
+BsplineCurve<T>::BsplineCurve(const BsplineBasis& basis,
+                              const std::vector<MatrixX<T>>& control_points)
+    : basis_(basis), control_points_(control_points) {
+  UpdatePiecewisePolynomial();
+}
+
+template <typename T>
+template <typename T_input>
+BsplineCurve<T>::BsplineCurve(const BsplineBasis& basis,
+                              const std::vector<MatrixX<T_input>>& control_points)
+    : BsplineCurve(basis, CastControlPoints<T>(control_points)) {}
+
+template <>
+const MatrixX<double> BsplineCurve<double>::value(double time) const {
+  return piecwise_polynomial_->value(time);
+}
+
+template <>
+const MatrixX<symbolic::Expression> BsplineCurve<symbolic::Expression>::value(
+    double time) const {
+  return basis_.ConstructExpressionForCurveValue(control_points(), time);
+}
+
+template <>
+void BsplineCurve<double>::InsertKnot(double time) {
   // Find the knot before this time.
   std::vector<double> new_knots;
   std::vector<MatrixX<double>> new_control_points;
@@ -31,19 +75,31 @@ void BsplineCurve::InsertKnot(double time) {
   }
   new_knots.push_back(time);
   new_control_points.push_back(control_points()[i - 1]);
-  while(i < control_points().size()) {
+  while (i < control_points().size()) {
     new_knots.push_back(knots()[i]);
     new_control_points.push_back(control_points()[i]);
     ++i;
   }
-  while(i < knots().size()) {
+  while (i < knots().size()) {
     new_knots.push_back(knots()[i]);
     ++i;
   }
   basis_ = BsplineBasis(order(), new_knots);
   control_points_ = new_control_points;
-  piecwise_polynomial_ = basis_.ConstructBsplineCurve(control_points_);
+  UpdatePiecewisePolynomial();
 }
+
+template <typename T>
+void BsplineCurve<T>::InsertKnot(double time) {
+  // TODO(avalenzu): Figure out the right way to handle this. This method is
+  // only for BsplineCurve<double>.
+  DRAKE_THROW_UNLESS(false);
+}
+
+template class BsplineCurve<double>;
+template class BsplineCurve<symbolic::Expression>;
+template BsplineCurve<symbolic::Expression>::BsplineCurve(
+    const BsplineBasis& basis, const std::vector<MatrixX<symbolic::Variable>>&);
 }  // namespace planner
 }  // namespace manipulation
 }  // namespace drake
