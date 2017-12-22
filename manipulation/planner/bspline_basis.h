@@ -30,8 +30,8 @@ class BsplineBasis {
       const std::vector<MatrixX<double>>& control_points) const;
 
   MatrixX<symbolic::Expression> ConstructExpressionForCurveValue(
-      const std::vector<MatrixX<symbolic::Variable>>& control_points,
-      double time, int derivative_order = 0) const;
+      const std::vector<MatrixX<symbolic::Expression>>& control_points,
+      double time) const;
 
   std::vector<int> ComputeActiveControlPointIndices(
       double evaluation_time) const;

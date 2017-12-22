@@ -59,8 +59,8 @@ PiecewisePolynomial<double> BsplineBasis::ConstructBsplineCurve(
 }
 
 MatrixX<symbolic::Expression> BsplineBasis::ConstructExpressionForCurveValue(
-    const std::vector<MatrixX<symbolic::Variable>>& control_points, double time,
-    int derivative_order) const {
+    const std::vector<MatrixX<symbolic::Expression>>& control_points,
+    double time) const {
   // Compute the basis values at evaluation_time
   VectorX<double> basis_function_values(order_);
   const std::vector<int> active_control_point_indices =
