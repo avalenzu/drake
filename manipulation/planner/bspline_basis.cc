@@ -15,9 +15,10 @@ std::vector<double> ConstructDefaultKnots(int order, int num_control_points) {
   return knots;
 }
 }  // namespace
+
 BsplineBasis::BsplineBasis(int order, std::vector<double> knots)
     : order_(order), num_control_points_(knots.size() - order), knots_(knots) {
-  // The knot vector will be [0, 0, 0, ..., 0, t₁
+  DRAKE_THROW_UNLESS(std::is_sorted(knots.begin(), knots.end()));
   for (int i = 0; i < num_control_points_; ++i) {
     basis_.push_back(PiecewisePolynomial<double>::BSpline(i, order_, knots_));
   }
