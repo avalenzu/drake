@@ -34,6 +34,12 @@ class BsplineCurve {
 
   int degree() const { return order() - 1; }
 
+  const optional<PiecewisePolynomial<double>>& piecwise_polynomial() const {
+    return piecwise_polynomial_;
+  }
+
+  const BsplineBasis& basis() const { return basis_; }
+
   void InsertKnot(double time);
 
   BsplineCurve<T> Derivative() const;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "drake/common/drake_throw.h"
@@ -32,6 +33,9 @@ class BsplineBasis {
   MatrixX<symbolic::Expression> ConstructExpressionForCurveValue(
       const std::vector<MatrixX<symbolic::Expression>>& control_points,
       double time) const;
+
+  std::vector<int> ComputeActiveControlPointIndices(
+      std::array<double, 2> evaluation_time) const;
 
   std::vector<int> ComputeActiveControlPointIndices(
       double evaluation_time) const;

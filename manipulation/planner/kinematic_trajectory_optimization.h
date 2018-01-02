@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+
+#include "drake/common/drake_optional.h"
 #include "drake/manipulation/planner/bspline_curve.h"
 #include "drake/solvers/mathematical_program.h"
 
@@ -20,16 +23,6 @@ class KinematicTrajectoryOptimization {
   /// points corresponding to their start and end times.
   KinematicTrajectoryOptimization(int num_positions, int num_control_points,
                                   int spline_order = 4, double duration = 1);
-
-  /// Returns a placeholder decision variable (not actually declared as a
-  /// decision variable in the MathematicalProgram) associated with the time, t.
-  /// This variable will be substituted for real decision variables at
-  /// particular times in methods like AddRunningCost.  Passing this variable
-  /// directly into objectives/constraints for the parent classes will result
-  /// in an error.
-  const solvers::VectorDecisionVariable<1>& time() const {
-    return placeholder_t_var_;
-  }
 
   /// Returns a placeholder decision variable (not actually declared as a
   /// decision variable in the MathematicalProgram) associated with the
@@ -76,12 +69,18 @@ class KinematicTrajectoryOptimization {
   };
 
   void AddLinearConstraint(const symbolic::Formula& f,
-                           Vector2<double> plan_interval);
+                           std::array<double, 2> plan_interval);
+
+  solvers::SolutionResult Solve();
+
+  PiecewisePolynomial<double> GetPositionSolution() const {
+    return *position_curve_.piecwise_polynomial();
+  }
 
  private:
   struct FormulaWrapper {
     symbolic::Formula formula;
-    Vector2<double> plan_interval;
+    std::array<double, 2> plan_interval;
   };
 
   struct CostWrapper {
@@ -96,13 +95,20 @@ class KinematicTrajectoryOptimization {
     Vector2<double> plan_interval;
   };
 
-  void AddLinearConstraintToProgram(
-      const FormulaWrapper& constraint,
-      solvers::MathematicalProgram* prog);
+  void AddLinearConstraintToProgram(const FormulaWrapper& constraint);
+
+  std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
+      const std::vector<solvers::MatrixXDecisionVariable>& control_points,
+      const std::vector<int>& index) const;
+
+  std::vector<symbolic::Formula> SubstitutePlaceholderVariables(
+      const symbolic::Formula& f,
+      const std::vector<solvers::MatrixXDecisionVariable>& control_points,
+      const std::vector<int>& active_control_point_indices) const;
+
   // See description of the public time(), position(), velocity(),
   // acceleration() and jerk() accessor methods
   // for details about the placeholder variables.
-  const solvers::VectorDecisionVariable<1> placeholder_t_var_;
   const solvers::VectorXDecisionVariable placeholder_q_vars_;
   const solvers::VectorXDecisionVariable placeholder_v_vars_;
   const solvers::VectorXDecisionVariable placeholder_a_vars_;
@@ -112,6 +118,9 @@ class KinematicTrajectoryOptimization {
 
   std::vector<std::unique_ptr<const FormulaWrapper>>
       formula_linear_constraints_;
+
+  optional<solvers::MathematicalProgram> prog_;
+  std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
 };
 }  // namespace planner
 }  // namespace manipulation
