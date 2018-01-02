@@ -77,6 +77,17 @@ drake_cc_library(
     ],
 )
 
+drake_cc_binary(
+    name = "kin_traj_opt_scratch",
+    srcs = ["kin_traj_opt_scratch.cc"],
+    deps = [
+        ":kinematic_trajectory_optimization",
+        "//drake/common:text_logging_gflags",
+        "//drake/common/proto:call_python",
+        "@com_github_gflags_gflags//:gflags",
+    ],
+)
+
 # === test/ ===
 
 drake_cc_googletest(
