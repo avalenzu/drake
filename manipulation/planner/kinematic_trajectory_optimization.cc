@@ -199,8 +199,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
     AddQuadraticCostToProgram(*expression_cost);
   }
 
-  solvers::ScsSolver solver{};
-  solvers::SolutionResult result = solver.Solve(*prog_);
+  solvers::SolutionResult result = prog_->Solve();
   drake::log()->info("Solver used: {}", prog_->GetSolverId().value().name());
 
   std::vector<MatrixX<double>> new_control_points;
