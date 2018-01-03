@@ -4,6 +4,7 @@
 #include "drake/common/text_logging.h"
 #include "drake/common/text_logging_gflags.h"
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
+#include "drake/solvers/constraint.h"
 
 using drake::common::CallPython;
 using drake::common::ToPythonKwargs;
@@ -49,6 +50,7 @@ int DoMain() {
   const double mid_trajectory_duration = FLAGS_mid_trajectory_duration;
   const double mid_trajectory_start = 0.5 - mid_trajectory_duration / 2.0;
   const double mid_trajectory_end = 0.5 + mid_trajectory_duration / 2.0;
+
   drake::log()->info("Running with:");
   drake::log()->info("  order: {}", order);
   drake::log()->info("  num_control_points: {}", num_control_points);
@@ -56,20 +58,25 @@ int DoMain() {
       num_positions, num_control_points, order};
   prog.AddLinearConstraint(prog.position() == Vector2<double>(0.0, 1.0),
                            {{0.0, 0.0}});
-  prog.AddLinearConstraint(
-      -mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
-          mid_trajectory_intercept - mid_trajectory_tolerance,
-      {{mid_trajectory_start, mid_trajectory_end}});
-  prog.AddLinearConstraint(
-      -mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
-          mid_trajectory_intercept + mid_trajectory_tolerance,
-      {{mid_trajectory_start, mid_trajectory_end}});
+  //prog.AddLinearConstraint(
+      //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
+          //mid_trajectory_intercept - mid_trajectory_tolerance,
+      //{{mid_trajectory_start, mid_trajectory_end}});
+  //prog.AddLinearConstraint(
+      //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
+          //mid_trajectory_intercept + mid_trajectory_tolerance,
+      //{{mid_trajectory_start, mid_trajectory_end}});
   prog.AddLinearConstraint(prog.position() == Vector2<double>(1.0, 0.0),
                            {{1.0, 1.0}});
   prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
                            {{0.0, 0.0}});
   prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
                            {{1.0, 1.0}});
+  prog.AddGenericPositionConstraint(
+      std::make_shared<solvers::QuadraticConstraint>(
+           Matrix2<double>::Identity(), Vector2<double>::Zero(), 0.9, 10),
+      {{0.0, 1.0}});
+
   if (max_velocity > 0) {
     prog.AddLinearConstraint(
         prog.velocity() <= Vector2<double>::Constant(max_velocity),

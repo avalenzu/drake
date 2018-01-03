@@ -1,5 +1,8 @@
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
+
 #include "drake/common/text_logging.h"
+#include "drake/math/autodiff.h"
+#include "drake/math/autodiff_gradient.h"
 #include "drake/solvers/scs_solver.h"
 
 namespace drake {
@@ -15,6 +18,47 @@ solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
     vars(i) = symbolic::Variable(prefix + std::to_string(i));
   return vars;
 }
+
+class PointConstraint : public solvers::Constraint {
+ public:
+  PointConstraint(std::shared_ptr<solvers::Constraint> wrapped_constraint,
+                  const std::vector<double>& basis_function_values)
+      : Constraint(
+            wrapped_constraint->num_outputs(),
+            basis_function_values.size() * wrapped_constraint->num_vars(),
+            wrapped_constraint->lower_bound(),
+            wrapped_constraint->upper_bound()),
+      wrapped_constraint_(wrapped_constraint),
+        basis_function_values_(basis_function_values) {}
+
+  virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      Eigen::VectorXd& y) const {
+    AutoDiffVecXd y_t;
+    Eval(math::initializeAutoDiff(x), y_t);
+    y = math::autoDiffToValueMatrix(y_t);
+  }
+
+  virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+                      // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
+                      AutoDiffVecXd& y) const {
+    AutoDiffVecXd x_sum(wrapped_constraint_->num_vars());
+    const int num_terms = basis_function_values_.size();
+    for (int i = 0; i < num_terms; ++i) {
+      x_sum += basis_function_values_[i] *
+               x.segment(i * wrapped_constraint_->num_vars(),
+                         wrapped_constraint_->num_vars());
+    }
+    wrapped_constraint_->Eval(x_sum, y);
+  }
+
+  int numOutputs() const { return wrapped_constraint_->num_outputs(); };
+
+ private:
+  std::shared_ptr<solvers::Constraint> wrapped_constraint_;
+  std::vector<double> basis_function_values_;
+};
+
 }  // namespace
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     int num_positions, int num_control_points, int spline_order,
@@ -28,14 +72,21 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
           std::vector<MatrixX<double>>(
               num_control_points, MatrixX<double>::Zero(num_positions, 1))){};
 
+void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
+    const std::shared_ptr<solvers::Constraint>& constraint,
+    const std::array<double, 2>& plan_interval) {
+  generic_position_constraints_.emplace_back(
+      new ConstraintWrapper({constraint, plan_interval}));
+}
+
 void KinematicTrajectoryOptimization::AddLinearConstraint(
-    const symbolic::Formula& f, std::array<double, 2> plan_interval) {
+    const symbolic::Formula& f, const std::array<double, 2>& plan_interval) {
   formula_linear_constraints_.emplace_back(
       new FormulaWrapper({f, plan_interval}));
 }
 
 void KinematicTrajectoryOptimization::AddQuadraticCost(
-    const symbolic::Expression& f, std::array<double, 2> plan_interval) {
+    const symbolic::Expression& f, const std::array<double, 2>& plan_interval) {
   expression_quadratic_costs_.emplace_back(
       new ExpressionWrapper({f, plan_interval}));
 }
@@ -51,7 +102,8 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
                                                       control_points};
   BsplineCurve<symbolic::Expression> symbolic_v_curve{
       symbolic_q_curve.Derivative()};
-  drake::log()->debug("symbolic_v_curve.control_points().size() = {}", symbolic_v_curve.control_points().size());
+  drake::log()->debug("symbolic_v_curve.control_points().size() = {}",
+                      symbolic_v_curve.control_points().size());
   BsplineCurve<symbolic::Expression> symbolic_a_curve{
       symbolic_v_curve.Derivative()};
   BsplineCurve<symbolic::Expression> symbolic_j_curve{
@@ -67,19 +119,22 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
         sub[j].emplace(
             placeholder_v_vars_(i),
             symbolic_v_curve
-                .control_points()[active_control_point_indices[j-1]](i).Expand());
+                .control_points()[active_control_point_indices[j - 1]](i)
+                .Expand());
       }
       if (1 < j) {
         sub[j].emplace(
             placeholder_a_vars_(i),
             symbolic_a_curve
-                .control_points()[active_control_point_indices[j - 2]](i).Expand());
+                .control_points()[active_control_point_indices[j - 2]](i)
+                .Expand());
       }
       if (2 < j) {
         sub[j].emplace(
             placeholder_j_vars_(i),
             symbolic_j_curve
-                .control_points()[active_control_point_indices[j - 3]](i).Expand());
+                .control_points()[active_control_point_indices[j - 3]](i)
+                .Expand());
       }
     }
   }
@@ -180,6 +235,37 @@ void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
   }
 }
 
+void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
+    const ConstraintWrapper& constraint) {
+  DRAKE_ASSERT(prog_ != nullopt);
+  const auto evaluation_times = VectorX<double>::LinSpaced(
+      constraint.num_evaluation_points, constraint.plan_interval.front(),
+      constraint.plan_interval.back());
+  for (int evaluation_time_index = 0;
+       evaluation_time_index < evaluation_times.size();
+       ++evaluation_time_index) {
+    double evaluation_time = evaluation_times(evaluation_time_index);
+    std::vector<double> basis_function_values;
+    basis_function_values.reserve(position_curve_.order());
+    solvers::VectorXDecisionVariable var_vector(position_curve_.order() *
+                                                num_positions());
+    std::vector<int> active_control_point_indices =
+        position_curve_.basis().ComputeActiveControlPointIndices(
+            {{evaluation_time, evaluation_time}});
+    for (int i = 0; i < position_curve_.order(); ++i) {
+      const int control_point_index = active_control_point_indices[i];
+      basis_function_values.push_back(
+          position_curve_.basis().polynomials()[control_point_index].value(
+              evaluation_time)(0));
+      var_vector.segment(i * num_positions(), num_positions()) =
+          control_point_variables_[control_point_index];
+    }
+    prog_->AddConstraint(std::make_shared<PointConstraint>(
+                             constraint.constraint, basis_function_values),
+                         var_vector);
+  }
+}
+
 solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
   prog_.emplace();
   const int num_control_points = position_curve_.num_control_points();
@@ -197,6 +283,11 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
 
   for (const auto& expression_cost : expression_quadratic_costs_) {
     AddQuadraticCostToProgram(*expression_cost);
+  }
+
+  for (const auto& generic_position_constraint :
+       generic_position_constraints_) {
+    AddGenericPositionConstraintToProgram(*generic_position_constraint);
   }
 
   solvers::SolutionResult result = prog_->Solve();

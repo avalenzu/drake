@@ -24,6 +24,10 @@ class BsplineCurve {
     return control_points_;
   }
 
+  int rows() const { return control_points()[0].rows(); }
+
+  int cols() const { return control_points()[0].cols(); }
+
   int num_control_points() const { return basis_.num_control_points(); };
 
   const MatrixX<T> value(double time) const;

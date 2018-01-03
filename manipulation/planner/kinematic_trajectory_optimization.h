@@ -4,6 +4,7 @@
 
 #include "drake/common/drake_optional.h"
 #include "drake/manipulation/planner/bspline_curve.h"
+#include "drake/solvers/binding.h"
 #include "drake/solvers/mathematical_program.h"
 
 namespace drake {
@@ -70,11 +71,15 @@ class KinematicTrajectoryOptimization {
 
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
 
+  void AddGenericPositionConstraint(
+      const std::shared_ptr<solvers::Constraint>& constraint,
+      const std::array<double, 2>& plan_interval);
+
   void AddLinearConstraint(const symbolic::Formula& f,
-                           std::array<double, 2> plan_interval);
+                           const std::array<double, 2>& plan_interval);
 
   void AddQuadraticCost(const symbolic::Expression& expression,
-                        std::array<double, 2> plan_interval = {{0, 1}});
+                        const std::array<double, 2>& plan_interval = {{0, 1}});
 
   solvers::SolutionResult Solve();
 
@@ -93,21 +98,17 @@ class KinematicTrajectoryOptimization {
     std::array<double, 2> plan_interval;
   };
 
-  struct CostWrapper {
-    std::shared_ptr<solvers::Cost> cost;
-    solvers::VectorXDecisionVariable vars;
-    Vector2<double> plan_interval;
-  };
-
   struct ConstraintWrapper {
     std::shared_ptr<solvers::Constraint> constraint;
-    solvers::VectorXDecisionVariable vars;
-    Vector2<double> plan_interval;
+    std::array<double, 2> plan_interval;
+    int num_evaluation_points{2};
   };
 
   void AddLinearConstraintToProgram(const FormulaWrapper& constraint);
 
-  void AddQuadraticCostToProgram(const ExpressionWrapper& constraint);
+  void AddQuadraticCostToProgram(const ExpressionWrapper& cost);
+
+  void AddGenericPositionConstraintToProgram(const ConstraintWrapper& constraint);
 
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
@@ -138,6 +139,8 @@ class KinematicTrajectoryOptimization {
 
   std::vector<std::unique_ptr<const ExpressionWrapper>>
       expression_quadratic_costs_;
+
+  std::vector<std::unique_ptr<const ConstraintWrapper>> generic_position_constraints_;
 
   optional<solvers::MathematicalProgram> prog_;
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
