@@ -10,7 +10,7 @@ using drake::common::ToPythonKwargs;
 
 DEFINE_int32(order, 4, "Order of the B-splines");
 DEFINE_int32(num_control_points, 15, "Number of unique knot points");
-DEFINE_int32(num_plotting_points, 1000,
+DEFINE_int32(num_plotting_points, 100,
              "Number of points to use when plotting.");
 DEFINE_int32(derivatives_to_plot, 0, "Order of derivatives to plot.");
 DEFINE_double(max_velocity, -1, "Maximum allowed velocity in any dimension.");
@@ -20,6 +20,14 @@ DEFINE_double(max_jerk, -1, "Maximum allowed jerk in any dimension.");
 DEFINE_double(velocity_weight, -1, "Weight on squared velocity cost.");
 DEFINE_double(acceleration_weight, -1, "Weight on squared acceleration cost.");
 DEFINE_double(jerk_weight, -1, "Weight on squared jerk cost.");
+DEFINE_double(mid_trajectory_slope, -1,
+              "Slope for linear constraint on mid-section of trajectory.");
+DEFINE_double(mid_trajectory_intercept, 2,
+              "Intercept for linear constraint on mid-section of trajectory.");
+DEFINE_double(mid_trajectory_tolerance, 0.1,
+              "Tolerance for linear constraint on mid-section of trajectory.");
+DEFINE_double(mid_trajectory_duration, 0.2,
+              "Tolerance for linear constraint on mid-section of trajectory.");
 
 namespace drake {
 namespace {
@@ -35,6 +43,12 @@ int DoMain() {
   const double velocity_weight = FLAGS_velocity_weight;
   const double acceleration_weight = FLAGS_acceleration_weight;
   const double jerk_weight = FLAGS_jerk_weight;
+  const double mid_trajectory_slope = FLAGS_mid_trajectory_slope;
+  const double mid_trajectory_intercept = FLAGS_mid_trajectory_intercept;
+  const double mid_trajectory_tolerance = FLAGS_mid_trajectory_tolerance;
+  const double mid_trajectory_duration = FLAGS_mid_trajectory_duration;
+  const double mid_trajectory_start = 0.5 - mid_trajectory_duration / 2.0;
+  const double mid_trajectory_end = 0.5 + mid_trajectory_duration / 2.0;
   drake::log()->info("Running with:");
   drake::log()->info("  order: {}", order);
   drake::log()->info("  num_control_points: {}", num_control_points);
@@ -42,8 +56,14 @@ int DoMain() {
       num_positions, num_control_points, order};
   prog.AddLinearConstraint(prog.position() == Vector2<double>(0.0, 1.0),
                            {{0.0, 0.0}});
-  prog.AddLinearConstraint(prog.position()(0) + prog.position()(1) == 2.0,
-                           {{0.4, 0.6}});
+  prog.AddLinearConstraint(
+      -mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
+          mid_trajectory_intercept - mid_trajectory_tolerance,
+      {{mid_trajectory_start, mid_trajectory_end}});
+  prog.AddLinearConstraint(
+      -mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
+          mid_trajectory_intercept + mid_trajectory_tolerance,
+      {{mid_trajectory_start, mid_trajectory_end}});
   prog.AddLinearConstraint(prog.position() == Vector2<double>(1.0, 0.0),
                            {{1.0, 1.0}});
   prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
@@ -76,7 +96,8 @@ int DoMain() {
     prog.AddQuadraticCost(prog.velocity().transpose() * prog.velocity());
   }
   if (acceleration_weight > 0) {
-    prog.AddQuadraticCost(prog.acceleration().transpose() * prog.acceleration());
+    prog.AddQuadraticCost(prog.acceleration().transpose() *
+                          prog.acceleration());
   }
   if (jerk_weight > 0) {
     prog.AddQuadraticCost(prog.jerk().transpose() * prog.jerk());
@@ -116,6 +137,23 @@ int DoMain() {
       CallPython("plot", curve_values.row(0).transpose(),
                  curve_values.row(1).transpose(),
                  ToPythonKwargs("marker", "o"));
+      VectorX<double> constraint_lines_x =
+          curve_values.row(0)
+              .segment(mid_trajectory_start * num_plotting_points,
+                       mid_trajectory_duration * num_plotting_points)
+              .transpose();
+      CallPython("plot", constraint_lines_x,
+                 (mid_trajectory_slope * constraint_lines_x +
+                  VectorX<double>::Constant(
+                      constraint_lines_x.size(),
+                      mid_trajectory_intercept + mid_trajectory_tolerance)),
+                 ToPythonKwargs("linewidth", 4));
+      CallPython("plot", constraint_lines_x,
+                 (mid_trajectory_slope * constraint_lines_x +
+                  VectorX<double>::Constant(
+                      constraint_lines_x.size(),
+                      mid_trajectory_intercept - mid_trajectory_tolerance)),
+                 ToPythonKwargs("linewidth", 4));
       auto axes2 = CallPython("gca");
       axes2.attr("axis")("equal");
       CallPython("axis('equal')");
