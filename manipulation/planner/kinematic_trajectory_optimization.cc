@@ -1,5 +1,6 @@
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/common/text_logging.h"
+#include "drake/solvers/scs_solver.h"
 
 namespace drake {
 namespace manipulation {
@@ -33,6 +34,12 @@ void KinematicTrajectoryOptimization::AddLinearConstraint(
       new FormulaWrapper({f, plan_interval}));
 }
 
+void KinematicTrajectoryOptimization::AddQuadraticCost(
+    const symbolic::Expression& f, std::array<double, 2> plan_interval) {
+  expression_quadratic_costs_.emplace_back(
+      new ExpressionWrapper({f, plan_interval}));
+}
+
 std::vector<symbolic::Substitution>
 KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
     const std::vector<MatrixXDecisionVariable>& control_points,
@@ -44,6 +51,7 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
                                                       control_points};
   BsplineCurve<symbolic::Expression> symbolic_v_curve{
       symbolic_q_curve.Derivative()};
+  drake::log()->debug("symbolic_v_curve.control_points().size() = {}", symbolic_v_curve.control_points().size());
   BsplineCurve<symbolic::Expression> symbolic_a_curve{
       symbolic_v_curve.Derivative()};
   BsplineCurve<symbolic::Expression> symbolic_j_curve{
@@ -55,23 +63,23 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
           placeholder_q_vars_(i),
           symbolic_q_curve.control_points()[active_control_point_indices[j]](
               i));
-      if (0 < j && j < active_control_point_indices.size() - 1) {
+      if (0 < j) {
         sub[j].emplace(
             placeholder_v_vars_(i),
-            symbolic_v_curve.control_points()[active_control_point_indices[j]](
-                i));
+            symbolic_v_curve
+                .control_points()[active_control_point_indices[j-1]](i).Expand());
       }
-      if (1 < j && j < active_control_point_indices.size() - 2) {
+      if (1 < j) {
         sub[j].emplace(
             placeholder_a_vars_(i),
-            symbolic_a_curve.control_points()[active_control_point_indices[j]](
-                i));
+            symbolic_a_curve
+                .control_points()[active_control_point_indices[j - 2]](i).Expand());
       }
-      if (2 < j && j < active_control_point_indices.size() - 3) {
+      if (2 < j) {
         sub[j].emplace(
             placeholder_j_vars_(i),
-            symbolic_j_curve.control_points()[active_control_point_indices[j]](
-                i));
+            symbolic_j_curve
+                .control_points()[active_control_point_indices[j - 3]](i).Expand());
       }
     }
   }
@@ -92,6 +100,41 @@ KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
   return substitution_results;
 }
 
+std::vector<symbolic::Expression>
+KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
+    const symbolic::Expression& expression,
+    const std::vector<MatrixXDecisionVariable>& control_points,
+    const std::vector<int>& active_control_point_indices) const {
+  std::vector<symbolic::Expression> substitution_results;
+  substitution_results.reserve(active_control_point_indices.size());
+  for (const auto& substitution : ConstructPlaceholderVariableSubstitution(
+           control_points, active_control_point_indices)) {
+    substitution_results.push_back(expression.Substitute(substitution));
+  }
+  return substitution_results;
+}
+
+bool KinematicTrajectoryOptimization::AreVariablesPresentInProgram(
+    symbolic::Variables vars) const {
+  if (!symbolic::intersect(symbolic::Variables(placeholder_q_vars_), vars)
+           .empty()) {
+    return false;
+  }
+  if (!symbolic::intersect(symbolic::Variables(placeholder_v_vars_), vars)
+           .empty()) {
+    return false;
+  }
+  if (!symbolic::intersect(symbolic::Variables(placeholder_a_vars_), vars)
+           .empty()) {
+    return false;
+  }
+  if (!symbolic::intersect(symbolic::Variables(placeholder_j_vars_), vars)
+           .empty()) {
+    return false;
+  }
+  return true;
+}
+
 void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
     const FormulaWrapper& constraint) {
   DRAKE_ASSERT(prog_ != nullopt);
@@ -106,8 +149,34 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
                                      control_point_variables_,
                                      active_control_point_indices);
   for (const auto& f : per_control_point_formulae) {
-    drake::log()->debug("Adding linear constraint: {}", f);
-    prog_->AddLinearConstraint(f);
+    if (AreVariablesPresentInProgram(f.GetFreeVariables())) {
+      drake::log()->debug("Adding linear constraint: {}", f);
+      prog_->AddLinearConstraint(f);
+    } else {
+      drake::log()->debug("Failed to add linear constraint: {}", f);
+    }
+  }
+}
+
+void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
+    const ExpressionWrapper& cost) {
+  DRAKE_ASSERT(prog_ != nullopt);
+  const std::vector<int> active_control_point_indices{
+      position_curve_.basis().ComputeActiveControlPointIndices(
+          cost.plan_interval)};
+  for (const auto& index : active_control_point_indices) {
+    drake::log()->debug("Control point {} is active.", index);
+  }
+  const std::vector<symbolic::Expression> per_control_point_expressions =
+      SubstitutePlaceholderVariables(cost.expression, control_point_variables_,
+                                     active_control_point_indices);
+  for (const auto& expression : per_control_point_expressions) {
+    if (AreVariablesPresentInProgram(expression.GetVariables())) {
+      drake::log()->debug("Adding quadratic cost: {}", expression);
+      prog_->AddQuadraticCost(expression.Expand());
+    } else {
+      drake::log()->debug("Failed to add quadratic cost: {}", expression);
+    }
   }
 }
 
@@ -121,18 +190,31 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
     control_point_variables_.push_back(prog_->NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
   }
+
   for (const auto& formula_constraint : formula_linear_constraints_) {
     AddLinearConstraintToProgram(*formula_constraint);
   }
-  return prog_->Solve();
+
+  for (const auto& expression_cost : expression_quadratic_costs_) {
+    AddQuadraticCostToProgram(*expression_cost);
+  }
+
+  solvers::ScsSolver solver{};
+  solvers::SolutionResult result = solver.Solve(*prog_);
+  drake::log()->info("Solver used: {}", prog_->GetSolverId().value().name());
+
   std::vector<MatrixX<double>> new_control_points;
   new_control_points.reserve(num_control_points);
+  drake::log()->debug("Num control point variables: {}",
+                      control_point_variables_.size());
   for (const auto& control_point_variable : control_point_variables_) {
-    drake::log()->debug("control point: {}", prog_->GetSolution(control_point_variable).transpose());
+    drake::log()->debug("control point: {}",
+                        prog_->GetSolution(control_point_variable).transpose());
     new_control_points.push_back(prog_->GetSolution(control_point_variable));
   }
   position_curve_ =
       BsplineCurve<double>(position_curve_.basis(), new_control_points);
+  return result;
 }
 
 }  // namespace planner

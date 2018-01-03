@@ -108,6 +108,7 @@ BsplineCurve<T> BsplineCurve<T>::Derivative() const {
     derivative_control_points.push_back(
         degree() / (knots()[i + order()] - knots()[i + 1]) *
         (control_points()[i + 1] - control_points()[i]));
+    drake::log()->debug("derivative_control_points[{}] = {}\n", i, derivative_control_points.back().transpose());
   }
   return BsplineCurve(BsplineBasis(order() - 1, derivative_knots),
                       derivative_control_points);

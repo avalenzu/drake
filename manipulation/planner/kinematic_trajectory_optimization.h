@@ -68,8 +68,13 @@ class KinematicTrajectoryOptimization {
     return position_curve_.control_points().front().rows();
   };
 
+  bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
+
   void AddLinearConstraint(const symbolic::Formula& f,
                            std::array<double, 2> plan_interval);
+
+  void AddQuadraticCost(const symbolic::Expression& expression,
+                        std::array<double, 2> plan_interval = {{0, 1}});
 
   solvers::SolutionResult Solve();
 
@@ -80,6 +85,11 @@ class KinematicTrajectoryOptimization {
  private:
   struct FormulaWrapper {
     symbolic::Formula formula;
+    std::array<double, 2> plan_interval;
+  };
+
+  struct ExpressionWrapper {
+    symbolic::Expression expression;
     std::array<double, 2> plan_interval;
   };
 
@@ -97,12 +107,19 @@ class KinematicTrajectoryOptimization {
 
   void AddLinearConstraintToProgram(const FormulaWrapper& constraint);
 
+  void AddQuadraticCostToProgram(const ExpressionWrapper& constraint);
+
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
       const std::vector<int>& index) const;
 
   std::vector<symbolic::Formula> SubstitutePlaceholderVariables(
       const symbolic::Formula& f,
+      const std::vector<solvers::MatrixXDecisionVariable>& control_points,
+      const std::vector<int>& active_control_point_indices) const;
+
+  std::vector<symbolic::Expression> SubstitutePlaceholderVariables(
+      const symbolic::Expression& expression,
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
       const std::vector<int>& active_control_point_indices) const;
 
@@ -118,6 +135,9 @@ class KinematicTrajectoryOptimization {
 
   std::vector<std::unique_ptr<const FormulaWrapper>>
       formula_linear_constraints_;
+
+  std::vector<std::unique_ptr<const ExpressionWrapper>>
+      expression_quadratic_costs_;
 
   optional<solvers::MathematicalProgram> prog_;
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;

@@ -87,13 +87,14 @@ std::vector<int> BsplineBasis::ComputeActiveControlPointIndices(
       break;
     }
   }
-  for (int i = active_control_point_indices.back(); i < num_control_points_;
-       ++i) {
-    if (knots_[i] <= interval.back() + kEpsilonTime_ &&
-        interval.back() <= knots_[i + order_] + kEpsilonTime_) {
-      break;
+  if (interval.back() - interval.front() > kEpsilonTime_) {
+    for (int i = active_control_point_indices.back() + 1; i < num_control_points_;
+        ++i) {
+      active_control_point_indices.push_back(i);
+      if (interval.back() <= knots_[i + order_] + kEpsilonTime_) {
+        break;
+      }
     }
-    active_control_point_indices.push_back(i);
   }
   for (int i = 1; i < order_; ++i) {
     active_control_point_indices.push_back(active_control_point_indices.back() +
