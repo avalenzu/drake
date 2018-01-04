@@ -69,6 +69,18 @@ class KinematicTrajectoryOptimization {
     return position_curve_.control_points().front().rows();
   };
 
+  int num_evaluation_points() const { return num_evaluation_points_; }
+
+  double min_knot_resolution() const { return min_knot_resolution_; }
+
+  void set_num_evaluation_points(int num_evaluation_points) {
+    num_evaluation_points_ = num_evaluation_points;
+  }
+
+  void set_min_knot_resolution(double min_knot_resolution) {
+    min_knot_resolution_ = min_knot_resolution;
+  }
+
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
 
   void AddGenericPositionConstraint(
@@ -90,6 +102,10 @@ class KinematicTrajectoryOptimization {
   /// Add evaluation points to generic constraints if necessary.
   /// @returns true if constraints have been modified.
   bool UpdateGenericConstraints();
+
+  /// Add knots to the position curve.
+  /// @returns true if knots were added.
+  bool AddKnots();
 
  private:
   struct FormulaWrapper {
@@ -150,6 +166,8 @@ class KinematicTrajectoryOptimization {
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
 
   int num_evaluation_points_{100};
+
+  double min_knot_resolution_{1e-2};
 };
 }  // namespace planner
 }  // namespace manipulation

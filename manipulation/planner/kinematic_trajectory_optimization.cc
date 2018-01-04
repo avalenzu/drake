@@ -330,8 +330,8 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
         num_evaluation_points_, constraint->plan_interval.front(),
         constraint->plan_interval.back())};
     for (int i = 0; i < num_evaluation_points_; ++i) {
-      if (!constraint->constraint->CheckSatisfied(
-              position_curve_.value(t(i)), 1e-3)) {
+      if (!constraint->constraint->CheckSatisfied(position_curve_.value(t(i)),
+                                                  1e-3)) {
         constraints_have_been_modified = true;
         constraint->num_evaluation_points +=
             constraint->num_evaluation_points - 1;
@@ -340,6 +340,28 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
     }
   }
   return constraints_have_been_modified;
+}
+
+bool KinematicTrajectoryOptimization::AddKnots() {
+  auto second_to_last_knot = position_curve_.knots().end() - 1;
+  bool knots_have_been_added{false};
+  for (auto knot = position_curve_.knots().begin(); knot != second_to_last_knot;
+       ++knot) {
+    drake::log()->debug("knot[i] = {}", *knot);
+  }
+  std::vector<double> old_knots = position_curve_.knots();
+  const int num_knots = old_knots.size();
+  for (int i = 0; i < num_knots - 1; ++i) {
+    double new_knot = 0.5 * (old_knots[i] + old_knots[i + 1]);
+    drake::log()->debug("knot[i] = {}, knot[i+1] = {}, new_knot = {}",
+                        old_knots[i], old_knots[i + 1], new_knot);
+    if (new_knot - old_knots[i] > min_knot_resolution()) {
+      knots_have_been_added = true;
+      drake::log()->debug("Adding knot at t = {}", new_knot);
+      position_curve_.InsertKnot(new_knot);
+    }
+  }
+  return knots_have_been_added;
 }
 
 }  // namespace planner
