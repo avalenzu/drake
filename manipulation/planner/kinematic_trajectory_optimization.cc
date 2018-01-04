@@ -51,7 +51,8 @@ class PointConstraint : public solvers::Constraint {
                          wrapped_constraint_->num_vars());
     }
     wrapped_constraint_->Eval(x_sum, y);
-    drake::log()->debug("x_sum = {}", math::autoDiffToValueMatrix(x_sum).transpose());
+    drake::log()->debug("x_sum = {}",
+                        math::autoDiffToValueMatrix(x_sum).transpose());
     drake::log()->debug("y = {}", math::autoDiffToValueMatrix(y));
   }
 
@@ -308,7 +309,26 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
   }
   position_curve_ =
       BsplineCurve<double>(position_curve_.basis(), new_control_points);
-  return result;
+
+  bool call_solve_again{false};
+  for (auto& generic_position_constraint : generic_position_constraints_) {
+    const VectorX<double> t{VectorX<double>::LinSpaced(
+        num_evaluation_points_,
+        generic_position_constraint->plan_interval.front(),
+        generic_position_constraint->plan_interval.back())};
+    for (int i = 0; i < num_evaluation_points_; ++i) {
+      if (!generic_position_constraint->constraint->CheckSatisfied(
+              position_curve_.value(t(i)))) {
+        call_solve_again = true;
+        generic_position_constraint->num_evaluation_points++;
+      }
+    }
+  }
+  if (call_solve_again) {
+    return Solve();
+  } else {
+    return result;
+  }
 }
 
 }  // namespace planner

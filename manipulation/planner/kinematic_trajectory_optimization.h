@@ -101,7 +101,7 @@ class KinematicTrajectoryOptimization {
   struct ConstraintWrapper {
     std::shared_ptr<solvers::Constraint> constraint;
     std::array<double, 2> plan_interval;
-    int num_evaluation_points{3};
+    int num_evaluation_points{2};
   };
 
   void AddLinearConstraintToProgram(const FormulaWrapper& constraint);
@@ -140,10 +140,12 @@ class KinematicTrajectoryOptimization {
   std::vector<std::unique_ptr<const ExpressionWrapper>>
       expression_quadratic_costs_;
 
-  std::vector<std::unique_ptr<const ConstraintWrapper>> generic_position_constraints_;
+  std::vector<std::unique_ptr<ConstraintWrapper>> generic_position_constraints_;
 
   optional<solvers::MathematicalProgram> prog_;
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
+
+  int num_evaluation_points_{100};
 };
 }  // namespace planner
 }  // namespace manipulation
