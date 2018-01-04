@@ -98,9 +98,7 @@ void KinematicTrajectoryOptimization::AddQuadraticCost(
 std::vector<symbolic::Substitution>
 KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
     const std::vector<MatrixXDecisionVariable>& control_points,
-    const std::vector<int>& active_control_point_indices) const {
-  std::vector<symbolic::Substitution> sub{active_control_point_indices.size()};
-
+    const std::array<double, 2>& plan_interval) const {
   // Create symbolic curves
   BsplineCurve<symbolic::Expression> symbolic_q_curve{position_curve_.basis(),
                                                       control_points};
@@ -113,32 +111,57 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
   BsplineCurve<symbolic::Expression> symbolic_j_curve{
       symbolic_a_curve.Derivative()};
 
-  for (int i = 0; i < num_positions(); ++i) {
-    for (int j = 0; j < active_control_point_indices.size(); ++j) {
-      sub[j].emplace(
-          placeholder_q_vars_(i),
-          symbolic_q_curve.control_points()[active_control_point_indices[j]](
-              i));
-      if (0 < j) {
+  std::vector<symbolic::Substitution> sub;
+  if (plan_interval.back() - plan_interval.front() <
+      PiecewiseFunction::kEpsilonTime) {
+    sub.resize(1);
+    const VectorX<symbolic::Expression> symbolic_q_value =
+        symbolic_q_curve.value(plan_interval.front());
+    const VectorX<symbolic::Expression> symbolic_v_value =
+        symbolic_v_curve.value(plan_interval.front());
+    const VectorX<symbolic::Expression> symbolic_a_value =
+        symbolic_a_curve.value(plan_interval.front());
+    const VectorX<symbolic::Expression> symbolic_j_value =
+        symbolic_j_curve.value(plan_interval.front());
+    for (int i = 0; i < num_positions(); ++i) {
+      sub[0].emplace(placeholder_q_vars_(i), symbolic_q_value(i));
+      sub[0].emplace(placeholder_v_vars_(i), symbolic_v_value(i));
+      sub[0].emplace(placeholder_a_vars_(i), symbolic_a_value(i));
+      sub[0].emplace(placeholder_j_vars_(i), symbolic_j_value(i));
+    }
+  } else {
+    const std::vector<int> active_control_point_indices{
+        position_curve_.basis().ComputeActiveControlPointIndices(
+            plan_interval)};
+    sub.resize(active_control_point_indices.size());
+
+    for (int i = 0; i < num_positions(); ++i) {
+      for (int j = 0; j < active_control_point_indices.size(); ++j) {
         sub[j].emplace(
-            placeholder_v_vars_(i),
-            symbolic_v_curve
-                .control_points()[active_control_point_indices[j - 1]](i)
-                .Expand());
-      }
-      if (1 < j) {
-        sub[j].emplace(
-            placeholder_a_vars_(i),
-            symbolic_a_curve
-                .control_points()[active_control_point_indices[j - 2]](i)
-                .Expand());
-      }
-      if (2 < j) {
-        sub[j].emplace(
-            placeholder_j_vars_(i),
-            symbolic_j_curve
-                .control_points()[active_control_point_indices[j - 3]](i)
-                .Expand());
+            placeholder_q_vars_(i),
+            symbolic_q_curve.control_points()[active_control_point_indices[j]](
+                i));
+        if (0 < j) {
+          sub[j].emplace(
+              placeholder_v_vars_(i),
+              symbolic_v_curve
+                  .control_points()[active_control_point_indices[j - 1]](i)
+                  .Expand());
+        }
+        if (1 < j) {
+          sub[j].emplace(
+              placeholder_a_vars_(i),
+              symbolic_a_curve
+                  .control_points()[active_control_point_indices[j - 2]](i)
+                  .Expand());
+        }
+        if (2 < j) {
+          sub[j].emplace(
+              placeholder_j_vars_(i),
+              symbolic_j_curve
+                  .control_points()[active_control_point_indices[j - 3]](i)
+                  .Expand());
+        }
       }
     }
   }
@@ -147,14 +170,15 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
 
 std::vector<symbolic::Formula>
 KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
-    const symbolic::Formula& f,
+    const symbolic::Formula& formula,
     const std::vector<MatrixXDecisionVariable>& control_points,
-    const std::vector<int>& active_control_point_indices) const {
+    const std::array<double, 2>& plan_interval) const {
   std::vector<symbolic::Formula> substitution_results;
-  substitution_results.reserve(active_control_point_indices.size());
-  for (const auto& substitution : ConstructPlaceholderVariableSubstitution(
-           control_points, active_control_point_indices)) {
-    substitution_results.push_back(f.Substitute(substitution));
+  std::vector<symbolic::Substitution> substitutions =
+      ConstructPlaceholderVariableSubstitution(control_points, plan_interval);
+  substitution_results.reserve(substitutions.size());
+  for (const auto& substitution : substitutions) {
+    substitution_results.push_back(formula.Substitute(substitution));
   }
   return substitution_results;
 }
@@ -163,11 +187,12 @@ std::vector<symbolic::Expression>
 KinematicTrajectoryOptimization::SubstitutePlaceholderVariables(
     const symbolic::Expression& expression,
     const std::vector<MatrixXDecisionVariable>& control_points,
-    const std::vector<int>& active_control_point_indices) const {
+    const std::array<double, 2>& plan_interval) const {
   std::vector<symbolic::Expression> substitution_results;
-  substitution_results.reserve(active_control_point_indices.size());
-  for (const auto& substitution : ConstructPlaceholderVariableSubstitution(
-           control_points, active_control_point_indices)) {
+  std::vector<symbolic::Substitution> substitutions =
+      ConstructPlaceholderVariableSubstitution(control_points, plan_interval);
+  substitution_results.reserve(substitutions.size());
+  for (const auto& substitution : substitutions) {
     substitution_results.push_back(expression.Substitute(substitution));
   }
   return substitution_results;
@@ -197,16 +222,10 @@ bool KinematicTrajectoryOptimization::AreVariablesPresentInProgram(
 void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
     const FormulaWrapper& constraint) {
   DRAKE_ASSERT(prog_ != nullopt);
-  const std::vector<int> active_control_point_indices{
-      position_curve_.basis().ComputeActiveControlPointIndices(
-          constraint.plan_interval)};
-  for (const auto& index : active_control_point_indices) {
-    drake::log()->debug("Control point {} is active.", index);
-  }
   const std::vector<symbolic::Formula> per_control_point_formulae =
       SubstitutePlaceholderVariables(constraint.formula,
                                      control_point_variables_,
-                                     active_control_point_indices);
+                                     constraint.plan_interval);
   for (const auto& f : per_control_point_formulae) {
     if (AreVariablesPresentInProgram(f.GetFreeVariables())) {
       drake::log()->debug("Adding linear constraint: {}", f);
@@ -220,15 +239,9 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
     const ExpressionWrapper& cost) {
   DRAKE_ASSERT(prog_ != nullopt);
-  const std::vector<int> active_control_point_indices{
-      position_curve_.basis().ComputeActiveControlPointIndices(
-          cost.plan_interval)};
-  for (const auto& index : active_control_point_indices) {
-    drake::log()->debug("Control point {} is active.", index);
-  }
   const std::vector<symbolic::Expression> per_control_point_expressions =
       SubstitutePlaceholderVariables(cost.expression, control_point_variables_,
-                                     active_control_point_indices);
+                                     cost.plan_interval);
   for (const auto& expression : per_control_point_expressions) {
     if (AreVariablesPresentInProgram(expression.GetVariables())) {
       drake::log()->debug("Adding quadratic cost: {}", expression);

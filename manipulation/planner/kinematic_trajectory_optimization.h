@@ -112,17 +112,17 @@ class KinematicTrajectoryOptimization {
 
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
-      const std::vector<int>& index) const;
+      const std::array<double, 2>& plan_interval) const;
 
   std::vector<symbolic::Formula> SubstitutePlaceholderVariables(
       const symbolic::Formula& f,
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
-      const std::vector<int>& active_control_point_indices) const;
+      const std::array<double, 2>& plan_interval) const;
 
   std::vector<symbolic::Expression> SubstitutePlaceholderVariables(
       const symbolic::Expression& expression,
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
-      const std::vector<int>& active_control_point_indices) const;
+      const std::array<double, 2>& plan_interval) const;
 
   // See description of the public time(), position(), velocity(),
   // acceleration() and jerk() accessor methods
