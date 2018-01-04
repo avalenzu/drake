@@ -101,7 +101,7 @@ class KinematicTrajectoryOptimization {
   struct ConstraintWrapper {
     std::shared_ptr<solvers::Constraint> constraint;
     std::array<double, 2> plan_interval;
-    int num_evaluation_points{2};
+    int num_evaluation_points{3};
   };
 
   void AddLinearConstraintToProgram(const FormulaWrapper& constraint);

@@ -28,7 +28,7 @@ class PointConstraint : public solvers::Constraint {
             basis_function_values.size() * wrapped_constraint->num_vars(),
             wrapped_constraint->lower_bound(),
             wrapped_constraint->upper_bound()),
-      wrapped_constraint_(wrapped_constraint),
+        wrapped_constraint_(wrapped_constraint),
         basis_function_values_(basis_function_values) {}
 
   virtual void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
@@ -42,14 +42,17 @@ class PointConstraint : public solvers::Constraint {
   virtual void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
                       // TODO(#2274) Fix NOLINTNEXTLINE(runtime/references).
                       AutoDiffVecXd& y) const {
-    AutoDiffVecXd x_sum(wrapped_constraint_->num_vars());
+    AutoDiffVecXd x_sum = basis_function_values_[0] *
+                          x.segment(0, wrapped_constraint_->num_vars());
     const int num_terms = basis_function_values_.size();
-    for (int i = 0; i < num_terms; ++i) {
+    for (int i = 1; i < num_terms; ++i) {
       x_sum += basis_function_values_[i] *
                x.segment(i * wrapped_constraint_->num_vars(),
                          wrapped_constraint_->num_vars());
     }
     wrapped_constraint_->Eval(x_sum, y);
+    drake::log()->debug("x_sum = {}", math::autoDiffToValueMatrix(x_sum).transpose());
+    drake::log()->debug("y = {}", math::autoDiffToValueMatrix(y));
   }
 
   int numOutputs() const { return wrapped_constraint_->num_outputs(); };
@@ -260,6 +263,7 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
       var_vector.segment(i * num_positions(), num_positions()) =
           control_point_variables_[control_point_index];
     }
+    drake::log()->debug("Adding constraint at t = {}", evaluation_time);
     prog_->AddConstraint(std::make_shared<PointConstraint>(
                              constraint.constraint, basis_function_values),
                          var_vector);
