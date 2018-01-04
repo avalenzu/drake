@@ -12,6 +12,8 @@
 using drake::common::CallPython;
 using drake::common::ToPythonKwargs;
 
+DEFINE_bool(visualize_intermediate_steps, true,
+            "If true use 'CallPython' to visualize_intermediate_steps.");
 DEFINE_int32(order, 4, "Order of the B-splines");
 DEFINE_int32(num_control_points, 15, "Number of unique knot points");
 DEFINE_int32(num_plotting_points, 100,
@@ -36,6 +38,7 @@ DEFINE_double(mid_trajectory_duration, 0.2,
 namespace drake {
 namespace {
 int DoMain() {
+  const bool visualize_intermediate_steps = FLAGS_visualize_intermediate_steps;
   const int order = FLAGS_order;
   const int num_control_points = FLAGS_num_control_points;
   const int num_plotting_points = FLAGS_num_plotting_points;
@@ -111,8 +114,11 @@ int DoMain() {
           min_radius * min_radius - center.transpose() * center,
           max_radius * max_radius - center.transpose() * center),
       {{0.0, 1.0}});
-  CallPython("exec", "from matplotlib.patches import Arc");
-  do {
+  if (visualize_intermediate_steps) {
+    CallPython("exec", "from matplotlib.patches import Arc");
+  }
+  bool done{false};
+  while (!done) {
     solvers::SolutionResult result = prog.Solve();
     drake::log()->info("Solution result: {}", result);
 
@@ -122,44 +128,53 @@ int DoMain() {
         VectorX<double>::LinSpaced(num_plotting_points, 0, 1)};
     MatrixX<double> curve_values(num_positions, t.size());
 
-    CallPython("figure", 1);
-    CallPython("clf");
-    auto fig_and_axes = CallPython("plt.subplots", derivatives_to_plot + 1, 1,
-                                   ToPythonKwargs("squeeze", false, "num", 1));
-    auto axes = fig_and_axes[1];
-    for (int derivative_order = 0; derivative_order <= derivatives_to_plot;
-         ++derivative_order) {
-      for (int plotting_point_index = 0;
-           plotting_point_index < num_plotting_points; ++plotting_point_index) {
-        for (int i = 0; i < num_positions; ++i) {
-          curve_values(i, plotting_point_index) =
-              curve.derivative(derivative_order)
-                  .value(t(plotting_point_index))(i, 0);
+    done = !prog.UpdateGenericConstraints();
+    if (done || visualize_intermediate_steps) {
+      CallPython("figure", 1);
+      CallPython("clf");
+      auto fig_and_axes =
+          CallPython("plt.subplots", derivatives_to_plot + 1, 1,
+                     ToPythonKwargs("squeeze", false, "num", 1));
+      auto axes = fig_and_axes[1];
+      for (int derivative_order = 0; derivative_order <= derivatives_to_plot;
+           ++derivative_order) {
+        for (int plotting_point_index = 0;
+             plotting_point_index < num_plotting_points;
+             ++plotting_point_index) {
+          for (int i = 0; i < num_positions; ++i) {
+            curve_values(i, plotting_point_index) =
+                curve.derivative(derivative_order)
+                    .value(t(plotting_point_index))(i, 0);
+          }
+        }
+        axes[derivative_order][0].attr("plot")(t,
+                                               curve_values.row(0).transpose());
+        axes[derivative_order][0].attr("plot")(t,
+                                               curve_values.row(1).transpose());
+        if (derivative_order == 0) {
+          CallPython("figure", 2);
+          CallPython("clf");
+          CallPython("plot", curve_values.row(0).transpose(),
+                     curve_values.row(1).transpose(),
+                     ToPythonKwargs("marker", "o"));
+          auto min_arc =
+              CallPython("Arc", center, 2 * min_radius, 2 * min_radius,
+                         ToPythonKwargs("theta2", 90, "fill", false));
+          auto max_arc =
+              CallPython("Arc", center, 2 * max_radius, 2 * max_radius,
+                         ToPythonKwargs("theta2", 90, "fill", false));
+          CallPython("gca").attr("add_patch")(min_arc);
+          CallPython("gca").attr("add_patch")(max_arc);
+          auto axes2 = CallPython("gca");
+          axes2.attr("axis")("equal");
+          CallPython("axis('equal')");
+        }
+        if (visualize_intermediate_steps) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
       }
-      axes[derivative_order][0].attr("plot")(t,
-                                             curve_values.row(0).transpose());
-      axes[derivative_order][0].attr("plot")(t,
-                                             curve_values.row(1).transpose());
-      if (derivative_order == 0) {
-        CallPython("figure", 2);
-        CallPython("clf");
-        CallPython("plot", curve_values.row(0).transpose(),
-                   curve_values.row(1).transpose(),
-                   ToPythonKwargs("marker", "o"));
-        auto min_arc = CallPython("Arc", center, 2 * min_radius, 2 * min_radius,
-                                 ToPythonKwargs("theta2", 90, "fill", false));
-        auto max_arc = CallPython("Arc", center, 2 * max_radius, 2 * max_radius,
-                                 ToPythonKwargs("theta2", 90, "fill", false));
-        CallPython("gca").attr("add_patch")(min_arc);
-        CallPython("gca").attr("add_patch")(max_arc);
-        auto axes2 = CallPython("gca");
-        axes2.attr("axis")("equal");
-        CallPython("axis('equal')");
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-  } while (prog.UpdateGenericConstraints());
+  }
   return 0;
 }
 }  // namespace
