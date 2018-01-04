@@ -51,9 +51,6 @@ class PointConstraint : public solvers::Constraint {
                          wrapped_constraint_->num_vars());
     }
     wrapped_constraint_->Eval(x_sum, y);
-    drake::log()->debug("x_sum = {}",
-                        math::autoDiffToValueMatrix(x_sum).transpose());
-    drake::log()->debug("y = {}", math::autoDiffToValueMatrix(y));
   }
 
   int numOutputs() const { return wrapped_constraint_->num_outputs(); };
@@ -104,8 +101,6 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
                                                       control_points};
   BsplineCurve<symbolic::Expression> symbolic_v_curve{
       symbolic_q_curve.Derivative()};
-  drake::log()->debug("symbolic_v_curve.control_points().size() = {}",
-                      symbolic_v_curve.control_points().size());
   BsplineCurve<symbolic::Expression> symbolic_a_curve{
       symbolic_v_curve.Derivative()};
   BsplineCurve<symbolic::Expression> symbolic_j_curve{
@@ -228,10 +223,10 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
                                      constraint.plan_interval);
   for (const auto& f : per_control_point_formulae) {
     if (AreVariablesPresentInProgram(f.GetFreeVariables())) {
-      drake::log()->debug("Adding linear constraint: {}", f);
+      drake::log()->trace("Adding linear constraint: {}", f);
       prog_->AddLinearConstraint(f);
     } else {
-      drake::log()->debug("Failed to add linear constraint: {}", f);
+      drake::log()->trace("Failed to add linear constraint: {}", f);
     }
   }
 }
@@ -244,10 +239,10 @@ void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
                                      cost.plan_interval);
   for (const auto& expression : per_control_point_expressions) {
     if (AreVariablesPresentInProgram(expression.GetVariables())) {
-      drake::log()->debug("Adding quadratic cost: {}", expression);
+      drake::log()->trace("Adding quadratic cost: {}", expression);
       prog_->AddQuadraticCost(expression.Expand());
     } else {
-      drake::log()->debug("Failed to add quadratic cost: {}", expression);
+      drake::log()->trace("Failed to add quadratic cost: {}", expression);
     }
   }
 }
@@ -277,7 +272,7 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
       var_vector.segment(i * num_positions(), num_positions()) =
           control_point_variables_[control_point_index];
     }
-    drake::log()->debug("Adding constraint at t = {}", evaluation_time);
+    drake::log()->trace("Adding constraint at t = {}", evaluation_time);
     prog_->AddConstraint(std::make_shared<PointConstraint>(
                              constraint.constraint, basis_function_values),
                          var_vector);
