@@ -288,6 +288,8 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
   for (int i = 0; i < num_control_points; ++i) {
     control_point_variables_.push_back(prog_->NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
+    prog_->SetInitialGuess(control_point_variables_.back(),
+                           position_curve_.control_points()[i]);
   }
 
   for (const auto& formula_constraint : formula_linear_constraints_) {
@@ -318,25 +320,26 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
   position_curve_ =
       BsplineCurve<double>(position_curve_.basis(), new_control_points);
 
-  bool call_solve_again{false};
-  for (auto& generic_position_constraint : generic_position_constraints_) {
+  return result;
+}
+
+bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
+  bool constraints_have_been_modified{false};
+  for (auto& constraint : generic_position_constraints_) {
     const VectorX<double> t{VectorX<double>::LinSpaced(
-        num_evaluation_points_,
-        generic_position_constraint->plan_interval.front(),
-        generic_position_constraint->plan_interval.back())};
+        num_evaluation_points_, constraint->plan_interval.front(),
+        constraint->plan_interval.back())};
     for (int i = 0; i < num_evaluation_points_; ++i) {
-      if (!generic_position_constraint->constraint->CheckSatisfied(
-              position_curve_.value(t(i)))) {
-        call_solve_again = true;
-        generic_position_constraint->num_evaluation_points++;
+      if (!constraint->constraint->CheckSatisfied(
+              position_curve_.value(t(i)), 1e-3)) {
+        constraints_have_been_modified = true;
+        constraint->num_evaluation_points +=
+            constraint->num_evaluation_points - 1;
+        break;
       }
     }
   }
-  if (call_solve_again) {
-    return Solve();
-  } else {
-    return result;
-  }
+  return constraints_have_been_modified;
 }
 
 }  // namespace planner

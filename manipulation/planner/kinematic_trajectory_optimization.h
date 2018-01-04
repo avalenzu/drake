@@ -87,6 +87,10 @@ class KinematicTrajectoryOptimization {
     return *position_curve_.piecwise_polynomial();
   }
 
+  /// Add evaluation points to generic constraints if necessary.
+  /// @returns true if constraints have been modified.
+  bool UpdateGenericConstraints();
+
  private:
   struct FormulaWrapper {
     symbolic::Formula formula;
