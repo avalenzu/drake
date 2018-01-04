@@ -1,3 +1,6 @@
+#include <chrono>
+#include <thread>
+
 #include <gflags/gflags.h>
 
 #include "drake/common/proto/call_python.h"
@@ -44,34 +47,23 @@ int DoMain() {
   const double velocity_weight = FLAGS_velocity_weight;
   const double acceleration_weight = FLAGS_acceleration_weight;
   const double jerk_weight = FLAGS_jerk_weight;
-  const double mid_trajectory_slope = FLAGS_mid_trajectory_slope;
-  const double mid_trajectory_intercept = FLAGS_mid_trajectory_intercept;
-  const double mid_trajectory_tolerance = FLAGS_mid_trajectory_tolerance;
-  const double mid_trajectory_duration = FLAGS_mid_trajectory_duration;
-  const double mid_trajectory_start = 0.5 - mid_trajectory_duration / 2.0;
-  const double mid_trajectory_end = 0.5 + mid_trajectory_duration / 2.0;
 
   drake::log()->info("Running with:");
   drake::log()->info("  order: {}", order);
   drake::log()->info("  num_control_points: {}", num_control_points);
   manipulation::planner::KinematicTrajectoryOptimization prog{
       num_positions, num_control_points, order};
+  const auto zero_vector = Vector2<double>::Zero();
   prog.AddLinearConstraint(prog.position() == Vector2<double>(0.0, 1.0),
                            {{0.0, 0.0}});
-  // prog.AddLinearConstraint(
-  //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
-  // mid_trajectory_intercept - mid_trajectory_tolerance,
-  //{{mid_trajectory_start, mid_trajectory_end}});
-  // prog.AddLinearConstraint(
-  //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
-  // mid_trajectory_intercept + mid_trajectory_tolerance,
-  //{{mid_trajectory_start, mid_trajectory_end}});
   prog.AddLinearConstraint(prog.position() == Vector2<double>(1.0, 0.0),
                            {{1.0, 1.0}});
-  prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
-                           {{0.0, 0.0}});
-  prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
-                           {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.velocity() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.velocity() == zero_vector, {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.acceleration() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.acceleration() == zero_vector, {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.jerk() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.jerk() == zero_vector, {{1.0, 1.0}});
 
   if (max_velocity > 0) {
     prog.AddLinearConstraint(
@@ -109,7 +101,7 @@ int DoMain() {
   Vector2<double> center;
   center << 0.0, 0.0;
   double min_radius = 1.0;
-  double max_radius = 1.01;
+  double max_radius = 1.0;
   drake::log()->debug("center = {}, min_radius = {}, max_radius = {}",
                       center.transpose(), min_radius, max_radius);
 
@@ -119,63 +111,55 @@ int DoMain() {
           min_radius * min_radius - center.transpose() * center,
           max_radius * max_radius - center.transpose() * center),
       {{0.0, 1.0}});
-  // prog.AddQuadraticCost(prog.acceleration().transpose() *
-  // prog.acceleration());
-  // prog.AddQuadraticCost(prog.jerk().transpose() * prog.jerk());
-  solvers::SolutionResult result = prog.Solve();
-  drake::log()->info("Solution result: {}", result);
+  CallPython("exec", "from matplotlib.patches import Arc");
+  do {
+    solvers::SolutionResult result = prog.Solve();
+    drake::log()->info("Solution result: {}", result);
 
-  const PiecewisePolynomial<double> curve = prog.GetPositionSolution();
+    const PiecewisePolynomial<double> curve = prog.GetPositionSolution();
 
-  const VectorX<double> t{
-      VectorX<double>::LinSpaced(num_plotting_points, 0, 1)};
-  MatrixX<double> curve_values(num_positions, t.size());
+    const VectorX<double> t{
+        VectorX<double>::LinSpaced(num_plotting_points, 0, 1)};
+    MatrixX<double> curve_values(num_positions, t.size());
 
-  CallPython("figure", 1);
-  CallPython("clf");
-  auto fig_and_axes = CallPython("plt.subplots", derivatives_to_plot + 1, 1,
-                                 ToPythonKwargs("squeeze", false, "num", 1));
-  auto axes = fig_and_axes[1];
-  for (int derivative_order = 0; derivative_order <= derivatives_to_plot;
-       ++derivative_order) {
-    for (int plotting_point_index = 0;
-         plotting_point_index < num_plotting_points; ++plotting_point_index) {
-      for (int i = 0; i < num_positions; ++i) {
-        curve_values(i, plotting_point_index) =
-            curve.derivative(derivative_order)
-                .value(t(plotting_point_index))(i, 0);
+    CallPython("figure", 1);
+    CallPython("clf");
+    auto fig_and_axes = CallPython("plt.subplots", derivatives_to_plot + 1, 1,
+                                   ToPythonKwargs("squeeze", false, "num", 1));
+    auto axes = fig_and_axes[1];
+    for (int derivative_order = 0; derivative_order <= derivatives_to_plot;
+         ++derivative_order) {
+      for (int plotting_point_index = 0;
+           plotting_point_index < num_plotting_points; ++plotting_point_index) {
+        for (int i = 0; i < num_positions; ++i) {
+          curve_values(i, plotting_point_index) =
+              curve.derivative(derivative_order)
+                  .value(t(plotting_point_index))(i, 0);
+        }
       }
+      axes[derivative_order][0].attr("plot")(t,
+                                             curve_values.row(0).transpose());
+      axes[derivative_order][0].attr("plot")(t,
+                                             curve_values.row(1).transpose());
+      if (derivative_order == 0) {
+        CallPython("figure", 2);
+        CallPython("clf");
+        CallPython("plot", curve_values.row(0).transpose(),
+                   curve_values.row(1).transpose(),
+                   ToPythonKwargs("marker", "o"));
+        auto min_arc = CallPython("Arc", center, 2 * min_radius, 2 * min_radius,
+                                 ToPythonKwargs("theta2", 90, "fill", false));
+        auto max_arc = CallPython("Arc", center, 2 * max_radius, 2 * max_radius,
+                                 ToPythonKwargs("theta2", 90, "fill", false));
+        CallPython("gca").attr("add_patch")(min_arc);
+        CallPython("gca").attr("add_patch")(max_arc);
+        auto axes2 = CallPython("gca");
+        axes2.attr("axis")("equal");
+        CallPython("axis('equal')");
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-    axes[derivative_order][0].attr("plot")(t, curve_values.row(0).transpose());
-    axes[derivative_order][0].attr("plot")(t, curve_values.row(1).transpose());
-    if (derivative_order == 0) {
-      CallPython("figure", 2);
-      CallPython("clf");
-      CallPython("plot", curve_values.row(0).transpose(),
-                 curve_values.row(1).transpose(),
-                 ToPythonKwargs("marker", "o"));
-      VectorX<double> constraint_lines_x =
-          curve_values.row(0)
-              .segment(mid_trajectory_start * num_plotting_points,
-                       mid_trajectory_duration * num_plotting_points)
-              .transpose();
-      CallPython("plot", constraint_lines_x,
-                 (mid_trajectory_slope * constraint_lines_x +
-                  VectorX<double>::Constant(
-                      constraint_lines_x.size(),
-                      mid_trajectory_intercept + mid_trajectory_tolerance)),
-                 ToPythonKwargs("linewidth", 4));
-      CallPython("plot", constraint_lines_x,
-                 (mid_trajectory_slope * constraint_lines_x +
-                  VectorX<double>::Constant(
-                      constraint_lines_x.size(),
-                      mid_trajectory_intercept - mid_trajectory_tolerance)),
-                 ToPythonKwargs("linewidth", 4));
-      auto axes2 = CallPython("gca");
-      axes2.attr("axis")("equal");
-      CallPython("axis('equal')");
-    }
-  }
+  } while (prog.UpdateGenericConstraints());
   return 0;
 }
 }  // namespace
