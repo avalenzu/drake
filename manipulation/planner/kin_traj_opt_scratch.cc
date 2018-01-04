@@ -27,22 +27,22 @@ DEFINE_double(max_acceleration, -1,
 DEFINE_double(max_jerk, -1, "Maximum allowed jerk in any dimension.");
 DEFINE_double(velocity_weight, -1, "Weight on squared velocity cost.");
 DEFINE_double(acceleration_weight, -1, "Weight on squared acceleration cost.");
-DEFINE_double(jerk_weight, -1, "Weight on squared jerk cost.");
+DEFINE_double(jerk_weight, 1, "Weight on squared jerk cost.");
 DEFINE_double(
-    center_x, 0.0,
+    center_x, 0.2,
     "X-coordinate of the quadratic inequality path constraint's center");
 DEFINE_double(
-    center_y, 0.0,
+    center_y, 0.7,
     "Y-coordinate of the quadratic inequality path constraint's center");
 DEFINE_double(
-    center_x2, 0.0,
+    center_x2, 0.8,
     "X-coordinate of the quadratic inequality path constraint's center");
 DEFINE_double(
-    center_y2, 0.0,
+    center_y2, 0.3,
     "Y-coordinate of the quadratic inequality path constraint's center");
-DEFINE_double(min_radius, 1.0,
+DEFINE_double(min_radius, 0.3,
               "Minimum radius for the quadratic inequality constraint.");
-DEFINE_double(max_radius, 1.0,
+DEFINE_double(max_radius, 1.2,
               "Maximum radius for the quadratic inequality constraint.");
 
 namespace drake {
