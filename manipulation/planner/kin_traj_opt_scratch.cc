@@ -107,9 +107,9 @@ int DoMain() {
   }
 
   Vector2<double> center;
-  center << 0.5, 0.5;
-  double min_radius = 0.5;
-  double max_radius = 2;
+  center << 0.0, 0.0;
+  double min_radius = 1.0;
+  double max_radius = 1.01;
   drake::log()->debug("center = {}, min_radius = {}, max_radius = {}",
                       center.transpose(), min_radius, max_radius);
 
