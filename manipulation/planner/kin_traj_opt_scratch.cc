@@ -13,7 +13,7 @@ DEFINE_int32(order, 4, "Order of the B-splines");
 DEFINE_int32(num_control_points, 15, "Number of unique knot points");
 DEFINE_int32(num_plotting_points, 100,
              "Number of points to use when plotting.");
-DEFINE_int32(derivatives_to_plot, 0, "Order of derivatives to plot.");
+DEFINE_int32(derivatives_to_plot, 3, "Order of derivatives to plot.");
 DEFINE_double(max_velocity, -1, "Maximum allowed velocity in any dimension.");
 DEFINE_double(max_acceleration, -1,
               "Maximum allowed acceleration in any dimension.");
