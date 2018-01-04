@@ -15,7 +15,7 @@ using drake::common::ToPythonKwargs;
 DEFINE_bool(visualize_intermediate_steps, true,
             "If true use 'CallPython' to visualize_intermediate_steps.");
 DEFINE_int32(order, 4, "Order of the B-splines");
-DEFINE_int32(num_control_points, 15, "Number of unique knot points");
+DEFINE_int32(num_control_points, -1, "Number of unique knot points");
 DEFINE_int32(num_plotting_points, 100,
              "Number of points to use when plotting.");
 DEFINE_int32(derivatives_to_plot, 3, "Order of derivatives to plot.");
@@ -42,7 +42,8 @@ namespace {
 int DoMain() {
   const bool visualize_intermediate_steps = FLAGS_visualize_intermediate_steps;
   const int order = FLAGS_order;
-  const int num_control_points = FLAGS_num_control_points;
+  const int num_control_points =
+      (FLAGS_num_control_points > 0) ? FLAGS_num_control_points : order + 1;
   const int num_plotting_points = FLAGS_num_plotting_points;
   const int num_positions = 2;
   const int derivatives_to_plot = FLAGS_derivatives_to_plot;
