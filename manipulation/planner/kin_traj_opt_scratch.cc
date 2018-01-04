@@ -26,14 +26,16 @@ DEFINE_double(max_jerk, -1, "Maximum allowed jerk in any dimension.");
 DEFINE_double(velocity_weight, -1, "Weight on squared velocity cost.");
 DEFINE_double(acceleration_weight, -1, "Weight on squared acceleration cost.");
 DEFINE_double(jerk_weight, -1, "Weight on squared jerk cost.");
-DEFINE_double(mid_trajectory_slope, -1,
-              "Slope for linear constraint on mid-section of trajectory.");
-DEFINE_double(mid_trajectory_intercept, 2,
-              "Intercept for linear constraint on mid-section of trajectory.");
-DEFINE_double(mid_trajectory_tolerance, 0.1,
-              "Tolerance for linear constraint on mid-section of trajectory.");
-DEFINE_double(mid_trajectory_duration, 0.2,
-              "Tolerance for linear constraint on mid-section of trajectory.");
+DEFINE_double(
+    center_x, 0.0,
+    "X-coordinate of the quadratic inequality path constraint's center");
+DEFINE_double(
+    center_y, 0.0,
+    "Y-coordinate of the quadratic inequality path constraint's center");
+DEFINE_double(min_radius, 1.0,
+              "Minimum radius for the quadratic inequality constraint.");
+DEFINE_double(max_radius, 1.0,
+              "Maximum radius for the quadratic inequality constraint.");
 
 namespace drake {
 namespace {
@@ -50,6 +52,10 @@ int DoMain() {
   const double velocity_weight = FLAGS_velocity_weight;
   const double acceleration_weight = FLAGS_acceleration_weight;
   const double jerk_weight = FLAGS_jerk_weight;
+  const auto center =
+      (Vector2<double>() << FLAGS_center_x, FLAGS_center_y).finished();
+  const double min_radius = FLAGS_min_radius;
+  const double max_radius = FLAGS_max_radius;
 
   drake::log()->info("Running with:");
   drake::log()->info("  order: {}", order);
@@ -101,10 +107,6 @@ int DoMain() {
     prog.AddQuadraticCost(prog.jerk().transpose() * prog.jerk());
   }
 
-  Vector2<double> center;
-  center << 0.0, 0.0;
-  double min_radius = 1.0;
-  double max_radius = 1.0;
   drake::log()->debug("center = {}, min_radius = {}, max_radius = {}",
                       center.transpose(), min_radius, max_radius);
 
@@ -128,7 +130,11 @@ int DoMain() {
         VectorX<double>::LinSpaced(num_plotting_points, 0, 1)};
     MatrixX<double> curve_values(num_positions, t.size());
 
-    done = !prog.UpdateGenericConstraints();
+    if (result == solvers::SolutionResult::kSolutionFound) {
+      done = !prog.UpdateGenericConstraints();
+    } else {
+      done = !prog.AddKnots();
+    }
     if (done || visualize_intermediate_steps) {
       CallPython("figure", 1);
       CallPython("clf");
@@ -159,19 +165,19 @@ int DoMain() {
                      ToPythonKwargs("marker", "o"));
           auto min_arc =
               CallPython("Arc", center, 2 * min_radius, 2 * min_radius,
-                         ToPythonKwargs("theta2", 90, "fill", false));
+                         ToPythonKwargs("fill", false));
           auto max_arc =
               CallPython("Arc", center, 2 * max_radius, 2 * max_radius,
-                         ToPythonKwargs("theta2", 90, "fill", false));
+                         ToPythonKwargs("fill", false));
           CallPython("gca").attr("add_patch")(min_arc);
           CallPython("gca").attr("add_patch")(max_arc);
           auto axes2 = CallPython("gca");
           axes2.attr("axis")("equal");
           CallPython("axis('equal')");
         }
-        if (visualize_intermediate_steps) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
+      }
+      if (visualize_intermediate_steps) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
     }
   }
