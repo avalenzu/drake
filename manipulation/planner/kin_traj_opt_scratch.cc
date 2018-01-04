@@ -58,24 +58,20 @@ int DoMain() {
       num_positions, num_control_points, order};
   prog.AddLinearConstraint(prog.position() == Vector2<double>(0.0, 1.0),
                            {{0.0, 0.0}});
-  //prog.AddLinearConstraint(
-      //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
-          //mid_trajectory_intercept - mid_trajectory_tolerance,
-      //{{mid_trajectory_start, mid_trajectory_end}});
-  //prog.AddLinearConstraint(
-      //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
-          //mid_trajectory_intercept + mid_trajectory_tolerance,
-      //{{mid_trajectory_start, mid_trajectory_end}});
+  // prog.AddLinearConstraint(
+  //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) >=
+  // mid_trajectory_intercept - mid_trajectory_tolerance,
+  //{{mid_trajectory_start, mid_trajectory_end}});
+  // prog.AddLinearConstraint(
+  //-mid_trajectory_slope * prog.position()(0) + prog.position()(1) <=
+  // mid_trajectory_intercept + mid_trajectory_tolerance,
+  //{{mid_trajectory_start, mid_trajectory_end}});
   prog.AddLinearConstraint(prog.position() == Vector2<double>(1.0, 0.0),
                            {{1.0, 1.0}});
   prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
                            {{0.0, 0.0}});
   prog.AddLinearConstraint(prog.velocity() == Vector2<double>(0.0, 0.0),
                            {{1.0, 1.0}});
-  prog.AddGenericPositionConstraint(
-      std::make_shared<solvers::QuadraticConstraint>(
-           Matrix2<double>::Identity(), Vector2<double>::Zero(), 0.9, 10),
-      {{0.0, 1.0}});
 
   if (max_velocity > 0) {
     prog.AddLinearConstraint(
@@ -109,6 +105,20 @@ int DoMain() {
   if (jerk_weight > 0) {
     prog.AddQuadraticCost(prog.jerk().transpose() * prog.jerk());
   }
+
+  Vector2<double> center;
+  center << 0.5, 0.5;
+  double min_radius = 0.5;
+  double max_radius = 2;
+  drake::log()->debug("center = {}, min_radius = {}, max_radius = {}",
+                      center.transpose(), min_radius, max_radius);
+
+  prog.AddGenericPositionConstraint(
+      std::make_shared<solvers::QuadraticConstraint>(
+          2 * Matrix2<double>::Identity(), -2 * center,
+          min_radius * min_radius - center.transpose() * center,
+          max_radius * max_radius - center.transpose() * center),
+      {{0.0, 1.0}});
   // prog.AddQuadraticCost(prog.acceleration().transpose() *
   // prog.acceleration());
   // prog.AddQuadraticCost(prog.jerk().transpose() * prog.jerk());
