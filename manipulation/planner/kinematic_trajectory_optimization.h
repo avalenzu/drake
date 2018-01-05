@@ -95,9 +95,8 @@ class KinematicTrajectoryOptimization {
 
   solvers::SolutionResult Solve();
 
-  PiecewisePolynomial<double> GetPositionSolution() const {
-    return *position_curve_.piecwise_polynomial();
-  }
+  PiecewisePolynomial<double> GetPositionSolution(
+      double time_scaling = 1) const;
 
   /// Add evaluation points to generic constraints if necessary.
   /// @returns true if constraints have been modified.
@@ -128,7 +127,8 @@ class KinematicTrajectoryOptimization {
 
   void AddQuadraticCostToProgram(const ExpressionWrapper& cost);
 
-  void AddGenericPositionConstraintToProgram(const ConstraintWrapper& constraint);
+  void AddGenericPositionConstraintToProgram(
+      const ConstraintWrapper& constraint);
 
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,

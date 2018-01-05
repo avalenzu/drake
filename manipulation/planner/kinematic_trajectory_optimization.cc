@@ -363,6 +363,20 @@ bool KinematicTrajectoryOptimization::AddKnots() {
   }
   return knots_have_been_added;
 }
+PiecewisePolynomial<double>
+KinematicTrajectoryOptimization::GetPositionSolution(
+    double time_scaling) const {
+  std::vector<double> scaled_knots;
+  scaled_knots.reserve(position_curve_.knots().size());
+  std::transform(
+      position_curve_.knots().begin(), position_curve_.knots().end(),
+      std::back_inserter(scaled_knots),
+      [time_scaling](double knot) -> double { return time_scaling * knot; });
+  BsplineCurve<double> scaled_curve{
+      BsplineBasis(position_curve_.order(), scaled_knots),
+      position_curve_.control_points()};
+  return *scaled_curve.piecwise_polynomial();
+}
 
 }  // namespace planner
 }  // namespace manipulation
