@@ -121,13 +121,13 @@ PostureInterpolationResult PlanInterpolatingMotion(
   const Vector2<double> final_tspan{end_time, end_time};
 
   // Construct a KinematicTrajectoryOptimization object.
+  const int spline_order{5};
+  const int initial_num_control_points{2 * spline_order + 1};
   manipulation::planner::KinematicTrajectoryOptimization prog{
-      robot->get_num_positions(), 11 /*num_control_points*/, 5};
+      robot->get_num_positions(), initial_num_control_points, spline_order};
   prog.set_min_knot_resolution(2e-2);
+  prog.set_num_evaluation_points(30);
   prog.set_initial_num_evaluation_points(2);
-
-  // Add a cost on velocity squared
-  prog.AddQuadraticCost(prog.acceleration().transpose() * prog.acceleration());
 
   // Constrain initial and final configuration and derivatives.
   VectorX<double> zero_vector{VectorX<double>::Zero(num_joints)};
@@ -320,7 +320,48 @@ PostureInterpolationResult PlanInterpolatingMotion(
 
   bool done{false};
   while (!done) {
-    solvers::SolutionResult solution_result = prog.Solve(false /*always_update_curve*/);
+    solvers::SolutionResult solution_result =
+        prog.Solve(false /*always_update_curve*/);
+    drake::log()->info("Solution result: {}", solution_result);
+    if (solution_result == solvers::SolutionResult::kSolutionFound) {
+      done = !prog.UpdateGenericConstraints();
+    } else {
+      done = !prog.AddKnots();
+    }
+  }
+
+  // Add a cost on velocity squared
+  const int penalized_derivative_order{2};
+  auto cost_variable = prog.jerk();
+  switch (penalized_derivative_order) {
+    case 0: {
+      cost_variable = prog.position();
+      break;
+    }
+    case 1: {
+      cost_variable = prog.velocity();
+      break;
+    }
+    case 2: {
+      cost_variable = prog.acceleration();
+      break;
+    }
+    case 3: {
+      cost_variable = prog.jerk();
+      break;
+    }
+    default:
+      DRAKE_THROW_UNLESS(false);
+  }
+  double cost_weight{1.0};
+  auto squared_norm = cost_variable.transpose() * cost_variable;
+  drake::log()->info("Cost weight: {}", cost_weight);
+  prog.AddQuadraticCost(cost_weight * squared_norm(0));
+
+  done = false;
+  while (!done) {
+    solvers::SolutionResult solution_result =
+        prog.Solve(false /*always_update_curve*/);
     drake::log()->info("Solution result: {}", solution_result);
     if (solution_result == solvers::SolutionResult::kSolutionFound) {
       done = !prog.UpdateGenericConstraints();
@@ -745,7 +786,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       tight_pos_tol_(0.001, 0.001, 0.001),
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.05, 0.05, 0.05),
-      loose_rot_tol_(10 * M_PI / 180),
+      loose_rot_tol_(30 * M_PI / 180),
       configuration_(configuration) {
   std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration_)};
   const int num_positions = robot->get_num_positions();
