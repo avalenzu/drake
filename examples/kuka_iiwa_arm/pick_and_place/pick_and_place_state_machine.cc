@@ -13,6 +13,7 @@
 #include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
 #include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
+#include "drake/math/orthonormal_basis.h"
 #include "drake/math/rotation_matrix.h"
 #include "drake/multibody/constraint_wrappers.h"
 #include "drake/multibody/joints/fixed_joint.h"
@@ -121,10 +122,12 @@ PostureInterpolationResult PlanInterpolatingMotion(
 
   // Construct a KinematicTrajectoryOptimization object.
   manipulation::planner::KinematicTrajectoryOptimization prog{
-      robot->get_num_positions(), 5};
+      robot->get_num_positions(), 11 /*num_control_points*/, 5};
+  prog.set_min_knot_resolution(2e-2);
+  prog.set_initial_num_evaluation_points(2);
 
   // Add a cost on velocity squared
-  prog.AddQuadraticCost(prog.velocity().transpose() * prog.velocity());
+  prog.AddQuadraticCost(prog.acceleration().transpose() * prog.acceleration());
 
   // Constrain initial and final configuration and derivatives.
   VectorX<double> zero_vector{VectorX<double>::Zero(num_joints)};
@@ -161,15 +164,39 @@ PostureInterpolationResult PlanInterpolatingMotion(
     Eigen::Matrix<double, 3, 2> line_ends_W;
     line_ends_W << r_WG.first, r_WG.second;
 
-    double dist_lb{0.0};
-    double dist_ub{position_tolerance};
-    point_to_line_seg_constraints.emplace_back(new Point2LineSegDistConstraint(
-        robot, grasp_frame_index, end_effector_points, world_idx, line_ends_W,
-        dist_lb, dist_ub, intermediate_tspan));
-    constraint_array.push_back(point_to_line_seg_constraints.back().get());
+    // double dist_lb{0.0};
+    // double dist_ub{position_tolerance};
+    // point_to_line_seg_constraints.emplace_back(new
+    // Point2LineSegDistConstraint(
+    // robot, grasp_frame_index, end_effector_points, world_idx, line_ends_W,
+    // dist_lb, dist_ub, intermediate_tspan));
+    // constraint_array.push_back(point_to_line_seg_constraints.back().get());
+    // prog.AddGenericPositionConstraint(
+    // std::make_shared<SingleTimeKinematicConstraintWrapper>(
+    // point_to_line_seg_constraints.back().get(), &cache_helper),
+    //{{0.0, 1.0}});
+
+    // Construct a frame whose origin is coincident with that of X_WG_initial
+    // and whose X-axis points towards the origin of X_WG_final.
+    auto X_WC = Isometry3<double>::Identity();  // Constraint frame to World
+    X_WC.linear() = math::ComputeBasisFromAxis<double>(
+        0, X_WG_final.translation() - X_WG_initial.translation());
+    X_WC.translation() = X_WG_initial.translation();
+
+    Vector3<double> lb{-position_tolerance, -position_tolerance,
+                       -position_tolerance};
+    Vector3<double> ub{
+        (X_WG_final.translation() - X_WG_initial.translation()).norm() +
+            position_tolerance,
+        position_tolerance, position_tolerance};
+    position_in_frame_constraints.emplace_back(
+        new WorldPositionInFrameConstraint(robot, grasp_frame_index,
+                                           end_effector_points, X_WC.matrix(),
+                                           lb, ub, intermediate_tspan));
+    constraint_array.push_back(position_in_frame_constraints.back().get());
     prog.AddGenericPositionConstraint(
         std::make_shared<SingleTimeKinematicConstraintWrapper>(
-            point_to_line_seg_constraints.back().get(), &cache_helper),
+            position_in_frame_constraints.back().get(), &cache_helper),
         {{0.0, 1.0}});
 
     // Find axis-angle representation of the rotation from X_WG_initial to
@@ -269,38 +296,39 @@ PostureInterpolationResult PlanInterpolatingMotion(
 
   // Attempt to solve the ik traj problem multiple times. If falling back to
   // joint-space interpolation is allowed, don't try as hard.
-  const int num_restarts =
-      (straight_line_motion && fall_back_to_joint_space_interpolation) ? 5 : 50;
-  std::default_random_engine rand_generator{1234};
-  for (int i = 0; i < num_restarts; ++i) {
-    ik_res = inverseKinTrajSimple(robot, t, q_knots_seed, q_knots_nom,
-                                  constraint_array, ikoptions);
-    if (ik_res.info[0] == 1) {
-      break;
-    } else {
-      VectorX<double> q_mid = robot->getRandomConfiguration(rand_generator);
-      q_seed_traj = PiecewisePolynomial<double>::Cubic(
-          {times.front(), 0.5 * (times.front() + times.back()), times.back()},
-          {q_initial, q_mid, q_final}, q_dot_zero, q_dot_zero);
-      for (int j = 0; j < num_knots; ++j) {
-        q_knots_seed.col(j) = q_seed_traj.value(times[j]);
-      }
-    }
-  }
+  // const int num_restarts =
+  //(straight_line_motion && fall_back_to_joint_space_interpolation) ? 5 : 50;
+  // std::default_random_engine rand_generator{1234};
+  // for (int i = 0; i < num_restarts; ++i) {
+  // ik_res = inverseKinTrajSimple(robot, t, q_knots_seed, q_knots_nom,
+  // constraint_array, ikoptions);
+  // if (ik_res.info[0] == 1) {
+  // break;
+  //} else {
+  // VectorX<double> q_mid = robot->getRandomConfiguration(rand_generator);
+  // q_seed_traj = PiecewisePolynomial<double>::Cubic(
+  //{times.front(), 0.5 * (times.front() + times.back()), times.back()},
+  //{q_initial, q_mid, q_final}, q_dot_zero, q_dot_zero);
+  // for (int j = 0; j < num_knots; ++j) {
+  // q_knots_seed.col(j) = q_seed_traj.value(times[j]);
+  //}
+  //}
+  //}
   PostureInterpolationResult result;
-  result.success = (ik_res.info[0] == 1);
+  // result.success = (ik_res.info[0] == 1);
   std::vector<MatrixX<double>> q_sol(num_knots);
 
   bool done{false};
   while (!done) {
-    solvers::SolutionResult solution_result = prog.Solve();
+    solvers::SolutionResult solution_result = prog.Solve(false /*always_update_curve*/);
     drake::log()->info("Solution result: {}", solution_result);
     if (solution_result == solvers::SolutionResult::kSolutionFound) {
       done = !prog.UpdateGenericConstraints();
     } else {
       done = !prog.AddKnots();
     }
-    result.success = solution_result == solvers::SolutionResult::kSolutionFound;
+    result.success =
+        (solution_result == solvers::SolutionResult::kSolutionFound);
   }
 
   result.q_traj = prog.GetPositionSolution(duration);
@@ -716,8 +744,8 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       // results.
       tight_pos_tol_(0.001, 0.001, 0.001),
       tight_rot_tol_(0.05),
-      loose_pos_tol_(0.1, 0.1, 0.1),
-      loose_rot_tol_(30 * M_PI / 180),
+      loose_pos_tol_(0.05, 0.05, 0.05),
+      loose_rot_tol_(10 * M_PI / 180),
       configuration_(configuration) {
   std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(configuration_)};
   const int num_positions = robot->get_num_positions();
@@ -749,7 +777,7 @@ PickAndPlaceStateMachine::ComputeTrajectories(
     const double extra_short_duration = 0.5;
     const double short_duration = 1;
     const double long_duration = 1.5;
-    const double extra_long_duration = 1.5;
+    const double extra_long_duration = 2.5;
     int num_joints = robot->get_num_positions();
     for (PickAndPlaceState state : states) {
       drake::log()->info("Planning trajectory for {}.", state);
@@ -771,17 +799,17 @@ PickAndPlaceStateMachine::ComputeTrajectories(
         switch (state) {
           case PickAndPlaceState::kApproachPickPregrasp:
           case PickAndPlaceState::kApproachPlacePregrasp: {
-            // position_tolerance = loose_pos_tol_.minCoeff();
-            // orientation_tolerance = loose_rot_tol_;
-            //fall_back_to_joint_space_interpolation = true;
-            duration = long_duration;
+             position_tolerance = loose_pos_tol_.minCoeff();
+             orientation_tolerance = loose_rot_tol_;
+            // fall_back_to_joint_space_interpolation = true;
+            duration = extra_long_duration;
             break;
           }
           case PickAndPlaceState::kLiftFromPlace: {
-            // position_tolerance = loose_pos_tol_.minCoeff();
-            // orientation_tolerance = loose_rot_tol_;
-            //fall_back_to_joint_space_interpolation = true;
-            duration = extra_long_duration;
+             position_tolerance = loose_pos_tol_.minCoeff();
+             orientation_tolerance = loose_rot_tol_;
+            // fall_back_to_joint_space_interpolation = true;
+            duration = long_duration;
             break;
           }
           default:  // No action needed for other cases.
