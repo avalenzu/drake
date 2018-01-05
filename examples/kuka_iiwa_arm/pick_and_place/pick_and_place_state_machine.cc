@@ -10,8 +10,11 @@
 #include "drake/common/drake_assert.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_quaternion.h"
+#include "drake/examples/kuka_iiwa_arm/iiwa_common.h"
+#include "drake/manipulation/planner/kinematic_trajectory_optimization.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/multibody/constraint_wrappers.h"
 #include "drake/multibody/joints/fixed_joint.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/multibody/rigid_body_ik.h"
@@ -23,6 +26,8 @@ namespace pick_and_place {
 namespace {
 
 using manipulation::util::WorldSimTreeBuilder;
+using systems::plants::KinematicsCacheHelper;
+using systems::plants::SingleTimeKinematicConstraintWrapper;
 
 const char kGraspFrameName[] = "grasp_frame";
 
@@ -114,6 +119,34 @@ PostureInterpolationResult PlanInterpolatingMotion(
   const Vector2<double> intermediate_tspan{start_time, end_time};
   const Vector2<double> final_tspan{end_time, end_time};
 
+  // Construct a KinematicTrajectoryOptimization object.
+  manipulation::planner::KinematicTrajectoryOptimization prog{
+      robot->get_num_positions(), 5};
+
+  // Add a cost on velocity squared
+  prog.AddQuadraticCost(prog.velocity().transpose() * prog.velocity());
+
+  // Constrain initial and final configuration and derivatives.
+  VectorX<double> zero_vector{VectorX<double>::Zero(num_joints)};
+  prog.AddLinearConstraint(prog.position() == q_initial, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.position() == q_final, {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.velocity() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.velocity() == zero_vector, {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.acceleration() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.acceleration() == zero_vector, {{1.0, 1.0}});
+  prog.AddLinearConstraint(prog.jerk() == zero_vector, {{0.0, 0.0}});
+  prog.AddLinearConstraint(prog.jerk() == zero_vector, {{1.0, 1.0}});
+
+  // Add velocity limits.
+  const double duration{end_time - start_time};
+  prog.AddLinearConstraint(
+      prog.velocity() <= 0.9 * duration * get_iiwa_max_joint_velocities(),
+      {{0.0, 1.0}});
+  prog.AddLinearConstraint(
+      prog.velocity() >= -0.9 * duration * get_iiwa_max_joint_velocities(),
+      {{0.0, 1.0}});
+  KinematicsCacheHelper<double> cache_helper{robot->bodies};
+
   // Constrain the configuration at the final knot point to match q_final.
   posture_constraints.emplace_back(new PostureConstraint(robot, final_tspan));
   const VectorX<double> q_lb{q_final};
@@ -134,6 +167,10 @@ PostureInterpolationResult PlanInterpolatingMotion(
         robot, grasp_frame_index, end_effector_points, world_idx, line_ends_W,
         dist_lb, dist_ub, intermediate_tspan));
     constraint_array.push_back(point_to_line_seg_constraints.back().get());
+    prog.AddGenericPositionConstraint(
+        std::make_shared<SingleTimeKinematicConstraintWrapper>(
+            point_to_line_seg_constraints.back().get(), &cache_helper),
+        {{0.0, 1.0}});
 
     // Find axis-angle representation of the rotation from X_WG_initial to
     // X_WG_final.
@@ -153,11 +190,19 @@ PostureInterpolationResult PlanInterpolatingMotion(
                           quat_WG.second.y(), quat_WG.second.z()),
           orientation_tolerance, intermediate_tspan));
       constraint_array.push_back(orientation_constraints.back().get());
+      prog.AddGenericPositionConstraint(
+          std::make_shared<SingleTimeKinematicConstraintWrapper>(
+              orientation_constraints.back().get(), &cache_helper),
+          {{0.0, 1.0}});
     } else {
       gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
           robot, grasp_frame_index, axis_E, dir_W, orientation_tolerance,
           intermediate_tspan));
       constraint_array.push_back(gaze_dir_constraints.back().get());
+      prog.AddGenericPositionConstraint(
+          std::make_shared<SingleTimeKinematicConstraintWrapper>(
+              gaze_dir_constraints.back().get(), &cache_helper),
+          {{0.0, 1.0}});
     }
 
     // Place limits on the change in joint angles between knots.
@@ -189,6 +234,10 @@ PostureInterpolationResult PlanInterpolatingMotion(
                                            end_effector_points, X_WL.matrix(),
                                            lb, ub, intermediate_tspan));
     constraint_array.push_back(position_in_frame_constraints.back().get());
+    prog.AddGenericPositionConstraint(
+        std::make_shared<SingleTimeKinematicConstraintWrapper>(
+            position_in_frame_constraints.back().get(), &cache_helper),
+        {{0.0, 1.0}});
   }
 
   // Set the seed for the first attempt (and the nominal value for all attempts)
@@ -241,15 +290,38 @@ PostureInterpolationResult PlanInterpolatingMotion(
   PostureInterpolationResult result;
   result.success = (ik_res.info[0] == 1);
   std::vector<MatrixX<double>> q_sol(num_knots);
-  if (result.success) {
-    for (int i = 0; i < num_knots; ++i) {
-      q_sol[i] = ik_res.q_sol[i];
+
+  bool done{false};
+  while (!done) {
+    solvers::SolutionResult solution_result = prog.Solve();
+    drake::log()->info("Solution result: {}", solution_result);
+    if (solution_result == solvers::SolutionResult::kSolutionFound) {
+      done = !prog.UpdateGenericConstraints();
+    } else {
+      done = !prog.AddKnots();
     }
-    result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol, q_dot_zero,
-                                                       q_dot_zero);
+    result.success = solution_result == solvers::SolutionResult::kSolutionFound;
+  }
+
+  result.q_traj = prog.GetPositionSolution(duration);
+  if (result.success) {
+    // Upsample trajectory since we don't actually send the PiecwisePolynomial.
+    VectorX<double> t = VectorX<double>::LinSpaced(
+        prog.num_evaluation_points(), result.q_traj.getSegmentTimes().front(),
+        result.q_traj.getSegmentTimes().back());
+    q_sol.resize(prog.num_evaluation_points());
+    for (int i = 0; i < prog.num_evaluation_points(); ++i) {
+      q_sol[i] = result.q_traj.value(t(i));
+    }
+    // for (int i = 0; i < num_knots; ++i) {
+    // q_sol[i] = ik_res.q_sol[i];
+    //}
+    // result.q_traj = PiecewisePolynomial<double>::Cubic(times, q_sol,
+    // q_dot_zero,
+    // q_dot_zero);
   } else if (straight_line_motion && fall_back_to_joint_space_interpolation) {
-    result =
-        PlanInterpolatingMotion(request, robot, false /*straight_line_motion*/);
+    result = PlanInterpolatingMotion(request, robot,
+                                     false /* straight_line_motion */);
   } else {
     result.q_traj = PiecewisePolynomial<double>::Cubic(
         {times.front(), times.back()}, {q_initial, q_initial}, q_dot_zero,
@@ -438,8 +510,9 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
-                                finger_length * std::cos(pitch_offset));
+        std::min<double>(0,
+                         -0.5 * env_state.get_object_dimensions().x() +
+                             finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -698,16 +771,16 @@ PickAndPlaceStateMachine::ComputeTrajectories(
         switch (state) {
           case PickAndPlaceState::kApproachPickPregrasp:
           case PickAndPlaceState::kApproachPlacePregrasp: {
-            position_tolerance = loose_pos_tol_.minCoeff();
-            orientation_tolerance = loose_rot_tol_;
-            fall_back_to_joint_space_interpolation = true;
+            // position_tolerance = loose_pos_tol_.minCoeff();
+            // orientation_tolerance = loose_rot_tol_;
+            //fall_back_to_joint_space_interpolation = true;
             duration = long_duration;
             break;
           }
           case PickAndPlaceState::kLiftFromPlace: {
-            position_tolerance = loose_pos_tol_.minCoeff();
-            orientation_tolerance = loose_rot_tol_;
-            fall_back_to_joint_space_interpolation = true;
+            // position_tolerance = loose_pos_tol_.minCoeff();
+            // orientation_tolerance = loose_rot_tol_;
+            //fall_back_to_joint_space_interpolation = true;
             duration = extra_long_duration;
             break;
           }
@@ -884,8 +957,8 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       // Compute all the desired configurations.
       expected_object_pose_ = env_state.get_object_pose();
-      std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(
-          configuration_, true /*add_grasp_frame*/)};
+      std::unique_ptr<RigidBodyTree<double>> robot{
+          BuildTree(configuration_, true /*add_grasp_frame*/)};
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
       interpolation_result_map_ = ComputeTrajectories(
