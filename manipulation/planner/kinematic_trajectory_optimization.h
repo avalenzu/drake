@@ -73,12 +73,18 @@ class KinematicTrajectoryOptimization {
 
   double min_knot_resolution() const { return min_knot_resolution_; }
 
+  int initial_num_evaluation_points() const { return initial_num_evaluation_points_; }
+
   void set_num_evaluation_points(int num_evaluation_points) {
     num_evaluation_points_ = num_evaluation_points;
   }
 
   void set_min_knot_resolution(double min_knot_resolution) {
     min_knot_resolution_ = min_knot_resolution;
+  }
+
+  void set_initial_num_evaluation_points(int initial_num_evaluation_points) {
+    initial_num_evaluation_points_ = initial_num_evaluation_points;
   }
 
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
@@ -93,7 +99,7 @@ class KinematicTrajectoryOptimization {
   void AddQuadraticCost(const symbolic::Expression& expression,
                         const std::array<double, 2>& plan_interval = {{0, 1}});
 
-  solvers::SolutionResult Solve();
+  solvers::SolutionResult Solve(bool always_update_curve = true);
 
   PiecewisePolynomial<double> GetPositionSolution(
       double time_scaling = 1) const;
@@ -168,6 +174,8 @@ class KinematicTrajectoryOptimization {
   int num_evaluation_points_{100};
 
   double min_knot_resolution_{1e-2};
+
+  int initial_num_evaluation_points_{3};
 };
 }  // namespace planner
 }  // namespace manipulation

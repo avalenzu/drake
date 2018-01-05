@@ -76,8 +76,8 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
     const std::shared_ptr<solvers::Constraint>& constraint,
     const std::array<double, 2>& plan_interval) {
-  generic_position_constraints_.emplace_back(
-      new ConstraintWrapper({constraint, plan_interval}));
+  generic_position_constraints_.emplace_back(new ConstraintWrapper(
+      {constraint, plan_interval, initial_num_evaluation_points_}));
 }
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
@@ -253,6 +253,8 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
   const auto evaluation_times = VectorX<double>::LinSpaced(
       constraint.num_evaluation_points, constraint.plan_interval.front(),
       constraint.plan_interval.back());
+  drake::log()->info("Adding generic position constraint at {} points.",
+                     constraint.num_evaluation_points);
   for (int evaluation_time_index = 0;
        evaluation_time_index < evaluation_times.size();
        ++evaluation_time_index) {
@@ -279,12 +281,13 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
   }
 }
 
-solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
+solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
+    bool always_update_curve) {
   prog_.emplace();
   const int num_control_points = position_curve_.num_control_points();
   control_point_variables_.clear();
   control_point_variables_.reserve(num_control_points);
-  drake::log()->debug("Num control points: {}", num_control_points);
+  drake::log()->info("Num control points: {}", num_control_points);
   for (int i = 0; i < num_control_points; ++i) {
     control_point_variables_.push_back(prog_->NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
@@ -308,17 +311,21 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve() {
   solvers::SolutionResult result = prog_->Solve();
   drake::log()->info("Solver used: {}", prog_->GetSolverId().value().name());
 
-  std::vector<MatrixX<double>> new_control_points;
-  new_control_points.reserve(num_control_points);
-  drake::log()->debug("Num control point variables: {}",
-                      control_point_variables_.size());
-  for (const auto& control_point_variable : control_point_variables_) {
-    drake::log()->debug("control point: {}",
-                        prog_->GetSolution(control_point_variable).transpose());
-    new_control_points.push_back(prog_->GetSolution(control_point_variable));
+  if (always_update_curve ||
+      result == solvers::SolutionResult::kSolutionFound) {
+    std::vector<MatrixX<double>> new_control_points;
+    new_control_points.reserve(num_control_points);
+    drake::log()->debug("Num control point variables: {}",
+                        control_point_variables_.size());
+    for (const auto& control_point_variable : control_point_variables_) {
+      drake::log()->debug(
+          "control point: {}",
+          prog_->GetSolution(control_point_variable).transpose());
+      new_control_points.push_back(prog_->GetSolution(control_point_variable));
+    }
+    position_curve_ =
+        BsplineCurve<double>(position_curve_.basis(), new_control_points);
   }
-  position_curve_ =
-      BsplineCurve<double>(position_curve_.basis(), new_control_points);
 
   return result;
 }
