@@ -10,6 +10,7 @@ namespace manipulation {
 namespace planner {
 
 using solvers::MatrixXDecisionVariable;
+using solvers::MathematicalProgram;;
 namespace {
 solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
                                                     int num) {
@@ -76,20 +77,18 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
     const std::shared_ptr<solvers::Constraint>& constraint,
     const std::array<double, 2>& plan_interval) {
-  generic_position_constraints_.emplace_back(new ConstraintWrapper(
+  generic_position_constraints_.push_back(ConstraintWrapper(
       {constraint, plan_interval, initial_num_evaluation_points_}));
 }
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
     const symbolic::Formula& f, const std::array<double, 2>& plan_interval) {
-  formula_linear_constraints_.emplace_back(
-      new FormulaWrapper({f, plan_interval}));
+  formula_linear_constraints_.push_back(FormulaWrapper({f, plan_interval}));
 }
 
 void KinematicTrajectoryOptimization::AddQuadraticCost(
     const symbolic::Expression& f, const std::array<double, 2>& plan_interval) {
-  expression_quadratic_costs_.emplace_back(
-      new ExpressionWrapper({f, plan_interval}));
+  expression_quadratic_costs_.push_back(ExpressionWrapper({f, plan_interval}));
 }
 
 std::vector<symbolic::Substitution>
@@ -215,8 +214,8 @@ bool KinematicTrajectoryOptimization::AreVariablesPresentInProgram(
 }
 
 void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
-    const FormulaWrapper& constraint) {
-  DRAKE_ASSERT(prog_ != nullopt);
+    const FormulaWrapper& constraint, MathematicalProgram* prog) const {
+  DRAKE_ASSERT(prog);
   const std::vector<symbolic::Formula> per_control_point_formulae =
       SubstitutePlaceholderVariables(constraint.formula,
                                      control_point_variables_,
@@ -224,7 +223,7 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
   for (const auto& f : per_control_point_formulae) {
     if (AreVariablesPresentInProgram(f.GetFreeVariables())) {
       drake::log()->trace("Adding linear constraint: {}", f);
-      prog_->AddLinearConstraint(f);
+      prog->AddLinearConstraint(f);
     } else {
       drake::log()->trace("Failed to add linear constraint: {}", f);
     }
@@ -232,15 +231,15 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
-    const ExpressionWrapper& cost) {
-  DRAKE_ASSERT(prog_ != nullopt);
+    const ExpressionWrapper& cost, MathematicalProgram* prog) const  {
+  DRAKE_ASSERT(prog);
   const std::vector<symbolic::Expression> per_control_point_expressions =
       SubstitutePlaceholderVariables(cost.expression, control_point_variables_,
                                      cost.plan_interval);
   for (const auto& expression : per_control_point_expressions) {
     if (AreVariablesPresentInProgram(expression.GetVariables())) {
       drake::log()->trace("Adding quadratic cost: {}", expression);
-      prog_->AddQuadraticCost(expression.Expand());
+      prog->AddQuadraticCost(expression.Expand());
     } else {
       drake::log()->trace("Failed to add quadratic cost: {}", expression);
     }
@@ -248,8 +247,8 @@ void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
-    const ConstraintWrapper& constraint) {
-  DRAKE_ASSERT(prog_ != nullopt);
+    const ConstraintWrapper& constraint, MathematicalProgram* prog) const {
+  DRAKE_ASSERT(prog);
   const auto evaluation_times = VectorX<double>::LinSpaced(
       constraint.num_evaluation_points, constraint.plan_interval.front(),
       constraint.plan_interval.back());
@@ -275,7 +274,7 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
           control_point_variables_[control_point_index];
     }
     drake::log()->trace("Adding constraint at t = {}", evaluation_time);
-    prog_->AddConstraint(std::make_shared<PointConstraint>(
+    prog->AddConstraint(std::make_shared<PointConstraint>(
                              constraint.constraint, basis_function_values),
                          var_vector);
   }
@@ -283,33 +282,33 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
 
 solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     bool always_update_curve) {
-  prog_.emplace();
+  MathematicalProgram prog;
   const int num_control_points = position_curve_.num_control_points();
   control_point_variables_.clear();
   control_point_variables_.reserve(num_control_points);
   drake::log()->info("Num control points: {}", num_control_points);
   for (int i = 0; i < num_control_points; ++i) {
-    control_point_variables_.push_back(prog_->NewContinuousVariables(
+    control_point_variables_.push_back(prog.NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
-    prog_->SetInitialGuess(control_point_variables_.back(),
+    prog.SetInitialGuess(control_point_variables_.back(),
                            position_curve_.control_points()[i]);
   }
 
   for (const auto& formula_constraint : formula_linear_constraints_) {
-    AddLinearConstraintToProgram(*formula_constraint);
+    AddLinearConstraintToProgram(formula_constraint, &prog);
   }
 
   for (const auto& expression_cost : expression_quadratic_costs_) {
-    AddQuadraticCostToProgram(*expression_cost);
+    AddQuadraticCostToProgram(expression_cost, &prog);
   }
 
   for (const auto& generic_position_constraint :
        generic_position_constraints_) {
-    AddGenericPositionConstraintToProgram(*generic_position_constraint);
+    AddGenericPositionConstraintToProgram(generic_position_constraint, &prog);
   }
 
-  solvers::SolutionResult result = prog_->Solve();
-  drake::log()->info("Solver used: {}", prog_->GetSolverId().value().name());
+  solvers::SolutionResult result = prog.Solve();
+  drake::log()->info("Solver used: {}", prog.GetSolverId().value().name());
 
   if (always_update_curve ||
       result == solvers::SolutionResult::kSolutionFound) {
@@ -320,8 +319,8 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     for (const auto& control_point_variable : control_point_variables_) {
       drake::log()->debug(
           "control point: {}",
-          prog_->GetSolution(control_point_variable).transpose());
-      new_control_points.push_back(prog_->GetSolution(control_point_variable));
+          prog.GetSolution(control_point_variable).transpose());
+      new_control_points.push_back(prog.GetSolution(control_point_variable));
     }
     position_curve_ =
         BsplineCurve<double>(position_curve_.basis(), new_control_points);
@@ -334,14 +333,14 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
   bool constraints_have_been_modified{false};
   for (auto& constraint : generic_position_constraints_) {
     const VectorX<double> t{VectorX<double>::LinSpaced(
-        num_evaluation_points_, constraint->plan_interval.front(),
-        constraint->plan_interval.back())};
+        num_evaluation_points_, constraint.plan_interval.front(),
+        constraint.plan_interval.back())};
     for (int i = 0; i < num_evaluation_points_; ++i) {
-      if (!constraint->constraint->CheckSatisfied(position_curve_.value(t(i)),
+      if (!constraint.constraint->CheckSatisfied(position_curve_.value(t(i)),
                                                   1e-3)) {
         constraints_have_been_modified = true;
-        constraint->num_evaluation_points +=
-            constraint->num_evaluation_points - 1;
+        constraint.num_evaluation_points +=
+            constraint.num_evaluation_points - 1;
         break;
       }
     }

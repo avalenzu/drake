@@ -17,6 +17,7 @@ namespace planner {
  */
 class KinematicTrajectoryOptimization {
  public:
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(KinematicTrajectoryOptimization);
   /// Constructs a mathematical program whose decision variables are the control
   /// points of a @p spline_order B-form spline. Constraints are enforced at @p
   /// num_evaluation_points evenly spaced points along the trajectory, as well
@@ -129,12 +130,12 @@ class KinematicTrajectoryOptimization {
     int num_evaluation_points{2};
   };
 
-  void AddLinearConstraintToProgram(const FormulaWrapper& constraint);
+  void AddLinearConstraintToProgram(const FormulaWrapper& constraint, solvers::MathematicalProgram* prog) const;
 
-  void AddQuadraticCostToProgram(const ExpressionWrapper& cost);
+  void AddQuadraticCostToProgram(const ExpressionWrapper& cost, solvers::MathematicalProgram* prog) const;
 
   void AddGenericPositionConstraintToProgram(
-      const ConstraintWrapper& constraint);
+      const ConstraintWrapper& constraint, solvers::MathematicalProgram* prog) const;
 
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
@@ -153,22 +154,19 @@ class KinematicTrajectoryOptimization {
   // See description of the public time(), position(), velocity(),
   // acceleration() and jerk() accessor methods
   // for details about the placeholder variables.
-  const solvers::VectorXDecisionVariable placeholder_q_vars_;
-  const solvers::VectorXDecisionVariable placeholder_v_vars_;
-  const solvers::VectorXDecisionVariable placeholder_a_vars_;
-  const solvers::VectorXDecisionVariable placeholder_j_vars_;
+  solvers::VectorXDecisionVariable placeholder_q_vars_;
+  solvers::VectorXDecisionVariable placeholder_v_vars_;
+  solvers::VectorXDecisionVariable placeholder_a_vars_;
+  solvers::VectorXDecisionVariable placeholder_j_vars_;
 
   BsplineCurve<double> position_curve_;
 
-  std::vector<std::unique_ptr<const FormulaWrapper>>
-      formula_linear_constraints_;
+  std::vector<FormulaWrapper> formula_linear_constraints_;
 
-  std::vector<std::unique_ptr<const ExpressionWrapper>>
-      expression_quadratic_costs_;
+  std::vector<ExpressionWrapper> expression_quadratic_costs_;
 
-  std::vector<std::unique_ptr<ConstraintWrapper>> generic_position_constraints_;
+  std::vector<ConstraintWrapper> generic_position_constraints_;
 
-  optional<solvers::MathematicalProgram> prog_;
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
 
   int num_evaluation_points_{100};
