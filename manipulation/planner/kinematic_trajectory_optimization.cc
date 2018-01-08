@@ -4,13 +4,15 @@
 #include "drake/math/autodiff.h"
 #include "drake/math/autodiff_gradient.h"
 #include "drake/solvers/scs_solver.h"
+#include "drake/solvers/snopt_solver.h"
 
 namespace drake {
 namespace manipulation {
 namespace planner {
 
+using solvers::MathematicalProgram;
 using solvers::MatrixXDecisionVariable;
-using solvers::MathematicalProgram;;
+;
 namespace {
 solvers::VectorXDecisionVariable MakeNamedVariables(const std::string& prefix,
                                                     int num) {
@@ -63,16 +65,24 @@ class PointConstraint : public solvers::Constraint {
 
 }  // namespace
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
+    const BsplineCurve<double>& position_curve_seed)
+    : placeholder_q_vars_(MakeNamedVariables(
+          "q", position_curve_seed.control_points()[0].rows())),
+      placeholder_v_vars_(MakeNamedVariables(
+          "v", position_curve_seed.control_points()[0].rows())),
+      placeholder_a_vars_(MakeNamedVariables(
+          "a", position_curve_seed.control_points()[0].rows())),
+      placeholder_j_vars_(MakeNamedVariables(
+          "j", position_curve_seed.control_points()[0].rows())),
+      position_curve_(position_curve_seed){};
+
+KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     int num_positions, int num_control_points, int spline_order,
     double duration)
-    : placeholder_q_vars_(MakeNamedVariables("q", num_positions)),
-      placeholder_v_vars_(MakeNamedVariables("v", num_positions)),
-      placeholder_a_vars_(MakeNamedVariables("a", num_positions)),
-      placeholder_j_vars_(MakeNamedVariables("j", num_positions)),
-      position_curve_(
+    : KinematicTrajectoryOptimization(BsplineCurve<double>(
           BsplineBasis(spline_order, num_control_points),
           std::vector<MatrixX<double>>(
-              num_control_points, MatrixX<double>::Zero(num_positions, 1))){};
+              num_control_points, MatrixX<double>::Zero(num_positions, 1)))){};
 
 void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
     const std::shared_ptr<solvers::Constraint>& constraint,
@@ -231,7 +241,7 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
 }
 
 void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
-    const ExpressionWrapper& cost, MathematicalProgram* prog) const  {
+    const ExpressionWrapper& cost, MathematicalProgram* prog) const {
   DRAKE_ASSERT(prog);
   const std::vector<symbolic::Expression> per_control_point_expressions =
       SubstitutePlaceholderVariables(cost.expression, control_point_variables_,
@@ -251,7 +261,8 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
   DRAKE_ASSERT(prog);
   VectorX<double> evaluation_times;
   if (constraint.plan_interval.front() == constraint.plan_interval.back()) {
-    evaluation_times = VectorX<double>::Constant(1, constraint.plan_interval.front());
+    evaluation_times =
+        VectorX<double>::Constant(1, constraint.plan_interval.front());
   } else {
     evaluation_times = VectorX<double>::LinSpaced(
         constraint.num_evaluation_points, constraint.plan_interval.front(),
@@ -288,6 +299,8 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
 solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     bool always_update_curve) {
   MathematicalProgram prog;
+  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Iterations limit", 1e5);
+  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Major Iterations limit", 1e4);
   const int num_control_points = position_curve_.num_control_points();
   control_point_variables_.clear();
   control_point_variables_.reserve(num_control_points);
@@ -296,7 +309,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     control_point_variables_.push_back(prog.NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
     prog.SetInitialGuess(control_point_variables_.back(),
-                           position_curve_.control_points()[i]);
+                         position_curve_.control_points()[i]);
   }
 
   for (const auto& formula_constraint : formula_linear_constraints_) {
@@ -322,9 +335,8 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     drake::log()->debug("Num control point variables: {}",
                         control_point_variables_.size());
     for (const auto& control_point_variable : control_point_variables_) {
-      drake::log()->debug(
-          "control point: {}",
-          prog.GetSolution(control_point_variable).transpose());
+      drake::log()->debug("control point: {}",
+                          prog.GetSolution(control_point_variable).transpose());
       new_control_points.push_back(prog.GetSolution(control_point_variable));
     }
     position_curve_ =
@@ -342,7 +354,7 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
         constraint.plan_interval.back())};
     for (int i = 0; i < num_evaluation_points_; ++i) {
       if (!constraint.constraint->CheckSatisfied(position_curve_.value(t(i)),
-                                                  1e-3)) {
+                                                 1e-3)) {
         constraints_have_been_modified = true;
         constraint.num_evaluation_points +=
             constraint.num_evaluation_points - 1;
@@ -354,22 +366,14 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
 }
 
 bool KinematicTrajectoryOptimization::AddKnots() {
-  auto second_to_last_knot = position_curve_.knots().end() - 1;
   bool knots_have_been_added{false};
-  for (auto knot = position_curve_.knots().begin(); knot != second_to_last_knot;
-       ++knot) {
-    drake::log()->debug("knot[i] = {}", *knot);
-  }
   const std::vector<double>& knots = position_curve_.knots();
   std::vector<double> additional_knots;
   const int num_knots = knots.size();
   for (int i = 0; i < num_knots - 1; ++i) {
     double new_knot = 0.5 * (knots[i] + knots[i + 1]);
-    drake::log()->debug("knot[i] = {}, knot[i+1] = {}, new_knot = {}",
-                        knots[i], knots[i + 1], new_knot);
     if (new_knot - knots[i] > min_knot_resolution()) {
       knots_have_been_added = true;
-      drake::log()->debug("Adding knot at t = {}", new_knot);
       additional_knots.push_back(new_knot);
     }
   }

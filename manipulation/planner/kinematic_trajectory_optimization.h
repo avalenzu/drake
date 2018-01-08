@@ -26,6 +26,9 @@ class KinematicTrajectoryOptimization {
   KinematicTrajectoryOptimization(int num_positions, int num_control_points,
                                   int spline_order = 4, double duration = 1);
 
+  KinematicTrajectoryOptimization(
+      const BsplineCurve<double>& position_curve_seed);
+
   /// Returns a placeholder decision variable (not actually declared as a
   /// decision variable in the MathematicalProgram) associated with the
   /// generalized position vector, q.  This variable will be substituted for
@@ -74,7 +77,9 @@ class KinematicTrajectoryOptimization {
 
   double min_knot_resolution() const { return min_knot_resolution_; }
 
-  int initial_num_evaluation_points() const { return initial_num_evaluation_points_; }
+  int initial_num_evaluation_points() const {
+    return initial_num_evaluation_points_;
+  }
 
   void set_num_evaluation_points(int num_evaluation_points) {
     num_evaluation_points_ = num_evaluation_points;
@@ -130,12 +135,15 @@ class KinematicTrajectoryOptimization {
     int num_evaluation_points{2};
   };
 
-  void AddLinearConstraintToProgram(const FormulaWrapper& constraint, solvers::MathematicalProgram* prog) const;
+  void AddLinearConstraintToProgram(const FormulaWrapper& constraint,
+                                    solvers::MathematicalProgram* prog) const;
 
-  void AddQuadraticCostToProgram(const ExpressionWrapper& cost, solvers::MathematicalProgram* prog) const;
+  void AddQuadraticCostToProgram(const ExpressionWrapper& cost,
+                                 solvers::MathematicalProgram* prog) const;
 
   void AddGenericPositionConstraintToProgram(
-      const ConstraintWrapper& constraint, solvers::MathematicalProgram* prog) const;
+      const ConstraintWrapper& constraint,
+      solvers::MathematicalProgram* prog) const;
 
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
