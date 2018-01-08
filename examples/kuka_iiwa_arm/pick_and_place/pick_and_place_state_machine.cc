@@ -680,7 +680,6 @@ ComputeTrajectories(const WorldState& env_state,
   // Construct a vector of KinematicTrajectoryOptimization objects.
   const int spline_order{5};
   const int initial_num_control_points{num_states * (2 * spline_order + 1)};
-  const int penalized_derivative_order{1};
   std::vector<KinematicTrajectoryOptimization> programs;
   std::vector<std::unique_ptr<KinematicsCacheHelper<double>>> cache_helpers;
 
@@ -705,8 +704,14 @@ ComputeTrajectories(const WorldState& env_state,
             seed_control_points));
         KinematicTrajectoryOptimization& prog = programs.back();
         prog.set_min_knot_resolution(1e-3);
-        prog.set_num_evaluation_points(30);
-        prog.set_initial_num_evaluation_points(17);
+        prog.set_num_evaluation_points(100);
+        prog.set_initial_num_evaluation_points(2);
+
+        // Add joint limits
+        prog.AddLinearConstraint(prog.position() >= robot->joint_limit_min,
+                                 {{0.0, 1.0}});
+        prog.AddLinearConstraint(prog.position() <= robot->joint_limit_max,
+                                 {{0.0, 1.0}});
 
         // Add velocity limits.
         prog.AddLinearConstraint(
@@ -747,7 +752,7 @@ ComputeTrajectories(const WorldState& env_state,
           const Vector3<double>& r_WG_final = X_WG_final.translation();
           const Quaternion<double>& quat_WG_final{X_WG_final.rotation()};
           const Vector3<double>& r_WG_initial = X_WG_initial.translation();
-          const Quaternion<double>& quat_WG_initial{X_WG_initial.rotation()};
+          //const Quaternion<double>& quat_WG_initial{X_WG_initial.rotation()};
 
           // Constrain the end-effector position and orientation at the end of
           // this state.
@@ -785,7 +790,7 @@ ComputeTrajectories(const WorldState& env_state,
               (state == PickAndPlaceState::kApproachPickPregrasp &&
                (r_WG_final - r_WG_initial).norm() > 0.2)) {
             intermediate_orientation_tolerance = 30 * M_PI / 180.0;
-            intermediate_position_tolerance = Vector3<double>::Constant(0.2);
+            intermediate_position_tolerance = Vector3<double>::Constant(0.5);
           }
 
           // Construct a frame whose origin is coincident with that of X_WG_initial
@@ -886,32 +891,32 @@ ComputeTrajectories(const WorldState& env_state,
       }
     }
 
-    // Add a cost on velocity squared
-    auto cost_variable = prog.jerk();
-    switch (penalized_derivative_order) {
-      case 0: {
-        cost_variable = prog.position();
-        break;
-      }
-      case 1: {
-        cost_variable = prog.velocity();
-        break;
-      }
-      case 2: {
-        cost_variable = prog.acceleration();
-        break;
-      }
-      case 3: {
-        cost_variable = prog.jerk();
-        break;
-      }
-      default:
-        DRAKE_THROW_UNLESS(false);
+    // Add costs
+    double position_weight{-1};
+    double velocity_weight{1};
+    double acceleration_weight{-1e-3};
+    double jerk_weight{-1e-6};
+    auto position_squared_norm = prog.position().transpose() * prog.position();
+    auto velocity_squared_norm = prog.velocity().transpose() * prog.velocity();
+    auto acceleration_squared_norm = prog.acceleration().transpose() * prog.acceleration();
+    auto jerk_squared_norm = prog.jerk().transpose() * prog.jerk();
+    symbolic::Expression cost{0};
+    if (position_weight > 0) {
+      drake::log()->info("Position weight: {}", position_weight);
+      cost += position_weight * position_squared_norm(0);
     }
-    double cost_weight{1.0};
-    auto squared_norm = cost_variable.transpose() * cost_variable;
-    drake::log()->info("Cost weight: {}", cost_weight);
-    prog.AddQuadraticCost(cost_weight * squared_norm(0));
+    if (velocity_weight > 0) {
+      drake::log()->info("Velocity weight: {}", velocity_weight);
+      cost += velocity_weight * velocity_squared_norm(0);
+    }
+    if (acceleration_weight > 0) {
+      drake::log()->info("Acceleration weight: {}", acceleration_weight);
+      cost += acceleration_weight * acceleration_squared_norm(0);
+    }
+    if (jerk_weight > 0) {
+      drake::log()->info("Jerk weight: {}", jerk_weight);
+      cost += jerk_weight * jerk_squared_norm(0);
+    }
 
     done = false;
     while (!done) {
