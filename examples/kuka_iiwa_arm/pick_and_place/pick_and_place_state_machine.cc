@@ -612,7 +612,7 @@ ComputeTrajectories(const WorldState& env_state,
       posture_change_constraints;
   std::vector<std::unique_ptr<Point2PointDistanceConstraint>>
       point_to_point_constraints;
-  std::vector<std::unique_ptr<WorldGazeOrientConstraint>> gaze_dir_constraints;
+  std::vector<std::unique_ptr<WorldGazeDirConstraint>> gaze_dir_constraints;
   std::vector<std::unique_ptr<WorldPositionInFrameConstraint>>
       position_in_frame_constraints;
   std::vector<std::vector<RigidBodyConstraint*>> constraint_arrays;
@@ -679,7 +679,7 @@ ComputeTrajectories(const WorldState& env_state,
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
   const int spline_order{5};
-  const int initial_num_control_points{num_states/2 * (2 * spline_order + 1)};
+  const int initial_num_control_points{num_states * (2 * spline_order + 1)};
   const int penalized_derivative_order{1};
   std::vector<KinematicTrajectoryOptimization> programs;
   std::vector<std::unique_ptr<KinematicsCacheHelper<double>>> cache_helpers;
@@ -706,7 +706,7 @@ ComputeTrajectories(const WorldState& env_state,
         KinematicTrajectoryOptimization& prog = programs.back();
         prog.set_min_knot_resolution(1e-3);
         prog.set_num_evaluation_points(30);
-        prog.set_initial_num_evaluation_points(2);
+        prog.set_initial_num_evaluation_points(17);
 
         // Add velocity limits.
         prog.AddLinearConstraint(
@@ -780,7 +780,7 @@ ComputeTrajectories(const WorldState& env_state,
           prog.AddLinearConstraint(prog.jerk() == zero_vector, final_plan_interval);
 
           double intermediate_orientation_tolerance = orientation_tolerance;
-          Vector3<double> intermediate_position_tolerance = 20*position_tolerance;
+          Vector3<double> intermediate_position_tolerance = 10*position_tolerance;
           if (state == PickAndPlaceState::kApproachPlacePregrasp ||
               (state == PickAndPlaceState::kApproachPickPregrasp &&
                (r_WG_final - r_WG_initial).norm() > 0.2)) {
@@ -835,8 +835,8 @@ ComputeTrajectories(const WorldState& env_state,
           Eigen::AngleAxis<double> aaxis{X_WG_delta.linear()};
           Vector3<double> axis_E{aaxis.axis()};
           Vector3<double> dir_W{X_WG_initial.linear() * axis_E};
-          Quaternion<double> quat_WG_intermediate =
-              quat_WG_initial.slerp(0.5, quat_WG_final);
+          //Quaternion<double> quat_WG_intermediate =
+              //quat_WG_initial.slerp(0.5, quat_WG_final);
           if (std::abs(aaxis.angle()) < orientation_tolerance) {
             orientation_constraints.emplace_back(new WorldQuatConstraint(
                 robot, grasp_frame_index,
@@ -851,19 +851,13 @@ ComputeTrajectories(const WorldState& env_state,
                     orientation_constraints.back().get(), cache_helpers.back().get()),
                 intermediate_plan_interval);
           } else {
-            gaze_dir_constraints.emplace_back(new WorldGazeOrientConstraint(
-                robot, grasp_frame_index, axis_E,
-                Eigen::Vector4d(
-                    quat_WG_intermediate.w(), quat_WG_intermediate.x(),
-                    quat_WG_intermediate.y(), quat_WG_intermediate.z()),
-                intermediate_orientation_tolerance, 0.6 * aaxis.angle(),
+            gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
+                robot, grasp_frame_index, axis_E, dir_W, orientation_tolerance,
                 intermediate_tspan));
-            constraint_arrays.back().push_back(
-                gaze_dir_constraints.back().get());
-            //prog.AddGenericPositionConstraint(
-                //std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                    //gaze_dir_constraints.back().get(), &cache_helper),
-                //intermediate_plan_interval);
+            prog.AddGenericPositionConstraint(
+                std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                    gaze_dir_constraints.back().get(), cache_helpers.back().get()),
+                intermediate_plan_interval);
           }
 
           // Reset X_WG_initial for the next iteration.

@@ -299,8 +299,9 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
 solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     bool always_update_curve) {
   MathematicalProgram prog;
-  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Iterations limit", 1e5);
-  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Major Iterations limit", 1e4);
+  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Iterations limit", 5e5);
+  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Major Iterations limit", 5e4);
+  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Scale option", 1);
   const int num_control_points = position_curve_.num_control_points();
   control_point_variables_.clear();
   control_point_variables_.reserve(num_control_points);
