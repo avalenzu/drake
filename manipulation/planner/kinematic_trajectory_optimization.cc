@@ -249,11 +249,16 @@ void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
 void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
     const ConstraintWrapper& constraint, MathematicalProgram* prog) const {
   DRAKE_ASSERT(prog);
-  const auto evaluation_times = VectorX<double>::LinSpaced(
-      constraint.num_evaluation_points, constraint.plan_interval.front(),
-      constraint.plan_interval.back());
+  VectorX<double> evaluation_times;
+  if (constraint.plan_interval.front() == constraint.plan_interval.back()) {
+    evaluation_times = VectorX<double>::Constant(1, constraint.plan_interval.front());
+  } else {
+    evaluation_times = VectorX<double>::LinSpaced(
+        constraint.num_evaluation_points, constraint.plan_interval.front(),
+        constraint.plan_interval.back());
+  }
   drake::log()->info("Adding generic position constraint at {} points.",
-                     constraint.num_evaluation_points);
+                     evaluation_times.size());
   for (int evaluation_time_index = 0;
        evaluation_time_index < evaluation_times.size();
        ++evaluation_time_index) {
@@ -275,8 +280,8 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
     }
     drake::log()->trace("Adding constraint at t = {}", evaluation_time);
     prog->AddConstraint(std::make_shared<PointConstraint>(
-                             constraint.constraint, basis_function_values),
-                         var_vector);
+                            constraint.constraint, basis_function_values),
+                        var_vector);
   }
 }
 
@@ -355,18 +360,20 @@ bool KinematicTrajectoryOptimization::AddKnots() {
        ++knot) {
     drake::log()->debug("knot[i] = {}", *knot);
   }
-  std::vector<double> old_knots = position_curve_.knots();
-  const int num_knots = old_knots.size();
+  const std::vector<double>& knots = position_curve_.knots();
+  std::vector<double> additional_knots;
+  const int num_knots = knots.size();
   for (int i = 0; i < num_knots - 1; ++i) {
-    double new_knot = 0.5 * (old_knots[i] + old_knots[i + 1]);
+    double new_knot = 0.5 * (knots[i] + knots[i + 1]);
     drake::log()->debug("knot[i] = {}, knot[i+1] = {}, new_knot = {}",
-                        old_knots[i], old_knots[i + 1], new_knot);
-    if (new_knot - old_knots[i] > min_knot_resolution()) {
+                        knots[i], knots[i + 1], new_knot);
+    if (new_knot - knots[i] > min_knot_resolution()) {
       knots_have_been_added = true;
       drake::log()->debug("Adding knot at t = {}", new_knot);
-      position_curve_.InsertKnot(new_knot);
+      additional_knots.push_back(new_knot);
     }
   }
+  position_curve_.InsertKnot(additional_knots);
   return knots_have_been_added;
 }
 PiecewisePolynomial<double>

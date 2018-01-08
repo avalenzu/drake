@@ -55,43 +55,34 @@ const MatrixX<symbolic::Expression> BsplineCurve<symbolic::Expression>::value(
 }
 
 template <>
-void BsplineCurve<double>::InsertKnot(double time) {
-  // Find the knot before this time.
-  std::vector<double> new_knots;
-  std::vector<MatrixX<double>> new_control_points;
-  DRAKE_THROW_UNLESS(knots().front() <= time && time <= knots().back());
-  int i = 0;
-  while (knots()[i + degree()] < time) {
-    new_knots.push_back(knots()[i]);
-    new_control_points.push_back(control_points()[i]);
-    ++i;
+void BsplineCurve<double>::InsertKnot(const std::vector<double>& additional_knots) {
+  auto knots = this->knots();
+  for (const auto& time : additional_knots) {
+    DRAKE_THROW_UNLESS(knots.front() <= time && time <= knots.back());
+    int i = 0;
+    while (knots[i + degree()] < time) {
+      ++i;
+    }
+    int k = i + degree() - 1;
+    auto control_point_i_minus_1 = control_points()[i - 1];
+    while (i <= k) {
+      double a = (time - knots[i]) / (knots[i + degree()] - knots[i]);
+      auto new_control_point{(1 - a) * control_point_i_minus_1 +
+                             a * control_points()[i]};
+      control_point_i_minus_1 = control_points()[i];
+      control_points_[i] = new_control_point;
+      ++i;
+    }
+    knots.insert(std::next(knots.begin(), i), time);
+    control_points_.insert(std::next(control_points_.begin(), i),
+                           control_point_i_minus_1);
   }
-  int k = i + degree() - 1;
-  while (i <= k) {
-    double a = (time - knots()[i]) / (knots()[i + degree()] - knots()[i]);
-    new_knots.push_back(knots()[i]);
-    new_control_points.push_back((1 - a) * (control_points()[i - 1]) +
-                                 a * control_points()[i]);
-    ++i;
-  }
-  new_knots.push_back(time);
-  new_control_points.push_back(control_points()[i - 1]);
-  while (i < control_points().size()) {
-    new_knots.push_back(knots()[i]);
-    new_control_points.push_back(control_points()[i]);
-    ++i;
-  }
-  while (i < knots().size()) {
-    new_knots.push_back(knots()[i]);
-    ++i;
-  }
-  basis_ = BsplineBasis(order(), new_knots);
-  control_points_ = new_control_points;
+  basis_ = BsplineBasis(order(), knots);
   UpdatePiecewisePolynomial();
 }
 
 template <typename T>
-void BsplineCurve<T>::InsertKnot(double time) {
+void BsplineCurve<T>::InsertKnot(const std::vector<double>& time) {
   // TODO(avalenzu): Figure out the right way to handle this. This method is
   // only for BsplineCurve<double>.
   DRAKE_THROW_UNLESS(false);

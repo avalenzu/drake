@@ -44,7 +44,7 @@ class BsplineCurve {
 
   const BsplineBasis& basis() const { return basis_; }
 
-  void InsertKnot(double time);
+  void InsertKnot(const std::vector<double>& time);
 
   BsplineCurve<T> Derivative() const;
 
