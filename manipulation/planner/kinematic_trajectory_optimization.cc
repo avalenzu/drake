@@ -74,7 +74,17 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
           "a", position_curve_seed.control_points()[0].rows())),
       placeholder_j_vars_(MakeNamedVariables(
           "j", position_curve_seed.control_points()[0].rows())),
-      position_curve_(position_curve_seed){};
+      position_curve_(position_curve_seed),
+      prog_(new MathematicalProgram) {
+  const int num_control_points = position_curve_.num_control_points();
+  control_point_variables_.reserve(num_control_points);
+  for (int i = 0; i < num_control_points; ++i) {
+    control_point_variables_.push_back(prog_->NewContinuousVariables(
+        num_positions(), 1, "control_point_" + std::to_string(i)));
+    prog_->SetInitialGuess(control_point_variables_.back(),
+                           position_curve_.control_points()[i]);
+  }
+};
 
 KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
     int num_positions, int num_control_points, int spline_order,
@@ -87,18 +97,26 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
     const std::shared_ptr<solvers::Constraint>& constraint,
     const std::array<double, 2>& plan_interval) {
+  // Add the constraint to the vector in case we need to re-build later.
   generic_position_constraints_.push_back(ConstraintWrapper(
       {constraint, plan_interval, initial_num_evaluation_points_}));
+  AddGenericPositionConstraintToProgram(generic_position_constraints_.back(),
+                                        prog_.get());
+  is_program_empty_ = false;
 }
 
 void KinematicTrajectoryOptimization::AddLinearConstraint(
     const symbolic::Formula& f, const std::array<double, 2>& plan_interval) {
   formula_linear_constraints_.push_back(FormulaWrapper({f, plan_interval}));
+  AddLinearConstraintToProgram(formula_linear_constraints_.back(), prog_.get());
+  is_program_empty_ = false;
 }
 
 void KinematicTrajectoryOptimization::AddQuadraticCost(
     const symbolic::Expression& f, const std::array<double, 2>& plan_interval) {
   expression_quadratic_costs_.push_back(ExpressionWrapper({f, plan_interval}));
+  AddQuadraticCostToProgram(expression_quadratic_costs_.back(), prog_.get());
+  is_program_empty_ = false;
 }
 
 std::vector<symbolic::Substitution>
@@ -273,61 +291,71 @@ void KinematicTrajectoryOptimization::AddGenericPositionConstraintToProgram(
   for (int evaluation_time_index = 0;
        evaluation_time_index < evaluation_times.size();
        ++evaluation_time_index) {
-    double evaluation_time = evaluation_times(evaluation_time_index);
-    std::vector<double> basis_function_values;
-    basis_function_values.reserve(position_curve_.order());
-    solvers::VectorXDecisionVariable var_vector(position_curve_.order() *
-                                                num_positions());
-    std::vector<int> active_control_point_indices =
-        position_curve_.basis().ComputeActiveControlPointIndices(
-            {{evaluation_time, evaluation_time}});
-    for (int i = 0; i < position_curve_.order(); ++i) {
-      const int control_point_index = active_control_point_indices[i];
-      basis_function_values.push_back(
-          position_curve_.basis().polynomials()[control_point_index].value(
-              evaluation_time)(0));
-      var_vector.segment(i * num_positions(), num_positions()) =
-          control_point_variables_[control_point_index];
-    }
-    drake::log()->trace("Adding constraint at t = {}", evaluation_time);
-    prog->AddConstraint(std::make_shared<PointConstraint>(
-                            constraint.constraint, basis_function_values),
-                        var_vector);
+    AddPositionPointConstraintToProgram(
+        constraint, evaluation_times(evaluation_time_index), prog);
   }
+}
+
+void KinematicTrajectoryOptimization::AddPositionPointConstraintToProgram(
+    const ConstraintWrapper& constraint, double evaluation_time,
+    MathematicalProgram* prog) const {
+  std::vector<double> basis_function_values;
+  basis_function_values.reserve(position_curve_.order());
+  solvers::VectorXDecisionVariable var_vector(position_curve_.order() *
+                                              num_positions());
+  std::vector<int> active_control_point_indices =
+      position_curve_.basis().ComputeActiveControlPointIndices(
+          {{evaluation_time, evaluation_time}});
+  for (int i = 0; i < position_curve_.order(); ++i) {
+    const int control_point_index = active_control_point_indices[i];
+    basis_function_values.push_back(
+        position_curve_.basis().polynomials()[control_point_index].value(
+            evaluation_time)(0));
+    var_vector.segment(i * num_positions(), num_positions()) =
+        control_point_variables_[control_point_index];
+  }
+  drake::log()->trace("Adding constraint at t = {}", evaluation_time);
+  prog->AddConstraint(std::make_shared<PointConstraint>(constraint.constraint,
+                                                        basis_function_values),
+                      var_vector);
 }
 
 solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     bool always_update_curve) {
-  MathematicalProgram prog;
-  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Iterations limit", 5e5);
-  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Major Iterations limit", 5e4);
-  prog.SetSolverOption(drake::solvers::SnoptSolver::id(), "Scale option", 1);
+  prog_->SetSolverOption(drake::solvers::SnoptSolver::id(), "Iterations limit",
+                         5e5);
+  prog_->SetSolverOption(drake::solvers::SnoptSolver::id(),
+                         "Major Iterations limit", 5e4);
+  prog_->SetSolverOption(drake::solvers::SnoptSolver::id(), "Scale option", 1);
   const int num_control_points = position_curve_.num_control_points();
-  control_point_variables_.clear();
-  control_point_variables_.reserve(num_control_points);
-  drake::log()->info("Num control points: {}", num_control_points);
-  for (int i = 0; i < num_control_points; ++i) {
-    control_point_variables_.push_back(prog.NewContinuousVariables(
-        num_positions(), 1, "control_point_" + std::to_string(i)));
-    prog.SetInitialGuess(control_point_variables_.back(),
-                         position_curve_.control_points()[i]);
+  if (is_program_empty_) {
+    control_point_variables_.clear();
+    control_point_variables_.reserve(num_control_points);
+    drake::log()->info("Num control points: {}", num_control_points);
+    for (int i = 0; i < num_control_points; ++i) {
+      control_point_variables_.push_back(prog_->NewContinuousVariables(
+          num_positions(), 1, "control_point_" + std::to_string(i)));
+      prog_->SetInitialGuess(control_point_variables_.back(),
+                             position_curve_.control_points()[i]);
+    }
+
+    for (const auto& formula_constraint : formula_linear_constraints_) {
+      AddLinearConstraintToProgram(formula_constraint, prog_.get());
+    }
+
+    for (const auto& expression_cost : expression_quadratic_costs_) {
+      AddQuadraticCostToProgram(expression_cost, prog_.get());
+    }
+
+    for (const auto& generic_position_constraint :
+         generic_position_constraints_) {
+      AddGenericPositionConstraintToProgram(generic_position_constraint,
+                                            prog_.get());
+    }
   }
 
-  for (const auto& formula_constraint : formula_linear_constraints_) {
-    AddLinearConstraintToProgram(formula_constraint, &prog);
-  }
-
-  for (const auto& expression_cost : expression_quadratic_costs_) {
-    AddQuadraticCostToProgram(expression_cost, &prog);
-  }
-
-  for (const auto& generic_position_constraint :
-       generic_position_constraints_) {
-    AddGenericPositionConstraintToProgram(generic_position_constraint, &prog);
-  }
-
-  solvers::SolutionResult result = prog.Solve();
-  drake::log()->info("Solver used: {}", prog.GetSolverId().value().name());
+  solvers::SolutionResult result = prog_->Solve();
+  drake::log()->info("Solver used: {}", prog_->GetSolverId().value().name());
 
   if (always_update_curve ||
       result == solvers::SolutionResult::kSolutionFound) {
@@ -336,9 +364,10 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     drake::log()->debug("Num control point variables: {}",
                         control_point_variables_.size());
     for (const auto& control_point_variable : control_point_variables_) {
-      drake::log()->debug("control point: {}",
-                          prog.GetSolution(control_point_variable).transpose());
-      new_control_points.push_back(prog.GetSolution(control_point_variable));
+      drake::log()->debug(
+          "control point: {}",
+          prog_->GetSolution(control_point_variable).transpose());
+      new_control_points.push_back(prog_->GetSolution(control_point_variable));
     }
     position_curve_ =
         BsplineCurve<double>(position_curve_.basis(), new_control_points);
@@ -356,9 +385,20 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
     for (int i = 0; i < num_evaluation_points_; ++i) {
       if (!constraint.constraint->CheckSatisfied(position_curve_.value(t(i)),
                                                  1e-3)) {
-        constraints_have_been_modified = true;
+        const auto constraint_evaluation_times = VectorX<double>::LinSpaced(
+            constraint.num_evaluation_points, constraint.plan_interval.front(),
+            constraint.plan_interval.back());
+        drake::log()->info("Adding generic position constraint at {} more points ({} total).",
+            constraint.num_evaluation_points - 1, 2 * constraint.num_evaluation_points - 1);
+        for (int j = 0; j < constraint.num_evaluation_points - 1; ++j) {
+          double evaluation_time = 0.5 * (constraint_evaluation_times(j) +
+                                          constraint_evaluation_times(j + 1));
+          AddPositionPointConstraintToProgram(constraint, evaluation_time,
+                                              prog_.get());
+        }
         constraint.num_evaluation_points +=
             constraint.num_evaluation_points - 1;
+        constraints_have_been_modified = true;
         break;
       }
     }
@@ -378,7 +418,11 @@ bool KinematicTrajectoryOptimization::AddKnots() {
       additional_knots.push_back(new_knot);
     }
   }
-  position_curve_.InsertKnot(additional_knots);
+  if (knots_have_been_added) {
+    position_curve_.InsertKnot(additional_knots);
+    is_program_empty_ = true;
+    prog_ = std::make_unique<MathematicalProgram>();
+  }
   return knots_have_been_added;
 }
 PiecewisePolynomial<double>

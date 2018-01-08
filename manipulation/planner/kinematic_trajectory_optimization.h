@@ -17,7 +17,6 @@ namespace planner {
  */
 class KinematicTrajectoryOptimization {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(KinematicTrajectoryOptimization);
   /// Constructs a mathematical program whose decision variables are the control
   /// points of a @p spline_order B-form spline. Constraints are enforced at @p
   /// num_evaluation_points evenly spaced points along the trajectory, as well
@@ -145,6 +144,10 @@ class KinematicTrajectoryOptimization {
       const ConstraintWrapper& constraint,
       solvers::MathematicalProgram* prog) const;
 
+  void AddPositionPointConstraintToProgram(
+      const ConstraintWrapper& constraint, double evaluation_time,
+      solvers::MathematicalProgram* prog) const;
+
   std::vector<symbolic::Substitution> ConstructPlaceholderVariableSubstitution(
       const std::vector<solvers::MatrixXDecisionVariable>& control_points,
       const std::array<double, 2>& plan_interval) const;
@@ -182,6 +185,10 @@ class KinematicTrajectoryOptimization {
   double min_knot_resolution_{1e-2};
 
   int initial_num_evaluation_points_{3};
+
+  std::unique_ptr<solvers::MathematicalProgram> prog_{};
+
+  bool is_program_empty_{true};
 };
 }  // namespace planner
 }  // namespace manipulation
