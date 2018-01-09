@@ -634,10 +634,8 @@ ComputeTrajectories(const WorldState& env_state,
       PickAndPlaceState::kApproachPlacePregrasp,
       PickAndPlaceState::kApproachPlace,
       PickAndPlaceState::kLiftFromPlace};
-  const double short_duration = 2;
-  const double long_duration = 6;
-  const double few_knots = 2;
-  const double many_knots = 5;
+  const double short_duration = 1;
+  const double long_duration = 2;
   std::map<PickAndPlaceState, double> per_state_durations{
       {PickAndPlaceState::kApproachPickPregrasp, long_duration},
       {PickAndPlaceState::kApproachPick, short_duration},
@@ -645,19 +643,8 @@ ComputeTrajectories(const WorldState& env_state,
       {PickAndPlaceState::kApproachPlacePregrasp, long_duration},
       {PickAndPlaceState::kApproachPlace, short_duration},
       {PickAndPlaceState::kLiftFromPlace, short_duration}};
-  std::map<PickAndPlaceState, double> per_state_number_of_knots{
-      {PickAndPlaceState::kApproachPickPregrasp, many_knots},
-      {PickAndPlaceState::kApproachPick, few_knots},
-      {PickAndPlaceState::kLiftFromPick, few_knots},
-      {PickAndPlaceState::kApproachPlacePregrasp, many_knots},
-      {PickAndPlaceState::kApproachPlace, few_knots},
-      {PickAndPlaceState::kLiftFromPlace, few_knots}};
   const int num_states = states.size();
-  int num_knots = 1;
   const int num_joints{robot->get_num_positions()};
-  for (int i = 0; i < num_states; ++i) {
-    num_knots += per_state_number_of_knots.at(states[i]);
-  }
 
   // Compute the initial end-effector pose
   const VectorX<double> q_initial{q_traj_seed.value(0)};
@@ -665,16 +652,12 @@ ComputeTrajectories(const WorldState& env_state,
   kinematics_cache.initialize(q_initial);
   robot->doKinematics(kinematics_cache);
 
-  VectorX<double> t{num_knots};
+  VectorX<double> t{num_states + 1};
   double duration{0};
   t(0) = 0;
-  int index{1};
   for (int i = 0; i < num_states; ++i) {
-    int num_knots_per_state = per_state_number_of_knots.at(states[i]);
-    for (int j = 1; j <= num_knots_per_state; ++j) {
-      duration += per_state_durations.at(states[i]) / num_knots_per_state;
-      t(index++) = duration;
-    }
+    duration += per_state_durations.at(states[i]);
+    t(i + 1) = duration;
   }
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
@@ -686,9 +669,6 @@ ComputeTrajectories(const WorldState& env_state,
 
   // Set up an inverse kinematics trajectory problem with one knot for each
   // state
-  MatrixX<double> q_nom =
-      MatrixX<double>::Zero(robot->get_num_positions(), num_knots);
-
   std::vector<MatrixX<double>> seed_control_points(initial_num_control_points);
   for (int i = 0; i < initial_num_control_points; ++i) {
     seed_control_points[i] =
@@ -732,13 +712,10 @@ ComputeTrajectories(const WorldState& env_state,
 
         Isometry3<double> X_WG_initial = robot->relativeTransform(
             kinematics_cache, world_idx, grasp_frame_index);
-        int start_knot = 0;
         for (int i = 0; i < num_states; ++i) {
           const PickAndPlaceState state{states[i]};
-          int num_knots_per_state = per_state_number_of_knots.at(states[i]);
-          const int& end_knot = start_knot + num_knots_per_state;
-          const double& start_time = t(start_knot);
-          const double& end_time = t(end_knot);
+          const double& start_time = t(i);
+          const double& end_time = t(i + 1);
           const Vector2<double> intermediate_tspan{start_time, end_time};
           const Vector2<double> final_tspan{end_time, end_time};
 
@@ -868,7 +845,6 @@ ComputeTrajectories(const WorldState& env_state,
 
           // Reset X_WG_initial for the next iteration.
           X_WG_initial = X_WG_final;
-          start_knot += num_knots_per_state;
         }
       }
     }
@@ -944,18 +920,13 @@ ComputeTrajectories(const WorldState& env_state,
   }
   std::map<PickAndPlaceState, PiecewisePolynomial<double>>
       interpolation_result_map;
-  std::vector<double> times;
-  for (int i = 0; i < num_knots; ++i) times.push_back(t(i));
-  int start_knot = 0;
   for (int i = 0; i < num_states; ++i) {
-    int num_knots_per_state = per_state_number_of_knots.at(states[i]);
-    const int& end_knot = start_knot + num_knots_per_state;
     std::vector<double> breaks;
     std::vector<MatrixX<double>> knots;
     drake::log()->trace("Trajectory for {}:", states[i]);
     // Upsample trajectory since we don't actually send the PiecwisePolynomial.
     VectorX<double> t_eval = VectorX<double>::LinSpaced(
-        100, t(start_knot), t(end_knot));
+        100, t(i), t(i+1));
     breaks.resize(t_eval.size());
     knots.resize(t_eval.size());
     for (int j = 0; j < t_eval.size(); ++j) {
@@ -968,7 +939,6 @@ ComputeTrajectories(const WorldState& env_state,
     interpolation_result_map.emplace(
         states[i], PiecewisePolynomial<double>::Cubic(
                        breaks, knots, knot_dot_zero, knot_dot_zero));
-    start_knot = end_knot;
   }
   return interpolation_result_map;
 }
