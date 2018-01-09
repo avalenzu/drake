@@ -679,7 +679,8 @@ ComputeTrajectories(const WorldState& env_state,
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
   const int spline_order{5};
-  const int initial_num_control_points{num_states * (2 * spline_order + 1)};
+  //const int initial_num_control_points{num_states * (2 * spline_order + 1)};
+  const int initial_num_control_points{66};
   std::vector<KinematicTrajectoryOptimization> programs;
   std::vector<std::unique_ptr<KinematicsCacheHelper<double>>> cache_helpers;
 
