@@ -53,7 +53,7 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
     // Add plan interpolator.
     auto plan_interpolator = builder.AddSystem<LcmPlanInterpolator>(
         FindResourceOrThrow(plant_configuration.robot_models[i]),
-        InterpolatorType::Cubic);
+        InterpolatorType::Pchip);
     plan_interpolators_.push_back(plan_interpolator);
     // Add a zero-order hold between the plant and the interpolator
     auto iiwa_status_zoh = builder.AddSystem<ZeroOrderHold<double>>(
