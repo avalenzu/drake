@@ -328,10 +328,10 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
                          "Major Iterations limit", 5e4);
   prog_->SetSolverOption(drake::solvers::SnoptSolver::id(), "Scale option", 1);
   const int num_control_points = position_curve_.num_control_points();
+  drake::log()->info("Num control points: {}", num_control_points);
   if (is_program_empty_) {
     control_point_variables_.clear();
     control_point_variables_.reserve(num_control_points);
-    drake::log()->info("Num control points: {}", num_control_points);
     for (int i = 0; i < num_control_points; ++i) {
       control_point_variables_.push_back(prog_->NewContinuousVariables(
           num_positions(), 1, "control_point_" + std::to_string(i)));
@@ -352,6 +352,11 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
       AddGenericPositionConstraintToProgram(generic_position_constraint,
                                             prog_.get());
     }
+    is_program_empty_ = false;
+  }
+  for (int i = 0; i < num_control_points; ++i) {
+    prog_->SetInitialGuess(control_point_variables_[i],
+        position_curve_.control_points()[i]);
   }
 
   solvers::SolutionResult result = prog_->Solve();
