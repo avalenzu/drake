@@ -791,7 +791,7 @@ ComputeTrajectories(const WorldState& env_state,
               (state == PickAndPlaceState::kApproachPickPregrasp &&
                (r_WG_final - r_WG_initial).norm() > 0.2)) {
             intermediate_orientation_tolerance = 30 * M_PI / 180.0;
-            intermediate_position_tolerance = Vector3<double>::Constant(0.5);
+            intermediate_position_tolerance = Vector3<double>::Constant(0.2);
           }
 
           // Construct a frame whose origin is coincident with that of X_WG_initial
@@ -918,6 +918,7 @@ ComputeTrajectories(const WorldState& env_state,
       drake::log()->info("Jerk weight: {}", jerk_weight);
       cost += jerk_weight * jerk_squared_norm(0);
     }
+    prog.AddQuadraticCost(cost);
 
     done = false;
     while (!done) {
