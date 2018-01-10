@@ -68,6 +68,10 @@ class KinematicTrajectoryOptimization {
     return placeholder_j_vars_;
   }
 
+  const solvers::VectorDecisionVariable<1>& duration() const {
+    return placeholder_duration_var_;
+  }
+
   int num_positions() const {
     return position_curve_.control_points().front().rows();
   };
@@ -171,6 +175,7 @@ class KinematicTrajectoryOptimization {
   solvers::VectorXDecisionVariable placeholder_v_vars_;
   solvers::VectorXDecisionVariable placeholder_a_vars_;
   solvers::VectorXDecisionVariable placeholder_j_vars_;
+  solvers::VectorDecisionVariable<1> placeholder_duration_var_;
 
   BsplineCurve<double> position_curve_;
 
@@ -181,6 +186,8 @@ class KinematicTrajectoryOptimization {
   std::vector<ConstraintWrapper> generic_position_constraints_;
 
   std::vector<solvers::MatrixXDecisionVariable> control_point_variables_;
+
+  solvers::VectorDecisionVariable<1> duration_variable_;
 
   int num_evaluation_points_{100};
 

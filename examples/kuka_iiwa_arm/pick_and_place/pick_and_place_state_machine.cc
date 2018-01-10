@@ -303,12 +303,9 @@ ComputeTrajectories(const WorldState& env_state,
   kinematics_cache.initialize(q_initial);
   robot->doKinematics(kinematics_cache);
 
-  VectorX<double> t{num_states + 1};
   double duration{0};
-  t(0) = 0;
   for (int i = 0; i < num_states; ++i) {
     duration += per_state_durations.at(states[i]);
-    t(i + 1) = duration;
   }
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
@@ -364,8 +361,9 @@ ComputeTrajectories(const WorldState& env_state,
       double velocity_weight{1};
       double acceleration_weight{-1e-3};
       double jerk_weight{-1};
-      auto position_squared_norm =
-          prog.position().transpose() * prog.position();
+      double duration_weight{1};
+      auto position_squared_norm = (prog.position() - q_initial).transpose() *
+                                   (prog.position() - q_initial);
       auto velocity_squared_norm =
           prog.velocity().transpose() * prog.velocity();
       auto acceleration_squared_norm =
@@ -388,7 +386,15 @@ ComputeTrajectories(const WorldState& env_state,
         drake::log()->info("Jerk weight: {}", jerk_weight);
         cost += jerk_weight * jerk_squared_norm(0);
       }
+      if (duration_weight > 0) {
+        drake::log()->info("Duration weight: {}", duration_weight);
+        cost += duration_weight * prog.duration()(0) * prog.duration()(0);
+      }
       prog.AddQuadraticCost(cost);
+
+      // Add duration limits.
+      prog.AddLinearConstraint(prog.duration()(0) >= 0,
+                               {{0.0, 0.0}});
 
       // Add joint limits
       prog.AddLinearConstraint(prog.position() >= robot->joint_limit_min,
@@ -398,10 +404,12 @@ ComputeTrajectories(const WorldState& env_state,
 
       // Add velocity limits.
       prog.AddLinearConstraint(
-          prog.velocity() <= 0.9 * duration * get_iiwa_max_joint_velocities(),
+          prog.velocity() <=
+              0.9 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
           {{0.0, 1.0}});
       prog.AddLinearConstraint(
-          prog.velocity() >= -0.9 * duration * get_iiwa_max_joint_velocities(),
+          prog.velocity() >=
+              -0.9 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
           {{0.0, 1.0}});
 
       // Constrain initial configuration.
@@ -851,7 +859,7 @@ ComputeTrajectories(const WorldState& env_state,
       }
     }
     if (success) {
-      q_traj = prog.GetPositionSolution(duration);
+      q_traj = prog.GetPositionSolution();
       break;
     }
   }
@@ -860,6 +868,13 @@ ComputeTrajectories(const WorldState& env_state,
   }
   std::map<PickAndPlaceState, PiecewisePolynomial<double>>
       interpolation_result_map;
+  double actual_duration = q_traj.getSegmentTimes().back();
+  VectorX<double> t{num_states + 1};
+  t(0) = 0;
+  for (int i = 0; i < num_states; ++i) {
+    t(i + 1) =
+        t(i) + actual_duration * per_state_durations.at(states[i]) / duration;
+  }
   for (int i = 0; i < num_states; ++i) {
     std::vector<double> breaks;
     std::vector<MatrixX<double>> knots;

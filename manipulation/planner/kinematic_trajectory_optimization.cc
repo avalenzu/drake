@@ -74,11 +74,13 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
           "a", position_curve_seed.control_points()[0].rows())),
       placeholder_j_vars_(MakeNamedVariables(
           "j", position_curve_seed.control_points()[0].rows())),
+      placeholder_duration_var_(MakeNamedVariables("duration", 1)),
       position_curve_(position_curve_seed),
       prog_(new MathematicalProgram) {
   const int num_control_points = position_curve_.num_control_points();
   control_point_variables_.reserve(num_control_points);
   for (int i = 0; i < num_control_points; ++i) {
+    duration_variable_ = prog_->NewContinuousVariables(1, "duration");
     control_point_variables_.push_back(prog_->NewContinuousVariables(
         num_positions(), 1, "control_point_" + std::to_string(i)));
     prog_->SetInitialGuess(control_point_variables_.back(),
@@ -137,6 +139,7 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
   if (plan_interval.back() - plan_interval.front() <
       PiecewiseFunction::kEpsilonTime) {
     sub.resize(1);
+    sub[0].emplace(placeholder_duration_var_(0), duration_variable_(0));
     const VectorX<symbolic::Expression> symbolic_q_value =
         symbolic_q_curve.value(plan_interval.front());
     const VectorX<symbolic::Expression> symbolic_v_value =
@@ -159,6 +162,7 @@ KinematicTrajectoryOptimization::ConstructPlaceholderVariableSubstitution(
 
     for (int i = 0; i < num_positions(); ++i) {
       for (int j = 0; j < active_control_point_indices.size(); ++j) {
+        sub[j].emplace(placeholder_duration_var_(0), duration_variable_(0));
         sub[j].emplace(
             placeholder_q_vars_(i),
             symbolic_q_curve.control_points()[active_control_point_indices[j]](
@@ -330,6 +334,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
   const int num_control_points = position_curve_.num_control_points();
   drake::log()->info("Num control points: {}", num_control_points);
   if (is_program_empty_) {
+    duration_variable_ = prog_->NewContinuousVariables(1, "duration");
     control_point_variables_.clear();
     control_point_variables_.reserve(num_control_points);
     for (int i = 0; i < num_control_points; ++i) {
@@ -437,17 +442,20 @@ KinematicTrajectoryOptimization::GetPositionSolution(
     double time_scaling) const {
   std::vector<double> scaled_knots;
   scaled_knots.reserve(position_curve_.knots().size());
-  std::transform(
-      position_curve_.knots().begin(), position_curve_.knots().end(),
-      std::back_inserter(scaled_knots),
-      [time_scaling](double knot) -> double { return time_scaling * knot; });
+  const double duration{prog_->GetSolution(duration_variable_)(0)};
+  std::transform(position_curve_.knots().begin(), position_curve_.knots().end(),
+                 std::back_inserter(scaled_knots),
+                 [time_scaling, duration](double knot) -> double {
+                   return time_scaling * duration * knot;
+                 });
   BsplineCurve<double> scaled_curve{
       BsplineBasis(position_curve_.order(), scaled_knots),
       position_curve_.control_points()};
   return *scaled_curve.piecwise_polynomial();
 }
 
-void KinematicTrajectoryOptimization::ResetPositionCurve(BsplineCurve<double> position_curve) {
+void KinematicTrajectoryOptimization::ResetPositionCurve(
+    BsplineCurve<double> position_curve) {
   position_curve_ = position_curve;
   is_program_empty_ = true;
   prog_ = std::make_unique<MathematicalProgram>();
