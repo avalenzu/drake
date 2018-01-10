@@ -352,7 +352,7 @@ ComputeTrajectories(const WorldState& env_state,
       programs.emplace_back(BsplineCurve<double>(
           BsplineBasis(spline_order, num_control_points), seed_control_points));
       KinematicTrajectoryOptimization& prog = programs.back();
-      prog.set_min_knot_resolution(1.0/60.0);
+      prog.set_min_knot_resolution(1.0/120.0);
       prog.set_num_evaluation_points(100);
       prog.set_initial_num_evaluation_points(2);
 
@@ -405,11 +405,11 @@ ComputeTrajectories(const WorldState& env_state,
       // Add velocity limits.
       prog.AddLinearConstraint(
           prog.velocity() <=
-              0.9 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
+              0.5 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
           {{0.0, 1.0}});
       prog.AddLinearConstraint(
           prog.velocity() >=
-              -0.9 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
+              -0.5 * prog.duration()(0) * get_iiwa_max_joint_velocities(),
           {{0.0, 1.0}});
 
       // Constrain initial configuration.
