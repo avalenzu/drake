@@ -283,24 +283,17 @@ ComputeTrajectories(const WorldState& env_state,
       VectorX<int>::LinSpaced(num_positions, 0, num_positions - 1);
 
   int grasp_frame_index = robot->FindBodyIndex(kGraspFrameName);
-  //int world_idx = robot->FindBodyIndex("world");
+  // int world_idx = robot->FindBodyIndex("world");
   Vector3<double> end_effector_points{0, 0, 0};
 
-  std::vector<PickAndPlaceState> states{
-      PickAndPlaceState::kApproachPickPregrasp,
-      PickAndPlaceState::kApproachPick,
-      PickAndPlaceState::kLiftFromPick,
-      PickAndPlaceState::kApproachPlacePregrasp,
-      PickAndPlaceState::kApproachPlace,
-      PickAndPlaceState::kLiftFromPlace};
+  std::vector<PickAndPlaceState> states{PickAndPlaceState::kApproachPick,
+                                        PickAndPlaceState::kApproachPlace,
+                                        PickAndPlaceState::kLiftFromPlace};
   const double short_duration = 1;
   const double long_duration = 2;
   std::map<PickAndPlaceState, double> per_state_durations{
-      {PickAndPlaceState::kApproachPickPregrasp, long_duration},
-      {PickAndPlaceState::kApproachPick, short_duration},
-      {PickAndPlaceState::kLiftFromPick, short_duration},
-      {PickAndPlaceState::kApproachPlacePregrasp, long_duration},
-      {PickAndPlaceState::kApproachPlace, short_duration},
+      {PickAndPlaceState::kApproachPick, long_duration + short_duration},
+      {PickAndPlaceState::kApproachPlace, long_duration + 2 * short_duration},
       {PickAndPlaceState::kLiftFromPlace, short_duration}};
   const int num_states = states.size();
   const int num_joints{robot->get_num_positions()};
@@ -1010,24 +1003,12 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       next_state = PickAndPlaceState::kPlan;
       break;
     }
-    case PickAndPlaceState::kApproachPickPregrasp: {
-      next_state = PickAndPlaceState::kApproachPick;
-      break;
-    }
     case PickAndPlaceState::kApproachPick: {
       next_state = PickAndPlaceState::kGrasp;
       break;
     }
     case PickAndPlaceState::kGrasp: {
       schunk_action = CloseGripper;
-      next_state = PickAndPlaceState::kLiftFromPick;
-      break;
-    }
-    case PickAndPlaceState::kLiftFromPick: {
-      next_state = PickAndPlaceState::kApproachPlacePregrasp;
-      break;
-    }
-    case PickAndPlaceState::kApproachPlacePregrasp: {
       next_state = PickAndPlaceState::kApproachPlace;
       break;
     }
@@ -1050,11 +1031,8 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
   switch (state_) {
     // IIWA arm movements
     case PickAndPlaceState::kApproachPick:
-    case PickAndPlaceState::kLiftFromPick:
     case PickAndPlaceState::kApproachPlace:
-    case PickAndPlaceState::kLiftFromPlace:
-    case PickAndPlaceState::kApproachPickPregrasp:
-    case PickAndPlaceState::kApproachPlacePregrasp: {
+    case PickAndPlaceState::kLiftFromPlace: {
       if (!iiwa_move_.ActionStarted()) {
         DRAKE_THROW_UNLESS(static_cast<bool>(interpolation_result_map_));
         robotlocomotion::robot_plan_t plan{};
@@ -1136,7 +1114,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
           tight_rot_tol_, tight_pos_tol_, robot.get());
       if (interpolation_result_map_) {
         // Proceed to execution.
-        state_ = PickAndPlaceState::kApproachPickPregrasp;
+        state_ = PickAndPlaceState::kApproachPick;
         planning_failure_count_ = 0;
       } else {
         // otherwise re-plan on next call to Update.
@@ -1160,6 +1138,10 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       break;
     }
     case PickAndPlaceState::kDone: {
+      break;
+    }
+    default: {
+      DRAKE_ABORT_MSG("Bad state!");
       break;
     }
   }
