@@ -481,52 +481,6 @@ ComputeTrajectories(const WorldState& env_state,
           }
         }
 
-        if (true) {
-          drake::log()->debug(
-              "Adding height threshold constraint for pre-place");
-
-          auto X_WC = Isometry3<double>::Identity();
-          X_WC.translation().z() = threshold_height;
-
-          Vector3<double> lb{-std::numeric_limits<double>::infinity(),
-                             -std::numeric_limits<double>::infinity(),
-                             -position_tolerance.z()};
-          Vector3<double> ub{std::numeric_limits<double>::infinity(),
-                             std::numeric_limits<double>::infinity(),
-                             std::numeric_limits<double>::infinity()};
-          position_in_frame_constraints.emplace_back(
-              new WorldPositionInFrameConstraint(robot, grasp_frame_index,
-                                                 end_effector_points,
-                                                 X_WC.matrix(), lb, ub));
-          constraint_arrays.back().push_back(
-              position_in_frame_constraints.back().get());
-          cache_helpers.emplace_back(
-              new KinematicsCacheHelper<double>(robot->bodies));
-          prog.AddGenericPositionConstraint(
-              std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                  position_in_frame_constraints.back().get(),
-                  cache_helpers.back().get()),
-              {{plan_time_pre_place, plan_time_pre_place}});
-
-          bool done{false};
-          bool success{false};
-          while (!done) {
-            solvers::SolutionResult solution_result =
-                prog.Solve(false /*always_update_curve*/);
-            drake::log()->info("Solution result: {}", solution_result);
-            if (solution_result == solvers::SolutionResult::kSolutionFound) {
-              done = !prog.UpdateGenericConstraints();
-              // done = true;
-              success = done;
-            } else {
-              done = !prog.AddKnots();
-              success = false;
-            }
-          }
-          if (!success) {
-            return nullopt;
-          }
-        }
 
         // Add a full stop at the pick pose
         const Isometry3<double> X_WG_pick =
