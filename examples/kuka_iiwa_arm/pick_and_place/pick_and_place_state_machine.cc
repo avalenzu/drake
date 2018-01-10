@@ -355,7 +355,7 @@ ComputeTrajectories(const WorldState& env_state,
       programs.emplace_back(BsplineCurve<double>(
           BsplineBasis(spline_order, num_control_points), seed_control_points));
       KinematicTrajectoryOptimization& prog = programs.back();
-      prog.set_min_knot_resolution(1e-3);
+      prog.set_min_knot_resolution(1.0/60.0);
       prog.set_num_evaluation_points(100);
       prog.set_initial_num_evaluation_points(2);
 
