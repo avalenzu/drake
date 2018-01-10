@@ -35,7 +35,6 @@ using systems::plants::SingleTimeKinematicConstraintWrapper;
 
 const char kGraspFrameName[] = "grasp_frame";
 
-
 void OpenGripper(const WorldState& env_state, WsgAction* wsg_act,
                  lcmt_schunk_wsg_command* msg) {
   wsg_act->OpenGripper(env_state, msg);
@@ -216,8 +215,9 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
-                                finger_length * std::cos(pitch_offset));
+        std::min<double>(0,
+                         -0.5 * env_state.get_object_dimensions().x() +
+                             finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -283,7 +283,7 @@ ComputeTrajectories(const WorldState& env_state,
       VectorX<int>::LinSpaced(num_positions, 0, num_positions - 1);
 
   int grasp_frame_index = robot->FindBodyIndex(kGraspFrameName);
-  int world_idx = robot->FindBodyIndex("world");
+  //int world_idx = robot->FindBodyIndex("world");
   Vector3<double> end_effector_points{0, 0, 0};
 
   std::vector<PickAndPlaceState> states{
@@ -333,6 +333,15 @@ ComputeTrajectories(const WorldState& env_state,
     seed_control_points[i] =
         q_traj_seed.value(static_cast<double>(i) / num_control_points);
   }
+
+  double plan_time_pre_pick = long_duration / duration;
+  double plan_time_pick = (long_duration + short_duration) / duration;
+  double plan_time_pick_lift = plan_time_pick + short_duration / duration;
+  double plan_time_pre_place =
+      plan_time_pick + (short_duration + long_duration) / duration;
+  double plan_time_place =
+      plan_time_pick + (2 * short_duration + long_duration) / duration;
+  double plan_time_place_lift = plan_time_place + short_duration / duration;
 
   for (double pitch_offset : pitch_offsets) {
     for (double yaw_offset : yaw_offsets) {
@@ -409,15 +418,20 @@ ComputeTrajectories(const WorldState& env_state,
                                  {{1.0, 1.0}});
         prog.AddLinearConstraint(prog.jerk() == zero_vector, {{1.0, 1.0}});
 
-        double plan_time_pre_pick = long_duration / duration;
-        double plan_time_pick = (long_duration + short_duration) / duration;
-        double plan_time_pick_lift = plan_time_pick + short_duration / duration;
-        double plan_time_pre_place =
-            plan_time_pick + (short_duration + long_duration) / duration;
-        double plan_time_place =
-            plan_time_pick + (2 * short_duration + long_duration) / duration;
-        double plan_time_place_lift =
-            plan_time_place + short_duration / duration;
+        // Full stop at pick.
+        prog.AddLinearConstraint(prog.velocity() == zero_vector,
+                                 {{plan_time_pick, plan_time_pick}});
+        prog.AddLinearConstraint(prog.acceleration() == zero_vector,
+                                 {{plan_time_pick, plan_time_pick}});
+        prog.AddLinearConstraint(prog.jerk() == zero_vector,
+                                 {{plan_time_pick, plan_time_pick}});
+        // Full stop at place.
+        prog.AddLinearConstraint(prog.velocity() == zero_vector,
+                                 {{plan_time_place, plan_time_place}});
+        prog.AddLinearConstraint(prog.acceleration() == zero_vector,
+                                 {{plan_time_place, plan_time_place}});
+        prog.AddLinearConstraint(prog.jerk() == zero_vector,
+                                 {{plan_time_place, plan_time_place}});
 
         double threshold_height = 0;
         const Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
@@ -529,12 +543,6 @@ ComputeTrajectories(const WorldState& env_state,
 
         {
           drake::log()->debug("Adding position constraint for pick.");
-          prog.AddLinearConstraint(prog.velocity() == zero_vector,
-                                   {{plan_time_pick, plan_time_pick}});
-          prog.AddLinearConstraint(prog.acceleration() == zero_vector,
-                                   {{plan_time_pick, plan_time_pick}});
-          prog.AddLinearConstraint(prog.jerk() == zero_vector,
-                                   {{plan_time_pick, plan_time_pick}});
 
           // The grasp frame should hit the target pose at the end of aproach.
           position_constraints.emplace_back(new WorldPositionConstraint(
@@ -713,12 +721,6 @@ ComputeTrajectories(const WorldState& env_state,
         // Add a full stop at the place pose.
         {
           drake::log()->debug("Adding position constraint for place.");
-          prog.AddLinearConstraint(prog.velocity() == zero_vector,
-                                   {{plan_time_place, plan_time_place}});
-          prog.AddLinearConstraint(prog.acceleration() == zero_vector,
-                                   {{plan_time_place, plan_time_place}});
-          prog.AddLinearConstraint(prog.jerk() == zero_vector,
-                                   {{plan_time_place, plan_time_place}});
 
           position_constraints.emplace_back(new WorldPositionConstraint(
               robot, grasp_frame_index, end_effector_points,
@@ -838,7 +840,6 @@ ComputeTrajectories(const WorldState& env_state,
           }
         }
 
-        // Add a full stop at the final (lift-from-place) pose.
         if (true) {
           drake::log()->debug(
               "Adding height threshold constraint for lift-from-place");
@@ -864,7 +865,7 @@ ComputeTrajectories(const WorldState& env_state,
               std::make_shared<SingleTimeKinematicConstraintWrapper>(
                   position_in_frame_constraints.back().get(),
                   cache_helpers.back().get()),
-              {{plan_time_pre_pick, plan_time_pre_pick}});
+              {{plan_time_place_lift, plan_time_place_lift}});
 
           bool done{false};
           bool success{false};
@@ -884,163 +885,6 @@ ComputeTrajectories(const WorldState& env_state,
           if (!success) {
             return nullopt;
           }
-        }
-
-        continue;
-
-        Isometry3<double> X_WG_initial = robot->relativeTransform(
-            kinematics_cache, world_idx, grasp_frame_index);
-        for (int i = 0; i < num_states; ++i) {
-          const PickAndPlaceState state{states[i]};
-          const double& start_time = t(i);
-          const double& end_time = t(i + 1);
-          const Vector2<double> intermediate_tspan{start_time, end_time};
-          const Vector2<double> final_tspan{end_time, end_time};
-
-          const std::array<double, 2> intermediate_plan_interval{
-              {start_time / duration, end_time / duration}};
-          const std::array<double, 2> final_plan_interval{
-              {end_time / duration, end_time / duration}};
-
-          // Extract desired position and orientation of end effector at the
-          // given state.
-          const Isometry3<double>& X_WG_final = X_WG_desired->at(state);
-          const Vector3<double>& r_WG_final = X_WG_final.translation();
-          const Quaternion<double>& quat_WG_final{X_WG_final.rotation()};
-          const Vector3<double>& r_WG_initial = X_WG_initial.translation();
-          // const Quaternion<double>& quat_WG_initial{X_WG_initial.rotation()};
-
-          // Constrain the end-effector position and orientation at the end of
-          // this state.
-          position_constraints.emplace_back(new WorldPositionConstraint(
-              robot, grasp_frame_index, end_effector_points,
-              r_WG_final - position_tolerance, r_WG_final + position_tolerance,
-              final_tspan));
-          constraint_arrays.back().push_back(position_constraints.back().get());
-          cache_helpers.emplace_back(
-              new KinematicsCacheHelper<double>(robot->bodies));
-          prog.AddGenericPositionConstraint(
-              std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                  position_constraints.back().get(),
-                  cache_helpers.back().get()),
-              final_plan_interval);
-
-          orientation_constraints.emplace_back(new WorldQuatConstraint(
-              robot, grasp_frame_index,
-              Eigen::Vector4d(quat_WG_final.w(), quat_WG_final.x(),
-                              quat_WG_final.y(), quat_WG_final.z()),
-              orientation_tolerance, final_tspan));
-          constraint_arrays.back().push_back(
-              orientation_constraints.back().get());
-          cache_helpers.emplace_back(
-              new KinematicsCacheHelper<double>(robot->bodies));
-          prog.AddGenericPositionConstraint(
-              std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                  orientation_constraints.back().get(),
-                  cache_helpers.back().get()),
-              final_plan_interval);
-
-          prog.AddLinearConstraint(prog.velocity() == zero_vector,
-                                   final_plan_interval);
-          prog.AddLinearConstraint(prog.acceleration() == zero_vector,
-                                   final_plan_interval);
-          prog.AddLinearConstraint(prog.jerk() == zero_vector,
-                                   final_plan_interval);
-
-          double intermediate_orientation_tolerance = orientation_tolerance;
-          Vector3<double> intermediate_position_tolerance =
-              10 * position_tolerance;
-          if (state == PickAndPlaceState::kApproachPlacePregrasp ||
-              (state == PickAndPlaceState::kApproachPickPregrasp &&
-               (r_WG_final - r_WG_initial).norm() > 0.2)) {
-            intermediate_orientation_tolerance = 30 * M_PI / 180.0;
-            intermediate_position_tolerance = Vector3<double>::Constant(0.2);
-          }
-
-          // Construct a frame whose origin is coincident with that of
-          // X_WG_initial and whose X-axis points towards the origin of
-          // X_WG_final.
-          auto X_WC =
-              Isometry3<double>::Identity();  // Constraint frame to World
-          X_WC.linear() = math::ComputeBasisFromAxis<double>(
-              0, X_WG_final.translation() - X_WG_initial.translation());
-          X_WC.translation() = X_WG_initial.translation();
-
-          Vector3<double> lb{-intermediate_position_tolerance};
-          Vector3<double> ub{intermediate_position_tolerance};
-          ub.x() +=
-              (X_WG_final.translation() - X_WG_initial.translation()).norm();
-          position_in_frame_constraints.emplace_back(
-              new WorldPositionInFrameConstraint(
-                  robot, grasp_frame_index, end_effector_points, X_WC.matrix(),
-                  lb, ub, intermediate_tspan));
-          constraint_arrays.back().push_back(
-              position_in_frame_constraints.back().get());
-          cache_helpers.emplace_back(
-              new KinematicsCacheHelper<double>(robot->bodies));
-          prog.AddGenericPositionConstraint(
-              std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                  position_in_frame_constraints.back().get(),
-                  cache_helpers.back().get()),
-              intermediate_plan_interval);
-
-          Eigen::Matrix<double, 3, 2> line_ends_W;
-          line_ends_W << r_WG_initial, r_WG_final;
-          double dist_lb{0.0};
-          double dist_ub{intermediate_position_tolerance.minCoeff()};
-          point_to_line_seg_constraints.emplace_back(
-              new Point2LineSegDistConstraint(
-                  robot, grasp_frame_index, end_effector_points, world_idx,
-                  line_ends_W, dist_lb, dist_ub, intermediate_tspan));
-          // cache_helpers.emplace_back(new
-          // KinematicsCacheHelper<double>(robot->bodies));
-          // prog.AddGenericPositionConstraint(
-          // std::make_shared<SingleTimeKinematicConstraintWrapper>(
-          // point_to_line_seg_constraints.back().get(),
-          // cache_helpers.back().get()),
-          // intermediate_plan_interval);
-
-          // If the intial and final end-effector orientations are close to each
-          // other (to within the orientation tolerance), fix the orientation
-          // for all via points. Otherwise, only allow the end-effector to
-          // rotate about the axis defining the rotation between the initial and
-          // final orientations.
-          // Find axis-angle representation of the rotation from X_WG_initial to
-          // X_WG_final.
-          Isometry3<double> X_WG_delta = X_WG_final.inverse() * X_WG_initial;
-          Eigen::AngleAxis<double> aaxis{X_WG_delta.linear()};
-          Vector3<double> axis_E{aaxis.axis()};
-          Vector3<double> dir_W{X_WG_initial.linear() * axis_E};
-          // Quaternion<double> quat_WG_intermediate =
-          // quat_WG_initial.slerp(0.5, quat_WG_final);
-          if (std::abs(aaxis.angle()) < orientation_tolerance) {
-            orientation_constraints.emplace_back(new WorldQuatConstraint(
-                robot, grasp_frame_index,
-                Eigen::Vector4d(quat_WG_final.w(), quat_WG_final.x(),
-                                quat_WG_final.y(), quat_WG_final.z()),
-                intermediate_orientation_tolerance, intermediate_tspan));
-            constraint_arrays.back().push_back(
-                orientation_constraints.back().get());
-            cache_helpers.emplace_back(
-                new KinematicsCacheHelper<double>(robot->bodies));
-            prog.AddGenericPositionConstraint(
-                std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                    orientation_constraints.back().get(),
-                    cache_helpers.back().get()),
-                intermediate_plan_interval);
-          } else {
-            gaze_dir_constraints.emplace_back(new WorldGazeDirConstraint(
-                robot, grasp_frame_index, axis_E, dir_W, orientation_tolerance,
-                intermediate_tspan));
-            prog.AddGenericPositionConstraint(
-                std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                    gaze_dir_constraints.back().get(),
-                    cache_helpers.back().get()),
-                intermediate_plan_interval);
-          }
-
-          // Reset X_WG_initial for the next iteration.
-          X_WG_initial = X_WG_final;
         }
       }
     }
