@@ -435,6 +435,89 @@ ComputeTrajectories(const WorldState& env_state,
       prog.AddLinearConstraint(prog.jerk() == zero_vector,
                                {{plan_time_place, plan_time_place}});
 
+      const Isometry3<double> X_WG_pick =
+          X_WG_desired->at(PickAndPlaceState::kApproachPick);
+      const Vector3<double>& r_WG_pick = X_WG_pick.translation();
+      const Quaternion<double>& quat_WG_pick{X_WG_pick.rotation()};
+
+      const Isometry3<double> X_WG_place =
+          X_WG_desired->at(PickAndPlaceState::kApproachPlace);
+      const Vector3<double>& r_WG_place = X_WG_place.translation();
+      const Quaternion<double>& quat_WG_place{X_WG_place.rotation()};
+
+      // Add a full stop at the pick pose
+      {
+        drake::log()->debug("Adding position constraint for pick.");
+
+        // The grasp frame should hit the target pose at the end of aproach.
+        position_constraints.emplace_back(new WorldPositionConstraint(
+            robot, grasp_frame_index, end_effector_points,
+            r_WG_pick - position_tolerance, r_WG_pick + position_tolerance,
+            {plan_time_pick, plan_time_pick}));
+        constraint_arrays.back().push_back(position_constraints.back().get());
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                position_constraints.back().get(), cache_helpers.back().get()),
+            {{plan_time_pick, plan_time_pick}});
+
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      // Add a full stop at the place pose.
+      {
+        drake::log()->debug("Adding position constraint for place.");
+
+        position_constraints.emplace_back(new WorldPositionConstraint(
+            robot, grasp_frame_index, end_effector_points,
+            r_WG_place - position_tolerance, r_WG_place + position_tolerance,
+            {plan_time_place, plan_time_place}));
+        constraint_arrays.back().push_back(position_constraints.back().get());
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                position_constraints.back().get(), cache_helpers.back().get()),
+            {{plan_time_place, plan_time_place}});
+
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
       if (true) {
         drake::log()->debug("Adding height threshold constraint for pre-pick");
 
@@ -460,48 +543,6 @@ ComputeTrajectories(const WorldState& env_state,
                 position_in_frame_constraints.back().get(),
                 cache_helpers.back().get()),
             {{plan_time_pre_pick, plan_time_pre_pick}});
-
-        bool done{false};
-        bool success{false};
-        while (!done) {
-          solvers::SolutionResult solution_result =
-              prog.Solve(false /*always_update_curve*/);
-          drake::log()->info("Solution result: {}", solution_result);
-          if (solution_result == solvers::SolutionResult::kSolutionFound) {
-            done = !prog.UpdateGenericConstraints();
-            // done = true;
-            success = done;
-          } else {
-            done = !prog.AddKnots();
-            success = false;
-          }
-        }
-        if (!success) {
-          return nullopt;
-        }
-      }
-
-      // Add a full stop at the pick pose
-      const Isometry3<double> X_WG_pick =
-          X_WG_desired->at(PickAndPlaceState::kApproachPick);
-      const Vector3<double>& r_WG_pick = X_WG_pick.translation();
-      const Quaternion<double>& quat_WG_pick{X_WG_pick.rotation()};
-
-      {
-        drake::log()->debug("Adding position constraint for pick.");
-
-        // The grasp frame should hit the target pose at the end of aproach.
-        position_constraints.emplace_back(new WorldPositionConstraint(
-            robot, grasp_frame_index, end_effector_points,
-            r_WG_pick - position_tolerance, r_WG_pick + position_tolerance,
-            {plan_time_pick, plan_time_pick}));
-        constraint_arrays.back().push_back(position_constraints.back().get());
-        cache_helpers.emplace_back(
-            new KinematicsCacheHelper<double>(robot->bodies));
-        prog.AddGenericPositionConstraint(
-            std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                position_constraints.back().get(), cache_helpers.back().get()),
-            {{plan_time_pick, plan_time_pick}});
 
         bool done{false};
         bool success{false};
@@ -636,47 +677,6 @@ ComputeTrajectories(const WorldState& env_state,
                 position_in_frame_constraints.back().get(),
                 cache_helpers.back().get()),
             {{plan_time_pick_lift, plan_time_pre_place}});
-
-        bool done{false};
-        bool success{false};
-        while (!done) {
-          solvers::SolutionResult solution_result =
-              prog.Solve(false /*always_update_curve*/);
-          drake::log()->info("Solution result: {}", solution_result);
-          if (solution_result == solvers::SolutionResult::kSolutionFound) {
-            done = !prog.UpdateGenericConstraints();
-            // done = true;
-            success = done;
-          } else {
-            done = !prog.AddKnots();
-            success = false;
-          }
-        }
-        if (!success) {
-          return nullopt;
-        }
-      }
-
-      const Isometry3<double> X_WG_place =
-          X_WG_desired->at(PickAndPlaceState::kApproachPlace);
-      const Vector3<double>& r_WG_place = X_WG_place.translation();
-      const Quaternion<double>& quat_WG_place{X_WG_place.rotation()};
-
-      // Add a full stop at the place pose.
-      {
-        drake::log()->debug("Adding position constraint for place.");
-
-        position_constraints.emplace_back(new WorldPositionConstraint(
-            robot, grasp_frame_index, end_effector_points,
-            r_WG_place - position_tolerance, r_WG_place + position_tolerance,
-            {plan_time_place, plan_time_place}));
-        constraint_arrays.back().push_back(position_constraints.back().get());
-        cache_helpers.emplace_back(
-            new KinematicsCacheHelper<double>(robot->bodies));
-        prog.AddGenericPositionConstraint(
-            std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                position_constraints.back().get(), cache_helpers.back().get()),
-            {{plan_time_place, plan_time_place}});
 
         bool done{false};
         bool success{false};
