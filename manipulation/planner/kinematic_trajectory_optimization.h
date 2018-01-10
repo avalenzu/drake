@@ -92,6 +92,8 @@ class KinematicTrajectoryOptimization {
     initial_num_evaluation_points_ = initial_num_evaluation_points;
   }
 
+  void ResetPositionCurve(BsplineCurve<double> position_curve);
+
   bool AreVariablesPresentInProgram(symbolic::Variables vars) const;
 
   void AddGenericPositionConstraint(

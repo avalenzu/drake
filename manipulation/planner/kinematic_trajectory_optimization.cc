@@ -356,7 +356,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
   }
   for (int i = 0; i < num_control_points; ++i) {
     prog_->SetInitialGuess(control_point_variables_[i],
-        position_curve_.control_points()[i]);
+                           position_curve_.control_points()[i]);
   }
 
   solvers::SolutionResult result = prog_->Solve();
@@ -393,8 +393,10 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
         const auto constraint_evaluation_times = VectorX<double>::LinSpaced(
             constraint.num_evaluation_points, constraint.plan_interval.front(),
             constraint.plan_interval.back());
-        drake::log()->info("Adding generic position constraint at {} more points ({} total).",
-            constraint.num_evaluation_points - 1, 2 * constraint.num_evaluation_points - 1);
+        drake::log()->info(
+            "Adding generic position constraint at {} more points ({} total).",
+            constraint.num_evaluation_points - 1,
+            2 * constraint.num_evaluation_points - 1);
         for (int j = 0; j < constraint.num_evaluation_points - 1; ++j) {
           double evaluation_time = 0.5 * (constraint_evaluation_times(j) +
                                           constraint_evaluation_times(j + 1));
@@ -443,6 +445,12 @@ KinematicTrajectoryOptimization::GetPositionSolution(
       BsplineBasis(position_curve_.order(), scaled_knots),
       position_curve_.control_points()};
   return *scaled_curve.piecwise_polynomial();
+}
+
+void KinematicTrajectoryOptimization::ResetPositionCurve(BsplineCurve<double> position_curve) {
+  position_curve_ = position_curve;
+  is_program_empty_ = true;
+  prog_ = std::make_unique<MathematicalProgram>();
 }
 
 }  // namespace planner
