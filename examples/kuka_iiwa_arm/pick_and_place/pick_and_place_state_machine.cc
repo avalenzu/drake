@@ -482,6 +482,46 @@ ComputeTrajectories(const WorldState& env_state,
         }
       }
 
+      // The orientation should remain fixed during the final approach and the
+      // lift.
+      {
+        drake::log()->debug(
+            "Adding orientation constraint for pick approach/lift");
+        orientation_constraints.emplace_back(new WorldQuatConstraint(
+            robot, grasp_frame_index,
+            Eigen::Vector4d(quat_WG_pick.w(), quat_WG_pick.x(),
+                            quat_WG_pick.y(), quat_WG_pick.z()),
+            orientation_tolerance, {plan_time_pick, plan_time_pick}));
+        constraint_arrays.back().push_back(
+            orientation_constraints.back().get());
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                orientation_constraints.back().get(),
+                cache_helpers.back().get()),
+            {{plan_time_pre_pick, plan_time_pick_lift}});
+
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
       // Add a full stop at the place pose.
       {
         drake::log()->debug("Adding position constraint for place.");
@@ -497,6 +537,45 @@ ComputeTrajectories(const WorldState& env_state,
             std::make_shared<SingleTimeKinematicConstraintWrapper>(
                 position_constraints.back().get(), cache_helpers.back().get()),
             {{plan_time_place, plan_time_place}});
+
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      if (true) {
+        drake::log()->debug(
+            "Adding orientation constraint for place approach/lift");
+        // The orientation should remain fixed during the final approach.
+        orientation_constraints.emplace_back(new WorldQuatConstraint(
+            robot, grasp_frame_index,
+            Eigen::Vector4d(quat_WG_place.w(), quat_WG_place.x(),
+                            quat_WG_place.y(), quat_WG_place.z()),
+            orientation_tolerance, {plan_time_place, plan_time_place}));
+        constraint_arrays.back().push_back(
+            orientation_constraints.back().get());
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                orientation_constraints.back().get(),
+                cache_helpers.back().get()),
+            {{plan_time_pre_place, plan_time_place_lift}});
 
         bool done{false};
         bool success{false};
@@ -609,46 +688,6 @@ ComputeTrajectories(const WorldState& env_state,
         }
       }
 
-      // The orientation should remain fixed during the final approach and the
-      // lift.
-      {
-        drake::log()->debug(
-            "Adding orientation constraint for place approach/lift");
-        orientation_constraints.emplace_back(new WorldQuatConstraint(
-            robot, grasp_frame_index,
-            Eigen::Vector4d(quat_WG_pick.w(), quat_WG_pick.x(),
-                            quat_WG_pick.y(), quat_WG_pick.z()),
-            orientation_tolerance, {plan_time_pick, plan_time_pick}));
-        constraint_arrays.back().push_back(
-            orientation_constraints.back().get());
-        cache_helpers.emplace_back(
-            new KinematicsCacheHelper<double>(robot->bodies));
-        prog.AddGenericPositionConstraint(
-            std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                orientation_constraints.back().get(),
-                cache_helpers.back().get()),
-            {{plan_time_pre_pick, plan_time_pick_lift}});
-
-        bool done{false};
-        bool success{false};
-        while (!done) {
-          solvers::SolutionResult solution_result =
-              prog.Solve(false /*always_update_curve*/);
-          drake::log()->info("Solution result: {}", solution_result);
-          if (solution_result == solvers::SolutionResult::kSolutionFound) {
-            done = !prog.UpdateGenericConstraints();
-            // done = true;
-            success = done;
-          } else {
-            done = !prog.AddKnots();
-            success = false;
-          }
-        }
-        if (!success) {
-          return nullopt;
-        }
-      }
-
       // The grasp frame should stay above a safety threshold during the
       // move.
       if (true) {
@@ -720,45 +759,6 @@ ComputeTrajectories(const WorldState& env_state,
         prog.AddGenericPositionConstraint(
             std::make_shared<SingleTimeKinematicConstraintWrapper>(
                 position_in_frame_constraints.back().get(),
-                cache_helpers.back().get()),
-            {{plan_time_pre_place, plan_time_place_lift}});
-
-        bool done{false};
-        bool success{false};
-        while (!done) {
-          solvers::SolutionResult solution_result =
-              prog.Solve(false /*always_update_curve*/);
-          drake::log()->info("Solution result: {}", solution_result);
-          if (solution_result == solvers::SolutionResult::kSolutionFound) {
-            done = !prog.UpdateGenericConstraints();
-            // done = true;
-            success = done;
-          } else {
-            done = !prog.AddKnots();
-            success = false;
-          }
-        }
-        if (!success) {
-          return nullopt;
-        }
-      }
-
-      if (true) {
-        drake::log()->debug(
-            "Adding orientation constraint for place approach/lift");
-        // The orientation should remain fixed during the final approach.
-        orientation_constraints.emplace_back(new WorldQuatConstraint(
-            robot, grasp_frame_index,
-            Eigen::Vector4d(quat_WG_place.w(), quat_WG_place.x(),
-                            quat_WG_place.y(), quat_WG_place.z()),
-            orientation_tolerance, {plan_time_place, plan_time_place}));
-        constraint_arrays.back().push_back(
-            orientation_constraints.back().get());
-        cache_helpers.emplace_back(
-            new KinematicsCacheHelper<double>(robot->bodies));
-        prog.AddGenericPositionConstraint(
-            std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                orientation_constraints.back().get(),
                 cache_helpers.back().get()),
             {{plan_time_pre_place, plan_time_place_lift}});
 
