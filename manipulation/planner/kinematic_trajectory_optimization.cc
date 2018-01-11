@@ -374,7 +374,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     drake::log()->debug("Num control point variables: {}",
                         control_point_variables_.size());
     for (const auto& control_point_variable : control_point_variables_) {
-      drake::log()->debug(
+      drake::log()->trace(
           "control point: {}",
           prog_->GetSolution(control_point_variable).transpose());
       new_control_points.push_back(prog_->GetSolution(control_point_variable));
@@ -394,7 +394,7 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
         constraint.plan_interval.back())};
     for (int i = 0; i < num_evaluation_points_; ++i) {
       if (!constraint.constraint->CheckSatisfied(position_curve_.value(t(i)),
-                                                 1e-3)) {
+                                                 5e-3)) {
         const auto constraint_evaluation_times = VectorX<double>::LinSpaced(
             constraint.num_evaluation_points, constraint.plan_interval.front(),
             constraint.plan_interval.back());
