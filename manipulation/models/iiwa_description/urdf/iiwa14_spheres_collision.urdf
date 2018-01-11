@@ -375,21 +375,21 @@
       </geometry>
     </visual>
     <!--body-->
-    <collision>
+    <collision group="gripper_finger">
       <origin rpy="0 0 0" xyz="-0.049133 0 0"/>
       <geometry>
         <box size="0.0725 0.146 0.049521"/>
       </geometry>
     </collision>
     <!--left finger-->
-    <collision>
+    <collision group="gripper_finger">
       <origin rpy="0 0 0" xyz="0.029 -0.063 0"/>
       <geometry>
         <box size="0.083 0.016 0.02"/>
       </geometry>
     </collision>
     <!--right finger-->
-    <collision>
+    <collision group="gripper_finger">
       <origin rpy="0 0 0" xyz="0.029 0.063 0"/>
       <geometry>
         <box size="0.083 0.016 0.02"/>

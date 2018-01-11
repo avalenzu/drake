@@ -196,6 +196,12 @@ pick_and_place::PlannerConfiguration DoParsePlannerConfiguration(
           configuration.robot(planner_configuration.robot_index));
   planner_configuration.end_effector_name = end_effector_name;
 
+  // Store target model path.
+  planner_configuration.target_model =
+      GetPlanningModelPathOrThrow(
+          configuration,
+          configuration.object(planner_configuration.target_index));
+
   // Extract table model paths
   ExtractPlanningModelPathsForModels(configuration, configuration.table(),
                                      &planner_configuration.table_models);

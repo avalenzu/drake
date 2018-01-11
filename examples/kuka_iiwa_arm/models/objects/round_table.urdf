@@ -14,9 +14,9 @@
         <color rgba="0.9 0.9 0.9 1.0"/>
       </material>
     </visual>
-    <collision>
+    <collision group="tables">
       <geometry>
-        <cylinder length="0.017" radius="0.30" />
+        <box size="0.6 0.6 0.017"/>
       </geometry>
     </collision>
    </link>

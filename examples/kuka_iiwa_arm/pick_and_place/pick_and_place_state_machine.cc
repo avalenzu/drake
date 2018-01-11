@@ -48,7 +48,9 @@ void CloseGripper(const WorldState& env_state, WsgAction* wsg_act,
 std::unique_ptr<RigidBodyTree<double>> BuildTree(
     const pick_and_place::PlannerConfiguration& configuration,
     const optional<WorldState>& env_state = nullopt,
-    bool add_grasp_frame = false) {
+    bool add_grasp_frame = false,
+    const optional<std::pair<Isometry3<double>, Isometry3<double>>>&
+        X_WO_initial_and_final = nullopt) {
   WorldSimTreeBuilder<double> tree_builder;
   tree_builder.StoreModel("iiwa", configuration.absolute_model_path());
   auto previous_log_level = drake::log()->level();
@@ -56,18 +58,33 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree(
   tree_builder.AddFixedModelInstance("iiwa", Vector3<double>::Zero());
 
   if (env_state) {
+    Isometry3<double> X_WS{env_state->get_iiwa_base().inverse()};
     for (int i = 0; i < configuration.num_tables; ++i) {
       const std::string table_tag{"table_" + std::to_string(i)};
       tree_builder.StoreDrakeModel(table_tag, configuration.table_models[i]);
-      Isometry3<double> X_WS{env_state->get_iiwa_base().inverse()};
       const Isometry3<double> X_WT = X_WS * env_state->get_table_poses()[i];
       tree_builder.AddFixedModelInstance(
           table_tag, X_WT.translation(),
           drake::math::rotmat2rpy(X_WT.linear()));
     }
+    if (X_WO_initial_and_final) {
+      tree_builder.StoreDrakeModel("target", configuration.target_model);
+      tree_builder.AddFixedModelInstance(
+          "target", X_WO_initial_and_final->first.translation(),
+          drake::math::rotmat2rpy(X_WO_initial_and_final->first.linear()));
+      tree_builder.AddFixedModelInstance(
+          "target", X_WO_initial_and_final->second.translation(),
+          drake::math::rotmat2rpy(X_WO_initial_and_final->second.linear()));
+    }
   }
 
   std::unique_ptr<RigidBodyTree<double>> robot{tree_builder.Build()};
+
+  robot->removeCollisionGroupsIf([&](const std::string& group_name) {
+    return group_name != "gripper_finger" && group_name != "target" &&
+           group_name != "tables";
+  });
+
   if (add_grasp_frame) {
     // Add the grasp frame as a RigidBody. This allows it to be used in IK
     // constraints.
@@ -216,7 +233,7 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     X_WOi.rotate(AngleAxis<double>(yaw_offset, Vector3<double>::UnitZ()));
 
     // A conservative estimate of the fingers' length.
-    const double finger_length = 0.07;
+    const double finger_length = 0.05;
 
     // The grasp frame (G) should be at the center of the object if possible,
     // but no further than finger_length*cos(pitch_offset) from the back edge of
@@ -224,9 +241,8 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0,
-                         -0.5 * env_state.get_object_dimensions().x() +
-                             finger_length * std::cos(pitch_offset));
+        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
+                                finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
