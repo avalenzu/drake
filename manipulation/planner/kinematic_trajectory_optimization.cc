@@ -400,8 +400,7 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
       for (int i = 0; i < num_evaluation_points_; ++i) {
         bool needs_check = false;
         if (constraint.validation_constraint) {
-          drake::log()->debug("Using validation constraint!");
-          needs_check = constraint.validation_constraint->CheckSatisfied(
+          needs_check = !constraint.validation_constraint->CheckSatisfied(
               position_curve_.value(t(i)));
         } else {
           needs_check = !constraint.constraint->CheckSatisfied(
