@@ -376,7 +376,7 @@ solvers::SolutionResult KinematicTrajectoryOptimization::Solve(
     drake::log()->debug("Num control point variables: {}",
                         control_point_variables_.size());
     for (const auto& control_point_variable : control_point_variables_) {
-      drake::log()->debug(
+      drake::log()->trace(
           "control point: {}",
           prog_->GetSolution(control_point_variable).transpose());
       new_control_points.push_back(prog_->GetSolution(control_point_variable));
