@@ -224,9 +224,8 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0,
-                         -0.5 * env_state.get_object_dimensions().x() +
-                             finger_length * std::cos(pitch_offset));
+        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
+                                finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -317,6 +316,8 @@ ComputeTrajectories(const WorldState& env_state,
   for (int i = 0; i < num_states; ++i) {
     duration += per_state_durations.at(states[i]);
   }
+  // Add segment for final time.
+  duration += short_duration;
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
   const int spline_order{5};
@@ -355,7 +356,18 @@ ComputeTrajectories(const WorldState& env_state,
   const double yaw_offset =
       (r_WO.dot(X_WO.linear().matrix().col(0)) > 0) ? 0 : M_PI;
 
-  MinDistanceConstraint collision_avoidance_constraint(robot, 0.05, {}, {});
+  MinDistanceConstraint tight_collision_avoidance_constraint(
+      robot, 0.5 * env_state.get_object_dimensions().z(), {}, {});
+  AllBodiesClosestDistanceConstraint
+      tight_collision_avoidance_validation_constraint(
+          robot, 0.4 * env_state.get_object_dimensions().z(),
+          std::numeric_limits<double>::infinity(), {}, {});
+  MinDistanceConstraint loose_collision_avoidance_constraint(
+      robot, 1.0 * env_state.get_object_dimensions().z(), {}, {});
+  AllBodiesClosestDistanceConstraint
+      loose_collision_avoidance_validation_constraint(
+          robot, 0.8 * env_state.get_object_dimensions().z(),
+          std::numeric_limits<double>::infinity(), {}, {});
 
   for (double pitch_offset : pitch_offsets) {
     if (auto X_WG_desired =
@@ -453,14 +465,6 @@ ComputeTrajectories(const WorldState& env_state,
                                {{plan_time_place, plan_time_place}});
       prog.AddLinearConstraint(prog.jerk() == zero_vector,
                                {{plan_time_place, plan_time_place}});
-
-      // Add collision avoidance constraint for whole trajectory.
-      cache_helpers.emplace_back(
-          new KinematicsCacheHelper<double>(robot->bodies));
-      prog.AddGenericPositionConstraint(
-          std::make_shared<SingleTimeKinematicConstraintWrapper>(
-              &collision_avoidance_constraint, cache_helpers.back().get()),
-          {{0.0, 1.0}});
 
       const Isometry3<double> X_WG_pick =
           X_WG_desired->at(PickAndPlaceState::kApproachPick);
@@ -838,6 +842,160 @@ ComputeTrajectories(const WorldState& env_state,
 
         bool done{false};
         bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      // Add collision avoidance constraint for whole trajectory.
+      cache_helpers.emplace_back(
+          new KinematicsCacheHelper<double>(robot->bodies));
+      prog.AddGenericPositionConstraint(
+          std::make_shared<SingleTimeKinematicConstraintWrapper>(
+              &loose_collision_avoidance_constraint,
+              cache_helpers.back().get()),
+          {{0.0, plan_time_pre_pick}},
+          std::make_shared<SingleTimeKinematicConstraintWrapper>(
+              &loose_collision_avoidance_validation_constraint,
+              cache_helpers.back().get()));
+      bool done{false};
+      bool success{false};
+      while (!done) {
+        solvers::SolutionResult solution_result =
+            prog.Solve(false /*always_update_curve*/);
+        drake::log()->info("Solution result: {}", solution_result);
+        if (solution_result == solvers::SolutionResult::kSolutionFound) {
+          done = !prog.UpdateGenericConstraints();
+          // done = true;
+          success = done;
+        } else {
+          done = !prog.AddKnots();
+          success = false;
+        }
+      }
+      if (!success) {
+        return nullopt;
+      }
+
+      if (true) {
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &tight_collision_avoidance_constraint,
+                cache_helpers.back().get()),
+            {{plan_time_pre_pick, plan_time_pick_lift}},
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &tight_collision_avoidance_validation_constraint,
+                cache_helpers.back().get()));
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      if (true) {
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &loose_collision_avoidance_constraint,
+                cache_helpers.back().get()),
+            {{plan_time_pick_lift, plan_time_pre_place}},
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &loose_collision_avoidance_validation_constraint,
+                cache_helpers.back().get()));
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      if (true) {
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &tight_collision_avoidance_constraint,
+                cache_helpers.back().get()),
+            {{plan_time_pre_place, plan_time_place_lift}},
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &tight_collision_avoidance_validation_constraint,
+                cache_helpers.back().get()));
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      if (true) {
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &loose_collision_avoidance_constraint,
+                cache_helpers.back().get()),
+            {{plan_time_place_lift, 1.0}},
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                &loose_collision_avoidance_validation_constraint,
+                cache_helpers.back().get()));
+        bool done{true};
+        bool success{true};
         while (!done) {
           solvers::SolutionResult solution_result =
               prog.Solve(false /*always_update_curve*/);
