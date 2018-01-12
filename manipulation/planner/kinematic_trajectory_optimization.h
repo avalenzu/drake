@@ -102,7 +102,8 @@ class KinematicTrajectoryOptimization {
 
   void AddGenericPositionConstraint(
       const std::shared_ptr<solvers::Constraint>& constraint,
-      const std::array<double, 2>& plan_interval);
+      const std::array<double, 2>& plan_interval,
+      const std::shared_ptr<solvers::Constraint>& validation_constraint = nullptr);
 
   void AddLinearConstraint(const symbolic::Formula& f,
                            const std::array<double, 2>& plan_interval);
@@ -137,6 +138,7 @@ class KinematicTrajectoryOptimization {
   struct ConstraintWrapper {
     std::shared_ptr<solvers::Constraint> constraint;
     std::array<double, 2> plan_interval;
+    std::shared_ptr<solvers::Constraint> validation_constraint;
     int num_evaluation_points{2};
   };
 

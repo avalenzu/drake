@@ -98,10 +98,12 @@ KinematicTrajectoryOptimization::KinematicTrajectoryOptimization(
 
 void KinematicTrajectoryOptimization::AddGenericPositionConstraint(
     const std::shared_ptr<solvers::Constraint>& constraint,
-    const std::array<double, 2>& plan_interval) {
+    const std::array<double, 2>& plan_interval,
+    const std::shared_ptr<solvers::Constraint>& validation_constraint) {
   // Add the constraint to the vector in case we need to re-build later.
-  generic_position_constraints_.push_back(ConstraintWrapper(
-      {constraint, plan_interval, initial_num_evaluation_points_}));
+  generic_position_constraints_.push_back(
+      ConstraintWrapper({constraint, plan_interval, validation_constraint,
+                         initial_num_evaluation_points_}));
   AddGenericPositionConstraintToProgram(generic_position_constraints_.back(),
                                         prog_.get());
   is_program_empty_ = false;
@@ -392,26 +394,40 @@ bool KinematicTrajectoryOptimization::UpdateGenericConstraints() {
     const VectorX<double> t{VectorX<double>::LinSpaced(
         num_evaluation_points_, constraint.plan_interval.front(),
         constraint.plan_interval.back())};
-    for (int i = 0; i < num_evaluation_points_; ++i) {
-      if (!constraint.constraint->CheckSatisfied(position_curve_.value(t(i)),
-                                                 1e-3)) {
-        const auto constraint_evaluation_times = VectorX<double>::LinSpaced(
-            constraint.num_evaluation_points, constraint.plan_interval.front(),
-            constraint.plan_interval.back());
-        drake::log()->info(
-            "Adding generic position constraint at {} more points ({} total).",
-            constraint.num_evaluation_points - 1,
-            2 * constraint.num_evaluation_points - 1);
-        for (int j = 0; j < constraint.num_evaluation_points - 1; ++j) {
-          double evaluation_time = 0.5 * (constraint_evaluation_times(j) +
-                                          constraint_evaluation_times(j + 1));
-          AddPositionPointConstraintToProgram(constraint, evaluation_time,
-                                              prog_.get());
+    if ((constraint.plan_interval.back() - constraint.plan_interval.front()) /
+            (constraint.num_evaluation_points - 1) >
+        min_knot_resolution_) {
+      for (int i = 0; i < num_evaluation_points_; ++i) {
+        bool needs_check = false;
+        if (constraint.validation_constraint) {
+          drake::log()->debug("Using validation constraint!");
+          needs_check = constraint.validation_constraint->CheckSatisfied(
+              position_curve_.value(t(i)));
+        } else {
+          needs_check = !constraint.constraint->CheckSatisfied(
+              position_curve_.value(t(i)), 5e-3);
         }
-        constraint.num_evaluation_points +=
-            constraint.num_evaluation_points - 1;
-        constraints_have_been_modified = true;
-        break;
+        if (needs_check) {
+          const auto constraint_evaluation_times =
+              VectorX<double>::LinSpaced(constraint.num_evaluation_points,
+                                         constraint.plan_interval.front(),
+                                         constraint.plan_interval.back());
+          drake::log()->info(
+              "Adding generic position constraint at {} more points ({} "
+              "total).",
+              constraint.num_evaluation_points - 1,
+              2 * constraint.num_evaluation_points - 1);
+          for (int j = 0; j < constraint.num_evaluation_points - 1; ++j) {
+            double evaluation_time = 0.5 * (constraint_evaluation_times(j) +
+                                            constraint_evaluation_times(j + 1));
+            AddPositionPointConstraintToProgram(constraint, evaluation_time,
+                                                prog_.get());
+          }
+          constraint.num_evaluation_points +=
+              constraint.num_evaluation_points - 1;
+          constraints_have_been_modified = true;
+          break;
+        }
       }
     }
   }
