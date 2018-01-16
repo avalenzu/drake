@@ -49,6 +49,16 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "differential_inverse_kinematics_system",
+    srcs = ["differential_inverse_kinematics_system.cc"],
+    hdrs = ["differential_inverse_kinematics_system.h"],
+    deps = [
+        ":differential_inverse_kinematics",
+        "//drake/systems/framework:leaf_system",
+    ],
+)
+
 # === test/ ===
 
 drake_cc_googletest(
@@ -92,6 +102,19 @@ drake_cc_googletest(
     ],
     deps = [
         ":differential_inverse_kinematics",
+        "//drake/common/test_utilities:eigen_matrix_compare",
+        "//drake/manipulation/util:world_sim_tree_builder",
+    ],
+)
+
+drake_cc_googletest(
+    name = "differential_inverse_kinematics_system_test",
+    size = "medium",
+    data = [
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":differential_inverse_kinematics_system",
         "//drake/common/test_utilities:eigen_matrix_compare",
         "//drake/manipulation/util:world_sim_tree_builder",
     ],
