@@ -3,14 +3,15 @@
 namespace drake {
 namespace manipulation {
 namespace planner {
-optional<VectorX<double>> DifferentialInverseKinematics(
+
+optional<VectorX<double>> DoDifferentialInverseKinematics(
     const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
     double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
     const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
-    const std::pair<VectorX<double>, VectorX<double>>& v_bounds,
-    const VectorX<double>& unconstrained_dof_v_limit,
-    const Vector6<double>& gain_E) {
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
+    double unconstrained_dof_v_limit, const Vector6<double>& gain_E) {
   const int num_positions = robot.get_num_positions();
   DRAKE_DEMAND(q_nominal.size() == num_positions);
   DRAKE_DEMAND(dt > 0);
@@ -34,8 +35,7 @@ optional<VectorX<double>> DifferentialInverseKinematics(
 
   // Rotate the velocity into E frame.
   Eigen::MatrixXd J_WE_E =
-      R_EW *
-      robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
+      R_EW * robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
 
   for (int i = 0; i < 6; i++) {
     J_WE_E.row(i) = gain_E(i) * J_WE_E.row(i);
@@ -59,22 +59,24 @@ optional<VectorX<double>> DifferentialInverseKinematics(
   */
 
   // Add a small regularization.
-  auto posture_cost = prog.AddQuadraticCost(
-      1e-3 * identity_num_positions * dt * dt, 1e-3 * (cache.getQ() - q_nominal) * dt,
-      1e-3 * (cache.getQ() - q_nominal).squaredNorm(), v);
+  auto posture_cost =
+      prog.AddQuadraticCost(1e-3 * identity_num_positions * dt * dt,
+                            1e-3 * (cache.getQ() - q_nominal) * dt,
+                            1e-3 * (cache.getQ() - q_nominal).squaredNorm(), v);
 
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_WE_E, Eigen::ComputeFullV);
 
   // Add v constraint.
-  prog.AddBoundingBoxConstraint(v_bounds.first, v_bounds.second, v);
+  if (v_bounds) {
+    prog.AddBoundingBoxConstraint(v_bounds->first, v_bounds->second, v);
+  }
 
-  /*
   // Add vd constraint.
-  prog.AddLinearConstraint(identity_num_positions,
-                           vd_lower_ * dt + v_last,
-                           vd_upper_ * dt + v_last,
-                           v);
-  */
+  if (vd_bounds) {
+    prog.AddLinearConstraint(identity_num_positions,
+                             vd_bounds->first * dt + v_last,
+                             vd_bounds->second * dt + v_last, v);
+  }
 
   // Add constrained the unconstrained dof's velocity to be small, which is used
   // to fullfil the regularization cost.
@@ -83,7 +85,8 @@ optional<VectorX<double>> DifferentialInverseKinematics(
                            unconstrained_dof_v_limit, v);
 
   // Add q upper and lower joint limit.
-  prog.AddLinearConstraint(identity_num_positions * dt, q_bounds.first - cache.getQ(),
+  prog.AddLinearConstraint(identity_num_positions * dt,
+                           q_bounds.first - cache.getQ(),
                            q_bounds.second - cache.getQ(), v);
 
   // Do the collision constraints.
@@ -136,6 +139,41 @@ optional<VectorX<double>> DifferentialInverseKinematics(
   // std::cout << "posture_cost: " << cost(0) << "\n";
 
   return ret;
+}
+
+DifferentialInverseKinematics::DifferentialInverseKinematics(
+    std::unique_ptr<RigidBodyTree<double>> robot,
+    const std::string& end_effector_frame_name)
+    : robot_(std::move(robot)),
+      frame_E_(robot_->findFrame(end_effector_frame_name)),
+      q_nominal_(robot_->getZeroConfiguration()),
+      q_bounds_(robot_->joint_limit_min, robot_->joint_limit_max) {}
+
+void DifferentialInverseKinematics::SetJointVelocityLimits(
+      const std::pair<VectorX<double>, VectorX<double>>& v_bounds) {
+  DRAKE_DEMAND(v_bounds.first.size() == robot_->get_num_velocities());
+  DRAKE_DEMAND(v_bounds.second.size() == robot_->get_num_velocities());
+  DRAKE_DEMAND((v_bounds.second.array() >= v_bounds.first.array()).all());
+  v_bounds_ = v_bounds;
+}
+
+void DifferentialInverseKinematics::SetJointAccelerationLimits(
+      const std::pair<VectorX<double>, VectorX<double>>& vd_bounds) {
+  DRAKE_DEMAND(vd_bounds.first.size() == robot_->get_num_velocities());
+  DRAKE_DEMAND(vd_bounds.second.size() == robot_->get_num_velocities());
+  DRAKE_DEMAND((vd_bounds.second.array() >= vd_bounds.first.array()).all());
+  vd_bounds_ = vd_bounds;
+}
+
+
+optional<VectorX<double>> DifferentialInverseKinematics::ComputeJointVelocities(
+    const VectorX<double>& q, const VectorX<double>& v_last,
+    const Vector6<double>& V_WE, double dt) const {
+  KinematicsCache<double> cache = robot_->doKinematics(q);
+  return DoDifferentialInverseKinematics(
+      *robot_, cache, *frame_E_, V_WE, dt, q_nominal_,
+      v_last, q_bounds_, v_bounds_, vd_bounds_, unconstrained_dof_v_limit_,
+      gain_E_);
 }
 }  // namespace planner
 }  // namespace manipulation
