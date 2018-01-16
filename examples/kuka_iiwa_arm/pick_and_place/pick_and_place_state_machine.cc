@@ -224,8 +224,9 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
-                                finger_length * std::cos(pitch_offset));
+        std::min<double>(0,
+                         -0.5 * env_state.get_object_dimensions().x() +
+                             finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -316,13 +317,11 @@ ComputeTrajectories(const WorldState& env_state,
   for (int i = 0; i < num_states; ++i) {
     duration += per_state_durations.at(states[i]);
   }
-  // Add segment for final time.
-  duration += short_duration;
 
   // Construct a vector of KinematicTrajectoryOptimization objects.
   const int spline_order{5};
   int num_control_points{(2 * spline_order + 1)};
-  // int num_control_points{120};
+  //int num_control_points{60};
   std::vector<KinematicTrajectoryOptimization> programs;
   std::vector<std::unique_ptr<KinematicsCacheHelper<double>>> cache_helpers;
 
@@ -356,17 +355,24 @@ ComputeTrajectories(const WorldState& env_state,
   const double yaw_offset =
       (r_WO.dot(X_WO.linear().matrix().col(0)) > 0) ? 0 : M_PI;
 
-  MinDistanceConstraint tight_collision_avoidance_constraint(
-      robot, 0.5 * env_state.get_object_dimensions().z(), {}, {});
+  // MinDistanceConstraint tight_collision_avoidance_constraint(
+  // robot, 0.5 * env_state.get_object_dimensions().z(), {}, {});
+  AllBodiesClosestDistanceConstraint tight_collision_avoidance_constraint(
+      robot, 0.5 * env_state.get_object_dimensions().z(),
+      std::numeric_limits<double>::infinity(), {}, {});
   AllBodiesClosestDistanceConstraint
       tight_collision_avoidance_validation_constraint(
           robot, 0.4 * env_state.get_object_dimensions().z(),
           std::numeric_limits<double>::infinity(), {}, {});
-  MinDistanceConstraint loose_collision_avoidance_constraint(
-      robot, 1.0 * env_state.get_object_dimensions().z(), {}, {});
+
+  //MinDistanceConstraint loose_collision_avoidance_constraint(
+      //robot, 1.2 * env_state.get_object_dimensions().z(), {}, {});
+  AllBodiesClosestDistanceConstraint loose_collision_avoidance_constraint(
+      robot, 0.25,
+      std::numeric_limits<double>::infinity(), {}, {});
   AllBodiesClosestDistanceConstraint
       loose_collision_avoidance_validation_constraint(
-          robot, 0.8 * env_state.get_object_dimensions().z(),
+          robot, 0.15,
           std::numeric_limits<double>::infinity(), {}, {});
 
   for (double pitch_offset : pitch_offsets) {
@@ -376,7 +382,7 @@ ComputeTrajectories(const WorldState& env_state,
       programs.emplace_back(BsplineCurve<double>(
           BsplineBasis(spline_order, num_control_points), seed_control_points));
       KinematicTrajectoryOptimization& prog = programs.back();
-      prog.set_min_knot_resolution(1.0 / 120.0);
+      prog.set_min_knot_resolution(1.0 / 60.0);
       prog.set_num_evaluation_points(100);
       prog.set_initial_num_evaluation_points(2);
 
@@ -418,6 +424,7 @@ ComputeTrajectories(const WorldState& env_state,
 
       // Add duration limits.
       prog.AddLinearConstraint(prog.duration()(0) >= 0, {{0.0, 0.0}});
+      prog.AddLinearConstraint(prog.duration()(0) <= duration, {{0.0, 0.0}});
 
       // Add joint limits
       prog.AddLinearConstraint(prog.position() >= robot->joint_limit_min,
@@ -530,6 +537,50 @@ ComputeTrajectories(const WorldState& env_state,
         prog.AddGenericPositionConstraint(
             std::make_shared<SingleTimeKinematicConstraintWrapper>(
                 orientation_constraints.back().get(),
+                cache_helpers.back().get()),
+            {{plan_time_pre_pick, plan_time_pick_lift}});
+
+        bool done{false};
+        bool success{false};
+        while (!done) {
+          solvers::SolutionResult solution_result =
+              prog.Solve(false /*always_update_curve*/);
+          drake::log()->info("Solution result: {}", solution_result);
+          if (solution_result == solvers::SolutionResult::kSolutionFound) {
+            done = !prog.UpdateGenericConstraints();
+            // done = true;
+            success = done;
+          } else {
+            done = !prog.AddKnots();
+            success = false;
+          }
+        }
+        if (!success) {
+          return nullopt;
+        }
+      }
+
+      {
+        drake::log()->debug(
+            "Adding position constraint for pick approach/lift");
+        auto X_WC = X_WG_pick;
+        X_WC.rotate(AngleAxis<double>(-pitch_offset - 20 * M_PI/180, Vector3<double>::UnitY()));
+
+        Vector3<double> lb{-std::numeric_limits<double>::infinity(),
+                           -10*position_tolerance.y(), -10*position_tolerance.z()};
+        Vector3<double> ub{10*position_tolerance.x(), 10*position_tolerance.y(),
+                           std::numeric_limits<double>::infinity()};
+        position_in_frame_constraints.emplace_back(
+            new WorldPositionInFrameConstraint(robot, grasp_frame_index,
+                                               end_effector_points,
+                                               X_WC.matrix(), lb, ub));
+        constraint_arrays.back().push_back(
+            position_in_frame_constraints.back().get());
+        cache_helpers.emplace_back(
+            new KinematicsCacheHelper<double>(robot->bodies));
+        prog.AddGenericPositionConstraint(
+            std::make_shared<SingleTimeKinematicConstraintWrapper>(
+                position_in_frame_constraints.back().get(),
                 cache_helpers.back().get()),
             {{plan_time_pre_pick, plan_time_pick_lift}});
 
@@ -674,51 +725,6 @@ ComputeTrajectories(const WorldState& env_state,
         }
       }
 
-      // Constrain final approach and lift
-      {
-        drake::log()->debug(
-            "Adding position constraint for place approach/lift");
-        auto X_WC = X_WG_pick;
-        X_WC.rotate(AngleAxis<double>(-pitch_offset, Vector3<double>::UnitY()));
-
-        Vector3<double> lb{-std::numeric_limits<double>::infinity(),
-                           -position_tolerance.y(), -position_tolerance.z()};
-        Vector3<double> ub{position_tolerance.x(), position_tolerance.y(),
-                           std::numeric_limits<double>::infinity()};
-        position_in_frame_constraints.emplace_back(
-            new WorldPositionInFrameConstraint(robot, grasp_frame_index,
-                                               end_effector_points,
-                                               X_WC.matrix(), lb, ub));
-        constraint_arrays.back().push_back(
-            position_in_frame_constraints.back().get());
-        cache_helpers.emplace_back(
-            new KinematicsCacheHelper<double>(robot->bodies));
-        prog.AddGenericPositionConstraint(
-            std::make_shared<SingleTimeKinematicConstraintWrapper>(
-                position_in_frame_constraints.back().get(),
-                cache_helpers.back().get()),
-            {{plan_time_pre_pick, plan_time_pick_lift}});
-
-        bool done{false};
-        bool success{false};
-        while (!done) {
-          solvers::SolutionResult solution_result =
-              prog.Solve(false /*always_update_curve*/);
-          drake::log()->info("Solution result: {}", solution_result);
-          if (solution_result == solvers::SolutionResult::kSolutionFound) {
-            done = !prog.UpdateGenericConstraints();
-            // done = true;
-            success = done;
-          } else {
-            done = !prog.AddKnots();
-            success = false;
-          }
-        }
-        if (!success) {
-          return nullopt;
-        }
-      }
-
       // The grasp frame should stay above a safety threshold during the
       // move.
       if (false) {
@@ -773,11 +779,11 @@ ComputeTrajectories(const WorldState& env_state,
         drake::log()->debug(
             "Adding position constraint for place approach/lift");
         auto X_WC = X_WG_place;
-        X_WC.rotate(AngleAxis<double>(-pitch_offset, Vector3<double>::UnitY()));
+        X_WC.rotate(AngleAxis<double>(-pitch_offset * env_state.get_object_dimensions().z(), Vector3<double>::UnitY()));
 
         Vector3<double> lb{-std::numeric_limits<double>::infinity(),
-                           -position_tolerance.y(), -position_tolerance.z()};
-        Vector3<double> ub{position_tolerance.x(), position_tolerance.y(),
+                           -10*position_tolerance.y(), -10*position_tolerance.z()};
+        Vector3<double> ub{10*position_tolerance.x(), 10*position_tolerance.y(),
                            std::numeric_limits<double>::infinity()};
         position_in_frame_constraints.emplace_back(
             new WorldPositionInFrameConstraint(robot, grasp_frame_index,
@@ -990,7 +996,7 @@ ComputeTrajectories(const WorldState& env_state,
             std::make_shared<SingleTimeKinematicConstraintWrapper>(
                 &loose_collision_avoidance_constraint,
                 cache_helpers.back().get()),
-            {{plan_time_place_lift, 1.0}},
+            {{plan_time_place_lift, plan_time_place_lift}},
             std::make_shared<SingleTimeKinematicConstraintWrapper>(
                 &loose_collision_avoidance_validation_constraint,
                 cache_helpers.back().get()));
@@ -1114,7 +1120,7 @@ PickAndPlaceStateMachine::PickAndPlaceStateMachine(
       // Position and rotation tolerances.  These were hand-tuned by
       // adjusting to tighter bounds until IK stopped reliably giving
       // results.
-      tight_pos_tol_(0.01, 0.01, 0.01),
+      tight_pos_tol_(0.001, 0.001, 0.01),
       tight_rot_tol_(0.05),
       loose_pos_tol_(0.05, 0.05, 0.05),
       loose_rot_tol_(30 * M_PI / 180),

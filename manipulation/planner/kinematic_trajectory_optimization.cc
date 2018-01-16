@@ -256,10 +256,10 @@ void KinematicTrajectoryOptimization::AddLinearConstraintToProgram(
                                      constraint.plan_interval);
   for (const auto& f : per_control_point_formulae) {
     if (AreVariablesPresentInProgram(f.GetFreeVariables())) {
-      drake::log()->trace("Adding linear constraint: {}", f);
+      //drake::log()->trace("Adding linear constraint: {}", f);
       prog->AddLinearConstraint(f);
     } else {
-      drake::log()->trace("Failed to add linear constraint: {}", f);
+      //drake::log()->trace("Failed to add linear constraint: {}", f);
     }
   }
 }
@@ -272,10 +272,10 @@ void KinematicTrajectoryOptimization::AddQuadraticCostToProgram(
                                      cost.plan_interval);
   for (const auto& expression : per_control_point_expressions) {
     if (AreVariablesPresentInProgram(expression.GetVariables())) {
-      drake::log()->trace("Adding quadratic cost: {}", expression);
+      //drake::log()->trace("Adding quadratic cost: {}", expression);
       prog->AddQuadraticCost(expression.Expand());
     } else {
-      drake::log()->trace("Failed to add quadratic cost: {}", expression);
+      //drake::log()->trace("Failed to add quadratic cost: {}", expression);
     }
   }
 }
