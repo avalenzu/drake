@@ -4,7 +4,8 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 
-optional<VectorX<double>> DoDifferentialInverseKinematics(
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DoDifferentialInverseKinematics(
     const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
     double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
@@ -122,15 +123,18 @@ optional<VectorX<double>> DoDifferentialInverseKinematics(
   drake::solvers::SolutionResult result = prog.Solve();
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
     std::cout << "SCS CANT SOLVE: " << result << "\n";
-    //*is_stuck = false;
-    return nullopt;
+    return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
   }
   ret = prog.GetSolution(v);
 
   Eigen::VectorXd cost(1);
   err_cost.constraint()->Eval(prog.GetSolution(alpha), cost);
+
   // Not tracking the desired vel norm, and computed vel is small.
-  //*is_stuck = cost(0) > 5 && prog.GetSolution(alpha)[0] <= 1e-2;
+  if (cost(0) > 5 && prog.GetSolution(alpha)[0] <= 1e-2)
+  {
+    return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
+  }
 
   // std::cout << "err_cost: " << cost(0) << ", " <<
   // prog.GetSolution(alpha).norm() << "\n";
@@ -138,19 +142,37 @@ optional<VectorX<double>> DoDifferentialInverseKinematics(
   posture_cost.constraint()->Eval(prog.GetSolution(v), cost);
   // std::cout << "posture_cost: " << cost(0) << "\n";
 
-  return ret;
+  return {ret, DifferentialInverseKinematicsStatus::kSolutionFound};
 }
 
 DifferentialInverseKinematics::DifferentialInverseKinematics(
     std::unique_ptr<RigidBodyTree<double>> robot,
     const std::string& end_effector_frame_name)
-    : robot_(std::move(robot)),
+    : robot_(robot),
       frame_E_(robot_->findFrame(end_effector_frame_name)),
       q_nominal_(robot_->getZeroConfiguration()),
-      q_bounds_(robot_->joint_limit_min, robot_->joint_limit_max) {}
+      q_bounds_(robot_->joint_limit_min, robot_->joint_limit_max),
+      q_current_(robot_->getZeroConfiguration()),
+      v_current_(VectorX<double>::Zero(robot_->get_num_velocities())),
+      V_WE_desired_(Vector6<double>::Zero()) {}
+
+void DifferentialInverseKinematics::SetEndEffectorVelocityGain(
+    const Vector6<double>& gain_E) {
+  DRAKE_THROW_UNLESS((gain_E.array() >= 0).all() &&
+                     (gain_E.array() <= 1).all());
+  gain_E_ = gain_E;
+}
+
+void DifferentialInverseKinematics::SetJointPositionLimits(
+    const std::pair<VectorX<double>, VectorX<double>>& q_bounds) {
+  DRAKE_DEMAND(q_bounds.first.size() == robot_->get_num_positions());
+  DRAKE_DEMAND(q_bounds.second.size() == robot_->get_num_positions());
+  DRAKE_DEMAND((q_bounds.second.array() >= q_bounds.first.array()).all());
+  q_bounds_ = q_bounds;
+}
 
 void DifferentialInverseKinematics::SetJointVelocityLimits(
-      const std::pair<VectorX<double>, VectorX<double>>& v_bounds) {
+    const std::pair<VectorX<double>, VectorX<double>>& v_bounds) {
   DRAKE_DEMAND(v_bounds.first.size() == robot_->get_num_velocities());
   DRAKE_DEMAND(v_bounds.second.size() == robot_->get_num_velocities());
   DRAKE_DEMAND((v_bounds.second.array() >= v_bounds.first.array()).all());
@@ -158,22 +180,30 @@ void DifferentialInverseKinematics::SetJointVelocityLimits(
 }
 
 void DifferentialInverseKinematics::SetJointAccelerationLimits(
-      const std::pair<VectorX<double>, VectorX<double>>& vd_bounds) {
+    const std::pair<VectorX<double>, VectorX<double>>& vd_bounds) {
   DRAKE_DEMAND(vd_bounds.first.size() == robot_->get_num_velocities());
   DRAKE_DEMAND(vd_bounds.second.size() == robot_->get_num_velocities());
   DRAKE_DEMAND((vd_bounds.second.array() >= vd_bounds.first.array()).all());
   vd_bounds_ = vd_bounds;
 }
 
-
-optional<VectorX<double>> DifferentialInverseKinematics::ComputeJointVelocities(
-    const VectorX<double>& q, const VectorX<double>& v_last,
-    const Vector6<double>& V_WE, double dt) const {
-  KinematicsCache<double> cache = robot_->doKinematics(q);
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DifferentialInverseKinematics::Solve() const {
+  KinematicsCache<double> cache = robot_->doKinematics(q_current_);
   return DoDifferentialInverseKinematics(
-      *robot_, cache, *frame_E_, V_WE, dt, q_nominal_,
-      v_last, q_bounds_, v_bounds_, vd_bounds_, unconstrained_dof_v_limit_,
-      gain_E_);
+      *robot_, cache, *frame_E_, V_WE_desired_, dt_, q_nominal_, v_current_,
+      q_bounds_, v_bounds_, vd_bounds_, unconstrained_dof_v_limit_, gain_E_);
+}
+
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DifferentialInverseKinematics::ComputeJointVelocities(
+    const VectorX<double>& q, const VectorX<double>& v_last,
+    const Vector6<double>& V_WE, double dt) {
+  set_current_joint_position(q);
+  set_current_joint_velocity(v_last);
+  set_desired_end_effector_velocity(V_WE);
+  set_timestep(dt);
+  return Solve();
 }
 }  // namespace planner
 }  // namespace manipulation

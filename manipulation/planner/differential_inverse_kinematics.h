@@ -11,7 +11,12 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 
-optional<VectorX<double>> DoDifferentialInverseKinematics(
+enum class DifferentialInverseKinematicsStatus {
+  kSolutionFound; kNoSolutionFound; kStuck;
+}
+
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DoDifferentialInverseKinematics(
     const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
     double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
@@ -31,18 +36,67 @@ class DifferentialInverseKinematics {
   void set_unconstrained_degrees_of_freedom_velocity_limit(double limit) {
     unconstrained_dof_v_limit_ = limit;
   }
+  const Vector6<double>& end_effector_velocity_gain() const { return gain_E_; }
 
-  void SetEndEffectorVelocityGain(const Vector6<double>& gain_E); 
+  void SetEndEffectorVelocityGain(const Vector6<double>& gain_E);
+
+  const std::pair<VectorX<double>, VectorX<double>> joint_position_limits()
+      const {
+    return q_bounds_;
+  }
+
+  void SetJointPositionLimits(
+      const std::pair<VectorX<double>, VectorX<double>>& q_bounds);
+
+  const std::pair<VectorX<double>, VectorX<double>> joint_velocity_limits()
+      const {
+    return v_bounds_;
+  }
 
   void SetJointVelocityLimits(
       const std::pair<VectorX<double>, VectorX<double>>& v_bounds);
 
+  const std::pair<VectorX<double>, VectorX<double>> joint_acceleration_limits()
+      const {
+    return vd_bounds_;
+  }
+
   void SetJointAccelerationLimits(
       const std::pair<VectorX<double>, VectorX<double>>& v_bounds);
 
-  optional<VectorX<double>> ComputeJointVelocities(
-      const VectorX<double>& q, const VectorX<double>& v_last,
-      const Vector6<double>& V_WE, double dt) const;
+  void set_current_joint_position(VectorX<double> q_current) {
+    DRAKE_ASSERT(q_current.size() == robot_->get_num_positions());
+    q_current_ = q_current;
+  }
+
+  void set_current_joint_velocity(VectorX<double> v_current) {
+    DRAKE_ASSERT(v_current.size() == robot_->get_num_velocities());
+    v_current_ = v_current;
+  }
+
+  const Vector6<double>& desired_end_effector_velocity() {
+    return V_WE_desired_;
+  }
+
+  void set_desired_end_effector_velocity(
+      const Vector6<double>& desired_end_effector_velocity) {
+    V_WE_desired_ = desired_end_effector_velocity;
+  }
+
+  double timestep() const { return dt_; }
+
+  void set_timestep(double dt) {
+    DRAKE_ASSERT(dt > 0);
+    dt_ = dt;
+  }
+
+  std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+  Solve() const;
+
+  std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+  ComputeJointVelocities(const VectorX<double>& q,
+                         const VectorX<double>& v_last,
+                         const Vector6<double>& V_WE, double dt);
 
  private:
   copyable_unique_ptr<RigidBodyTree<double>> robot_{};
@@ -53,6 +107,10 @@ class DifferentialInverseKinematics {
   optional<std::pair<VectorX<double>, VectorX<double>>> vd_bounds_{};
   double unconstrained_dof_v_limit_{std::numeric_limits<double>::infinity()};
   Vector6<double> gain_E_{Vector6<double>::Ones()};
+  VectorX<double> q_current_;
+  VectorX<double> v_current_;
+  VectorX<double> V_WE_desired_;
+  double dt_{1};
 };
 
 }  // namespace planner
