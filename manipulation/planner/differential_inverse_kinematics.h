@@ -12,8 +12,8 @@ namespace manipulation {
 namespace planner {
 
 enum class DifferentialInverseKinematicsStatus {
-  kSolutionFound; kNoSolutionFound; kStuck;
-}
+  kSolutionFound, kNoSolutionFound, kStuck
+};
 
 std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
 DoDifferentialInverseKinematics(
@@ -25,6 +25,17 @@ DoDifferentialInverseKinematics(
     const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
     double unconstrained_dof_v_limit,
     const Vector6<double>& gain_E = Vector6<double>::Constant(1));
+
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DoDifferentialInverseKinematics(
+    const VectorX<double> q_current, const VectorX<double>& v_current,
+    const Vector6<double>& V_WE_E, const MatrixX<double>& J_WE_E,
+    const VectorX<double> q_nominal,
+    const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
+    double dt, double unconstrained_dof_v_limit,
+    const Vector6<double>& gain_E);
 
 class DifferentialInverseKinematics {
  public:
@@ -48,7 +59,7 @@ class DifferentialInverseKinematics {
   void SetJointPositionLimits(
       const std::pair<VectorX<double>, VectorX<double>>& q_bounds);
 
-  const std::pair<VectorX<double>, VectorX<double>> joint_velocity_limits()
+  const optional<std::pair<VectorX<double>, VectorX<double>>>& joint_velocity_limits()
       const {
     return v_bounds_;
   }
@@ -56,7 +67,7 @@ class DifferentialInverseKinematics {
   void SetJointVelocityLimits(
       const std::pair<VectorX<double>, VectorX<double>>& v_bounds);
 
-  const std::pair<VectorX<double>, VectorX<double>> joint_acceleration_limits()
+  const optional<std::pair<VectorX<double>, VectorX<double>>>& joint_acceleration_limits()
       const {
     return vd_bounds_;
   }
@@ -109,7 +120,7 @@ class DifferentialInverseKinematics {
   Vector6<double> gain_E_{Vector6<double>::Ones()};
   VectorX<double> q_current_;
   VectorX<double> v_current_;
-  VectorX<double> V_WE_desired_;
+  Vector6<double> V_WE_desired_;
   double dt_{1};
 };
 

@@ -6,89 +6,77 @@ namespace planner {
 
 std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
 DoDifferentialInverseKinematics(
-    const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
-    const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
-    double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
+    const VectorX<double> q_current, const VectorX<double>& v_current,
+    const Vector6<double>& V_WE_E, const MatrixX<double>& J_WE_E,
+    const VectorX<double> q_nominal,
     const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
-    double unconstrained_dof_v_limit, const Vector6<double>& gain_E) {
-  const int num_positions = robot.get_num_positions();
-  DRAKE_DEMAND(q_nominal.size() == num_positions);
-  DRAKE_DEMAND(dt > 0);
+    double dt, double unconstrained_dof_v_limit,
+    const Vector6<double>& gain_E) {
+  const int num_velocities = v_current.size();
+  const int num_positions = q_current.size();
+  DRAKE_ASSERT(num_positions == num_velocities);
+  DRAKE_ASSERT(q_nominal.size() == num_positions);
+  DRAKE_ASSERT(dt > 0);
+  DRAKE_ASSERT(J_WE_E.rows() == V_WE_E.size());
+  DRAKE_ASSERT(J_WE_E.cols() == V_WE_E.size());
 
   const auto identity_num_positions =
       MatrixX<double>::Identity(num_positions, num_positions);
   Eigen::VectorXd ret;
 
   drake::solvers::MathematicalProgram prog;
-  drake::solvers::VectorXDecisionVariable v =
-      prog.NewContinuousVariables(robot.get_num_velocities(), "v");
+  drake::solvers::VectorXDecisionVariable v_next =
+      prog.NewContinuousVariables(num_velocities, "v_next");
   drake::solvers::VectorXDecisionVariable alpha =
       prog.NewContinuousVariables(1, "alpha");
 
   // Add ee vel constraint.
-  Eigen::Isometry3d X_WE = robot.CalcFramePoseInWorldFrame(cache, frame_E);
+  const VectorX<double> V_WE_E_scaled =
+      (V_WE_E.array() * gain_E.array()).matrix();
 
-  drake::Matrix6<double> R_EW = drake::Matrix6<double>::Zero();
-  R_EW.block<3, 3>(0, 0) = X_WE.linear().transpose();
-  R_EW.block<3, 3>(3, 3) = R_EW.block<3, 3>(0, 0);
-
-  // Rotate the velocity into E frame.
-  Eigen::MatrixXd J_WE_E =
-      R_EW * robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
-
-  for (int i = 0; i < 6; i++) {
-    J_WE_E.row(i) = gain_E(i) * J_WE_E.row(i);
-  }
-
-  Vector6<double> V_WE_E = R_EW * V_WE;
-  V_WE_E = (V_WE_E.array() * gain_E.array()).matrix();
-
-  Vector6<double> V_WE_E_dir = V_WE_E.normalized();
-  double V_WE_E_mag = V_WE_E.norm();
+  Vector6<double> V_WE_E_dir = V_WE_E_scaled.normalized();
+  double V_WE_E_mag = V_WE_E_scaled.norm();
 
   Eigen::MatrixXd A(6, J_WE_E.cols() + 1);
   A.topLeftCorner(6, J_WE_E.cols()) = J_WE_E;
   A.topRightCorner(6, 1) = -V_WE_E_dir;
-  prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(), {v, alpha});
+  prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(), {v_next, alpha});
   auto err_cost = prog.AddQuadraticErrorCost(
       drake::Vector1<double>(1), drake::Vector1<double>(V_WE_E_mag), alpha);
 
-  /*
-  prog.AddL2NormCost(J_WE_E, V_WE_E, v);
-  */
+  const VectorX<double> q_error{q_current - q_nominal};
 
   // Add a small regularization.
-  auto posture_cost =
-      prog.AddQuadraticCost(1e-3 * identity_num_positions * dt * dt,
-                            1e-3 * (cache.getQ() - q_nominal) * dt,
-                            1e-3 * (cache.getQ() - q_nominal).squaredNorm(), v);
+  auto posture_cost = prog.AddQuadraticCost(
+      1e-3 * identity_num_positions * dt * dt, 1e-3 * q_error * dt,
+      1e-3 * q_error.squaredNorm(), v_next);
 
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_WE_E, Eigen::ComputeFullV);
 
-  // Add v constraint.
-  if (v_bounds) {
-    prog.AddBoundingBoxConstraint(v_bounds->first, v_bounds->second, v);
-  }
+  // Add v_next constraint.
+  //if (v_bounds) {
+    //prog.AddBoundingBoxConstraint(v_bounds->first, v_bounds->second, v_next);
+  //}
 
   // Add vd constraint.
-  if (vd_bounds) {
-    prog.AddLinearConstraint(identity_num_positions,
-                             vd_bounds->first * dt + v_last,
-                             vd_bounds->second * dt + v_last, v);
-  }
+  //if (vd_bounds) {
+    //prog.AddLinearConstraint(identity_num_positions,
+                             //vd_bounds->first * dt + v_current,
+                             //vd_bounds->second * dt + v_current, v_next);
+  //}
 
   // Add constrained the unconstrained dof's velocity to be small, which is used
   // to fullfil the regularization cost.
-  prog.AddLinearConstraint(svd.matrixV().col(6).transpose(),
-                           -unconstrained_dof_v_limit,
-                           unconstrained_dof_v_limit, v);
+  //prog.AddLinearConstraint(svd.matrixV().col(6).transpose(),
+                           //-unconstrained_dof_v_limit,
+                           //unconstrained_dof_v_limit, v_next);
 
   // Add q upper and lower joint limit.
-  prog.AddLinearConstraint(identity_num_positions * dt,
-                           q_bounds.first - cache.getQ(),
-                           q_bounds.second - cache.getQ(), v);
+  //prog.AddLinearConstraint(identity_num_positions * dt,
+                           //q_bounds.first - q_current,
+                           //q_bounds.second - q_current, v_next);
 
   // Do the collision constraints.
   // for (const std::pair<Capsule, Capsule>& col_pair : collisions) {
@@ -116,7 +104,7 @@ DoDifferentialInverseKinematics(
   // drake::Vector1<double> min_dist(
   //-(bb[2] - c0.get_radius() - c1.get_radius()));
   // drake::Vector1<double> max_dist(1e6);
-  // prog.AddLinearConstraint(AA.row(2), min_dist, max_dist, v);
+  // prog.AddLinearConstraint(AA.row(2), min_dist, max_dist, v_next);
   //}
 
   // Solve
@@ -125,24 +113,54 @@ DoDifferentialInverseKinematics(
     std::cout << "SCS CANT SOLVE: " << result << "\n";
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
   }
-  ret = prog.GetSolution(v);
+  ret = prog.GetSolution(v_next);
 
   Eigen::VectorXd cost(1);
   err_cost.constraint()->Eval(prog.GetSolution(alpha), cost);
 
   // Not tracking the desired vel norm, and computed vel is small.
-  if (cost(0) > 5 && prog.GetSolution(alpha)[0] <= 1e-2)
-  {
+  if (cost(0) > 5 && prog.GetSolution(alpha)[0] <= 1e-2) {
+    drake::log()->info("v_next = {}", prog.GetSolution(v_next).transpose());
+    drake::log()->info("alpha = {}", prog.GetSolution(alpha).transpose());
     return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
   }
 
   // std::cout << "err_cost: " << cost(0) << ", " <<
   // prog.GetSolution(alpha).norm() << "\n";
 
-  posture_cost.constraint()->Eval(prog.GetSolution(v), cost);
+  posture_cost.constraint()->Eval(prog.GetSolution(v_next), cost);
   // std::cout << "posture_cost: " << cost(0) << "\n";
 
   return {ret, DifferentialInverseKinematicsStatus::kSolutionFound};
+}
+
+std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DoDifferentialInverseKinematics(
+    const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
+    const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
+    double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
+    const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
+    const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
+    double unconstrained_dof_v_limit, const Vector6<double>& gain_E) {
+  Eigen::Isometry3d X_WE = robot.CalcFramePoseInWorldFrame(cache, frame_E);
+
+  drake::Matrix6<double> R_EW = drake::Matrix6<double>::Zero();
+  R_EW.block<3, 3>(0, 0) = X_WE.linear().transpose();
+  R_EW.block<3, 3>(3, 3) = R_EW.block<3, 3>(0, 0);
+
+  // Rotate the velocity into E frame.
+  Eigen::MatrixXd J_WE_E =
+      R_EW * robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
+
+  for (int i = 0; i < 6; i++) {
+    J_WE_E.row(i) = gain_E(i) * J_WE_E.row(i);
+  }
+
+  Vector6<double> V_WE_E = R_EW * V_WE;
+  return DoDifferentialInverseKinematics(
+      cache.getQ(), v_last, V_WE_E, J_WE_E, q_nominal, q_bounds,
+      v_bounds, vd_bounds, dt, unconstrained_dof_v_limit, gain_E);
 }
 
 DifferentialInverseKinematics::DifferentialInverseKinematics(
