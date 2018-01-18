@@ -24,7 +24,6 @@ DoDifferentialInverseKinematics(
 
   const auto identity_num_positions =
       MatrixX<double>::Identity(num_positions, num_positions);
-  Eigen::VectorXd ret;
 
   drake::solvers::MathematicalProgram prog;
   drake::solvers::VectorXDecisionVariable v_next =
@@ -111,7 +110,6 @@ DoDifferentialInverseKinematics(
     std::cout << "SCS CANT SOLVE: " << result << "\n";
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
   }
-  ret = prog.GetSolution(v_next);
 
   Eigen::VectorXd cost(1);
   cart_cost->Eval(prog.GetSolution(alpha), cost);
@@ -123,8 +121,9 @@ DoDifferentialInverseKinematics(
     drake::log()->info("alpha = {}", prog.GetSolution(alpha).transpose());
     return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
   }
+  drake::log()->info("alpha = {}", prog.GetSolution(alpha).transpose());
 
-  return {ret, DifferentialInverseKinematicsStatus::kSolutionFound};
+  return {prog.GetSolution(v_next), DifferentialInverseKinematicsStatus::kSolutionFound};
 }
 
 std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
