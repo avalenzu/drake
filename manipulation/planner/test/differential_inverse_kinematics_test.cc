@@ -50,7 +50,7 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree() {
 
 GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
   std::unique_ptr<RigidBodyTree<double>> tree = BuildTree();
-  std::default_random_engine rand{1235};
+  std::default_random_engine rand{123};
   VectorX<double> q_nominal = tree->getZeroConfiguration();
   VectorX<double> q = tree->getRandomConfiguration(rand);
   const KinematicsCache<double> cache0 = tree->doKinematics(q);

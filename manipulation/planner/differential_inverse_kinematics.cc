@@ -20,7 +20,7 @@ DoDifferentialInverseKinematics(
   DRAKE_ASSERT(q_nominal.size() == num_positions);
   DRAKE_ASSERT(dt > 0);
   DRAKE_ASSERT(J_WE_E.rows() == V_WE_E.size());
-  DRAKE_ASSERT(J_WE_E.cols() == V_WE_E.size());
+  DRAKE_ASSERT(J_WE_E.cols() == num_velocities);
 
   const auto identity_num_positions =
       MatrixX<double>::Identity(num_positions, num_positions);
@@ -33,82 +33,80 @@ DoDifferentialInverseKinematics(
       prog.NewContinuousVariables(1, "alpha");
 
   // Add ee vel constraint.
-  const VectorX<double> V_WE_E_scaled =
-      (V_WE_E.array() * gain_E.array()).matrix();
+  Vector6<double> V_WE_E_scaled;
 
-  Vector6<double> V_WE_E_dir = V_WE_E_scaled.normalized();
-  double V_WE_E_mag = V_WE_E_scaled.norm();
+  MatrixX<double> J_WE_E_scaled{6, num_velocities};
+  int num_cart_constraints = 0;
+  for (int i = 0; i < 6; i++) {
+    if (gain_E(i) > 0) {
+      J_WE_E_scaled.row(num_cart_constraints) = gain_E(i) * J_WE_E.row(i);
+      V_WE_E_scaled(num_cart_constraints) = gain_E(i) * V_WE_E(i);
+      num_cart_constraints++;
+    }
+  }
 
-  Eigen::MatrixXd A(6, J_WE_E.cols() + 1);
-  A.topLeftCorner(6, J_WE_E.cols()) = J_WE_E;
-  A.topRightCorner(6, 1) = -V_WE_E_dir;
-  prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(), {v_next, alpha});
-  auto err_cost = prog.AddQuadraticErrorCost(
-      drake::Vector1<double>(1), drake::Vector1<double>(V_WE_E_mag), alpha);
+  const solvers::QuadraticCost* cart_cost = nullptr;
+
+  if (num_cart_constraints > 0) {
+    MatrixX<double> J = J_WE_E_scaled.topRows(num_cart_constraints);
+    VectorX<double> V = V_WE_E_scaled.head(num_cart_constraints);
+
+    Vector6<double> V_dir = V.normalized();
+    double V_mag = V.norm();
+
+    // Constrain the end effector motion to be in the direction of V_dir,
+    // and penalize magnitude difference from V_mag.
+    Eigen::MatrixXd A(6, J.cols() + 1);
+    A.topLeftCorner(6, J.cols()) = J;
+    A.topRightCorner(6, 1) = -V_dir;
+    drake::log()->info("A =\n{}", A);
+    prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(),
+                                     {v_next, alpha});
+    cart_cost = prog.AddQuadraticErrorCost(drake::Vector1<double>(100),
+                                           drake::Vector1<double>(V_mag), alpha)
+                    .constraint()
+                    .get();
+
+    Eigen::JacobiSVD<MatrixX<double>> svd(J_WE_E, Eigen::ComputeFullV);
+
+    // Add constrained the unconstrained dof's velocity to be small, which is
+    // used to fullfil the regularization cost.
+    for (int i = num_cart_constraints; i < num_velocities; i++) {
+      prog.AddLinearConstraint(svd.matrixV().col(i).transpose(),
+                               -unconstrained_dof_v_limit,
+                               unconstrained_dof_v_limit, v_next);
+    }
+  }
 
   const VectorX<double> q_error{q_current - q_nominal};
 
-  // Add a small regularization.
-  auto posture_cost = prog.AddQuadraticCost(
-      1e-3 * identity_num_positions * dt * dt, 1e-3 * q_error * dt,
-      1e-3 * q_error.squaredNorm(), v_next);
+  // If redundant, add a small regularization term to q_nominal.
+  if (num_cart_constraints < num_velocities) {
+    prog.AddQuadraticCost(identity_num_positions * dt * dt, q_error / dt,
+                          v_next);
+  }
 
-  Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_WE_E, Eigen::ComputeFullV);
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_WE_E_scaled, Eigen::ComputeFullV);
 
   // Add v_next constraint.
-  //if (v_bounds) {
-    //prog.AddBoundingBoxConstraint(v_bounds->first, v_bounds->second, v_next);
-  //}
+  if (v_bounds) {
+    prog.AddBoundingBoxConstraint(v_bounds->first, v_bounds->second, v_next);
+  }
 
   // Add vd constraint.
-  //if (vd_bounds) {
-    //prog.AddLinearConstraint(identity_num_positions,
-                             //vd_bounds->first * dt + v_current,
-                             //vd_bounds->second * dt + v_current, v_next);
-  //}
-
-  // Add constrained the unconstrained dof's velocity to be small, which is used
-  // to fullfil the regularization cost.
-  //prog.AddLinearConstraint(svd.matrixV().col(6).transpose(),
-                           //-unconstrained_dof_v_limit,
-                           //unconstrained_dof_v_limit, v_next);
+  if (vd_bounds) {
+    prog.AddLinearConstraint(identity_num_positions,
+                             vd_bounds->first * dt + v_current,
+                             vd_bounds->second * dt + v_current, v_next);
+  }
 
   // Add q upper and lower joint limit.
-  //prog.AddLinearConstraint(identity_num_positions * dt,
-                           //q_bounds.first - q_current,
-                           //q_bounds.second - q_current, v_next);
-
-  // Do the collision constraints.
-  // for (const std::pair<Capsule, Capsule>& col_pair : collisions) {
-  // Eigen::Vector3d p0, p1;
-  // const Capsule& c0 = col_pair.first;
-  // const Capsule& c1 = col_pair.second;
-
-  //// Computes the closest points in world frame.
-  // c0.GetClosestPointsOnAxis(c1, &p0, &p1);
-  //// Transform p0 and p1 into their respective body frames.
-  // Eigen::Isometry3d X0(Eigen::Translation3d(
-  // robot->CalcBodyPoseInWorldFrame(cache, c0.get_body()).inverse() * p0));
-  // Eigen::Isometry3d X1(Eigen::Translation3d(
-  // robot->CalcBodyPoseInWorldFrame(cache, c1.get_body()).inverse() * p1));
-
-  // auto J0 = robot->CalcFrameSpatialVelocityJacobianInWorldFrame(
-  // cache, c0.get_body(), X0);
-  // auto J1 = robot->CalcFrameSpatialVelocityJacobianInWorldFrame(
-  // cache, c1.get_body(), X1);
-
-  // Eigen::Matrix3d Rinv = c0.ComputeEscapeFrame(p0, p1).transpose();
-
-  // auto AA = Rinv * (J1.bottomRows(3) - J0.bottomRows(3)) * dt;
-  // Eigen::Vector3d bb = Rinv * (p1 - p0);
-  // drake::Vector1<double> min_dist(
-  //-(bb[2] - c0.get_radius() - c1.get_radius()));
-  // drake::Vector1<double> max_dist(1e6);
-  // prog.AddLinearConstraint(AA.row(2), min_dist, max_dist, v_next);
-  //}
+  prog.AddBoundingBoxConstraint((q_bounds.first - q_current) / dt,
+                                (q_bounds.second - q_current) / dt, v_next);
 
   // Solve
   drake::solvers::SolutionResult result = prog.Solve();
+
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
     std::cout << "SCS CANT SOLVE: " << result << "\n";
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
@@ -116,20 +114,15 @@ DoDifferentialInverseKinematics(
   ret = prog.GetSolution(v_next);
 
   Eigen::VectorXd cost(1);
-  err_cost.constraint()->Eval(prog.GetSolution(alpha), cost);
+  cart_cost->Eval(prog.GetSolution(alpha), cost);
 
   // Not tracking the desired vel norm, and computed vel is small.
-  if (cost(0) > 5 && prog.GetSolution(alpha)[0] <= 1e-2) {
+  if (num_cart_constraints && cost(0) > 5 &&
+      prog.GetSolution(alpha)[0] <= 1e-2) {
     drake::log()->info("v_next = {}", prog.GetSolution(v_next).transpose());
     drake::log()->info("alpha = {}", prog.GetSolution(alpha).transpose());
     return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
   }
-
-  // std::cout << "err_cost: " << cost(0) << ", " <<
-  // prog.GetSolution(alpha).norm() << "\n";
-
-  posture_cost.constraint()->Eval(prog.GetSolution(v_next), cost);
-  // std::cout << "posture_cost: " << cost(0) << "\n";
 
   return {ret, DifferentialInverseKinematicsStatus::kSolutionFound};
 }
@@ -153,14 +146,10 @@ DoDifferentialInverseKinematics(
   Eigen::MatrixXd J_WE_E =
       R_EW * robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
 
-  for (int i = 0; i < 6; i++) {
-    J_WE_E.row(i) = gain_E(i) * J_WE_E.row(i);
-  }
-
   Vector6<double> V_WE_E = R_EW * V_WE;
   return DoDifferentialInverseKinematics(
-      cache.getQ(), v_last, V_WE_E, J_WE_E, q_nominal, q_bounds,
-      v_bounds, vd_bounds, dt, unconstrained_dof_v_limit, gain_E);
+      cache.getQ(), v_last, V_WE_E, J_WE_E, q_nominal, q_bounds, v_bounds,
+      vd_bounds, dt, unconstrained_dof_v_limit, gain_E);
 }
 
 DifferentialInverseKinematics::DifferentialInverseKinematics(
