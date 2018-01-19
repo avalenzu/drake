@@ -29,7 +29,7 @@ DoDifferentialInverseKinematics(
 std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
 DoDifferentialInverseKinematics(
     const VectorX<double> q_current, const VectorX<double>& v_current,
-    const Vector6<double>& V_WE_E, const MatrixX<double>& J_WE_E,
+    const Vector6<double>& V, const MatrixX<double>& J,
     const VectorX<double> q_nominal,
     const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,

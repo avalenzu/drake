@@ -7,20 +7,20 @@ namespace planner {
 std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
 DoDifferentialInverseKinematics(
     const VectorX<double> q_current, const VectorX<double>& v_current,
-    const Vector6<double>& V_WE_E, const MatrixX<double>& J_WE_E,
+    const Vector6<double>& V, const MatrixX<double>& J,
     const VectorX<double> q_nominal,
     const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
-    double dt, double unconstrained_dof_v_limit,
-    const Vector6<double>& gain_E) {
+    double dt, double unconstrained_dof_v_limit) {
   const int num_velocities = v_current.size();
   const int num_positions = q_current.size();
+  const int num_cart_constraints = V.size();
   DRAKE_ASSERT(num_positions == num_velocities);
   DRAKE_ASSERT(q_nominal.size() == num_positions);
   DRAKE_ASSERT(dt > 0);
-  DRAKE_ASSERT(J_WE_E.rows() == V_WE_E.size());
-  DRAKE_ASSERT(J_WE_E.cols() == num_velocities);
+  DRAKE_ASSERT(J.rows() == num_cart_constraints);
+  DRAKE_ASSERT(J.cols() == num_velocities);
 
   const auto identity_num_positions =
       MatrixX<double>::Identity(num_positions, num_positions);
@@ -32,24 +32,9 @@ DoDifferentialInverseKinematics(
       prog.NewContinuousVariables(1, "alpha");
 
   // Add ee vel constraint.
-  Vector6<double> V_WE_E_scaled;
-
-  MatrixX<double> J_WE_E_scaled{6, num_velocities};
-  int num_cart_constraints = 0;
-  for (int i = 0; i < 6; i++) {
-    if (gain_E(i) > 0) {
-      J_WE_E_scaled.row(num_cart_constraints) = gain_E(i) * J_WE_E.row(i);
-      V_WE_E_scaled(num_cart_constraints) = gain_E(i) * V_WE_E(i);
-      num_cart_constraints++;
-    }
-  }
-
   const solvers::QuadraticCost* cart_cost = nullptr;
 
   if (num_cart_constraints > 0) {
-    MatrixX<double> J = J_WE_E_scaled.topRows(num_cart_constraints);
-    VectorX<double> V = V_WE_E_scaled.head(num_cart_constraints);
-
     Vector6<double> V_dir = V.normalized();
     double V_mag = V.norm();
 
@@ -66,7 +51,7 @@ DoDifferentialInverseKinematics(
                     .constraint()
                     .get();
 
-    Eigen::JacobiSVD<MatrixX<double>> svd(J_WE_E, Eigen::ComputeFullV);
+    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
 
     // Add constrained the unconstrained dof's velocity to be small, which is
     // used to fullfil the regularization cost.
@@ -84,8 +69,6 @@ DoDifferentialInverseKinematics(
     prog.AddQuadraticCost(identity_num_positions * dt * dt, q_error / dt,
                           v_next);
   }
-
-  Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_WE_E_scaled, Eigen::ComputeFullV);
 
   // Add v_next constraint.
   if (v_bounds) {
@@ -107,7 +90,6 @@ DoDifferentialInverseKinematics(
   drake::solvers::SolutionResult result = prog.Solve();
 
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
-    std::cout << "SCS CANT SOLVE: " << result << "\n";
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
   }
 
@@ -146,9 +128,24 @@ DoDifferentialInverseKinematics(
       R_EW * robot.CalcFrameSpatialVelocityJacobianInWorldFrame(cache, frame_E);
 
   Vector6<double> V_WE_E = R_EW * V_WE;
+
+  Vector6<double> V_WE_E_scaled;
+  MatrixX<double> J_WE_E_scaled{6, J_WE_E.cols()};
+  int num_cart_constraints = 0;
+  for (int i = 0; i < 6; i++) {
+    if (gain_E(i) > 0) {
+      J_WE_E_scaled.row(num_cart_constraints) = gain_E(i) * J_WE_E.row(i);
+      V_WE_E_scaled(num_cart_constraints) = gain_E(i) * V_WE_E(i);
+      num_cart_constraints++;
+    }
+  }
+
+  MatrixX<double> J = J_WE_E_scaled.topRows(num_cart_constraints);
+  VectorX<double> V = V_WE_E_scaled.head(num_cart_constraints);
+
   return DoDifferentialInverseKinematics(
-      cache.getQ(), v_last, V_WE_E, J_WE_E, q_nominal, q_bounds, v_bounds,
-      vd_bounds, dt, unconstrained_dof_v_limit, gain_E);
+      cache.getQ(), v_last, V, J, q_nominal, q_bounds, v_bounds,
+      vd_bounds, dt, unconstrained_dof_v_limit);
 }
 
 DifferentialInverseKinematics::DifferentialInverseKinematics(
