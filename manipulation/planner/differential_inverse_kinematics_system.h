@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "drake/manipulation/planner/differential_inverse_kinematics.h"
@@ -60,9 +61,13 @@ class DifferentialInverseKinematicsSystem
     return get_output_port(desired_joint_velocity_output_port_);
   }
 
-  void CalcDesiredJointVelocityOutput(
+  void CopyDesiredJointVelocityOutputFromState(
       const systems::Context<double>& context,
       systems::BasicVector<double>* output) const;
+
+  void CopyStatusOutputFromState(
+      const systems::Context<double>& context,
+      DifferentialInverseKinematicsStatus* output) const;
 
  private:
   // Input port indices

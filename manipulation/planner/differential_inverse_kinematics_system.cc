@@ -24,9 +24,13 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
   desired_joint_velocity_output_port_ =
       DeclareVectorOutputPort(
           BasicVector<double>(num_velocities),
-          &DifferentialInverseKinematicsSystem::CalcDesiredJointVelocityOutput)
+          &DifferentialInverseKinematicsSystem::CopyDesiredJointVelocityOutputFromState)
           .get_index();
-  status_output_port_ = DeclareAbstractOutputPort(DifferentialInverseKinematicsStatus::kNoSolutionFound, &
+  status_output_port_ =
+      DeclareAbstractOutputPort(
+          DifferentialInverseKinematicsStatus::kNoSolutionFound,
+          &DifferentialInverseKinematicsSystem::CopyStatusOutputFromState)
+          .get_index();
 }
 
 }  // namespace planner
