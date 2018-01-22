@@ -15,8 +15,7 @@ namespace planner {
  *  - v_current (vector)
  *  - V_WE_desired (vector)
  * Outputs:
- *  - v_desired (vector)
- *  - status (abstract, DifferentialInverseKinematicsStatus)
+ *  - result (DifferentialInverseKinematicsResult)
  * Numeric Parameters:
  *  - q_nominal (vector)
  *  - q_lower_bound (vector)
@@ -61,13 +60,8 @@ class DifferentialInverseKinematicsSystem
     return get_output_port(desired_joint_velocity_output_port_);
   }
 
-  void CopyDesiredJointVelocityOutputFromState(
-      const systems::Context<double>& context,
-      systems::BasicVector<double>* output) const;
-
-  void CopyStatusOutputFromState(
-      const systems::Context<double>& context,
-      DifferentialInverseKinematicsStatus* output) const;
+  void CalcResult(const systems::Context<double>& context,
+                  DifferentialInverseKinematicsResult* output) const;
 
  private:
   // Input port indices
@@ -75,11 +69,7 @@ class DifferentialInverseKinematicsSystem
   int joint_velocity_input_port_{-1};
   int desired_end_effector_velocity_input_port_{-1};
   // Output port indices
-  int desired_joint_velocity_output_port_{-1};
-  int status_output_port_{-1};
-  // State
-  int desired_joint_velocity_state_index_{-1};
-  int status_state_index_{-1};
+  int result_output_port_{-1};
   // Numerical parameter indices
   int q_nominal_index_{-1};
   int q_lower_bound_index_{-1};
