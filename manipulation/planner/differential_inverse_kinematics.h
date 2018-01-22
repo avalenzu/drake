@@ -12,11 +12,18 @@ namespace manipulation {
 namespace planner {
 
 enum class DifferentialInverseKinematicsStatus {
-  kSolutionFound, kNoSolutionFound, kStuck
+  kSolutionFound,
+  kNoSolutionFound,
+  kStuck
 };
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-DoDifferentialInverseKinematics(
+struct DifferentialInverseKinematicsResult {
+  optional<VectorX<double>> joint_velocities{};
+  DifferentialInverseKinematicsStatus status{
+      DifferentialInverseKinematicsStatus::kNoSolutionFound};
+};
+
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
     double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
@@ -26,16 +33,14 @@ DoDifferentialInverseKinematics(
     double unconstrained_dof_v_limit,
     const Vector6<double>& gain_E = Vector6<double>::Constant(1));
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-DoDifferentialInverseKinematics(
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const VectorX<double> q_current, const VectorX<double>& v_current,
     const Vector6<double>& V, const MatrixX<double>& J,
     const VectorX<double> q_nominal,
     const std::pair<VectorX<double>, VectorX<double>>& q_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& v_bounds,
     const optional<std::pair<VectorX<double>, VectorX<double>>>& vd_bounds,
-    double dt, double unconstrained_dof_v_limit,
-    const Vector6<double>& gain_E);
+    double dt, double unconstrained_dof_v_limit, const Vector6<double>& gain_E);
 
 class DifferentialInverseKinematics {
  public:
@@ -59,16 +64,16 @@ class DifferentialInverseKinematics {
   void SetJointPositionLimits(
       const std::pair<VectorX<double>, VectorX<double>>& q_bounds);
 
-  const optional<std::pair<VectorX<double>, VectorX<double>>>& joint_velocity_limits()
-      const {
+  const optional<std::pair<VectorX<double>, VectorX<double>>>&
+  joint_velocity_limits() const {
     return v_bounds_;
   }
 
   void SetJointVelocityLimits(
       const std::pair<VectorX<double>, VectorX<double>>& v_bounds);
 
-  const optional<std::pair<VectorX<double>, VectorX<double>>>& joint_acceleration_limits()
-      const {
+  const optional<std::pair<VectorX<double>, VectorX<double>>>&
+  joint_acceleration_limits() const {
     return vd_bounds_;
   }
 
@@ -101,13 +106,11 @@ class DifferentialInverseKinematics {
     dt_ = dt;
   }
 
-  std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-  Solve() const;
+  DifferentialInverseKinematicsResult Solve() const;
 
-  std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-  ComputeJointVelocities(const VectorX<double>& q,
-                         const VectorX<double>& v_last,
-                         const Vector6<double>& V_WE, double dt);
+  DifferentialInverseKinematicsResult ComputeJointVelocities(
+      const VectorX<double>& q, const VectorX<double>& v_last,
+      const Vector6<double>& V_WE, double dt);
 
  private:
   copyable_unique_ptr<RigidBodyTree<double>> robot_{};

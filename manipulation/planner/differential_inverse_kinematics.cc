@@ -4,8 +4,7 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-DoDifferentialInverseKinematics(
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const VectorX<double> q_current, const VectorX<double>& v_current,
     const Vector6<double>& V, const MatrixX<double>& J,
     const VectorX<double> q_nominal,
@@ -105,11 +104,11 @@ DoDifferentialInverseKinematics(
   }
   drake::log()->info("alpha = {}", prog.GetSolution(alpha).transpose());
 
-  return {prog.GetSolution(v_next), DifferentialInverseKinematicsStatus::kSolutionFound};
+  return {prog.GetSolution(v_next),
+          DifferentialInverseKinematicsStatus::kSolutionFound};
 }
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-DoDifferentialInverseKinematics(
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const RigidBodyFrame<double>& frame_E, const Vector6<double>& V_WE,
     double dt, const VectorX<double> q_nominal, const VectorX<double>& v_last,
@@ -143,9 +142,9 @@ DoDifferentialInverseKinematics(
   MatrixX<double> J = J_WE_E_scaled.topRows(num_cart_constraints);
   VectorX<double> V = V_WE_E_scaled.head(num_cart_constraints);
 
-  return DoDifferentialInverseKinematics(
-      cache.getQ(), v_last, V, J, q_nominal, q_bounds, v_bounds,
-      vd_bounds, dt, unconstrained_dof_v_limit);
+  return DoDifferentialInverseKinematics(cache.getQ(), v_last, V, J, q_nominal,
+                                         q_bounds, v_bounds, vd_bounds, dt,
+                                         unconstrained_dof_v_limit);
 }
 
 DifferentialInverseKinematics::DifferentialInverseKinematics(
@@ -190,15 +189,15 @@ void DifferentialInverseKinematics::SetJointAccelerationLimits(
   vd_bounds_ = vd_bounds;
 }
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-DifferentialInverseKinematics::Solve() const {
+DifferentialInverseKinematicsResult DifferentialInverseKinematics::Solve()
+    const {
   KinematicsCache<double> cache = robot_->doKinematics(q_current_);
   return DoDifferentialInverseKinematics(
       *robot_, cache, *frame_E_, V_WE_desired_, dt_, q_nominal_, v_current_,
       q_bounds_, v_bounds_, vd_bounds_, unconstrained_dof_v_limit_, gain_E_);
 }
 
-std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
+DifferentialInverseKinematicsResult
 DifferentialInverseKinematics::ComputeJointVelocities(
     const VectorX<double>& q, const VectorX<double>& v_last,
     const Vector6<double>& V_WE, double dt) {

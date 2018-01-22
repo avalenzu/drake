@@ -21,7 +21,8 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 
-std::ostream& operator<<(std::ostream& os, const DifferentialInverseKinematicsStatus value) {
+std::ostream& operator<<(std::ostream& os,
+                         const DifferentialInverseKinematicsStatus value) {
   switch (value) {
     case (DifferentialInverseKinematicsStatus::kSolutionFound):
       return os << "Solution found.";
@@ -50,7 +51,7 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree() {
 
 GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
   std::unique_ptr<RigidBodyTree<double>> tree = BuildTree();
-  std::default_random_engine rand{1234};
+  std::default_random_engine rand{4};
   VectorX<double> q_nominal = tree->getZeroConfiguration();
   VectorX<double> q = tree->getRandomConfiguration(rand);
   const KinematicsCache<double> cache0 = tree->doKinematics(q);
@@ -70,13 +71,11 @@ GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
       VectorX<double>::Constant(num_velocities, 40)};
   double unconstrained_dof_v_limit{0.6};
 
-  std::pair<optional<VectorX<double>>, DifferentialInverseKinematicsStatus>
-      function_v_and_status = DoDifferentialInverseKinematics(
-          *tree, cache0, *frame_E, V_WE, dt, q_nominal, v_last, q_bounds,
-          v_bounds, vd_bounds, unconstrained_dof_v_limit);
-  optional<VectorX<double>>& v_function{function_v_and_status.first};
-  DifferentialInverseKinematicsStatus function_status{
-      function_v_and_status.second};
+  DifferentialInverseKinematicsResult function_result =
+      DoDifferentialInverseKinematics(*tree, cache0, *frame_E, V_WE, dt,
+                                      q_nominal, v_last, q_bounds, v_bounds,
+                                      vd_bounds, unconstrained_dof_v_limit);
+  DifferentialInverseKinematicsStatus function_status{function_result.status};
   drake::log()->info("function_status = {}", function_status);
 
   DifferentialInverseKinematics diff_ik(BuildTree(), kEndEffectorFrameName);
@@ -84,17 +83,16 @@ GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
   diff_ik.SetJointAccelerationLimits(vd_bounds);
   diff_ik.set_unconstrained_degrees_of_freedom_velocity_limit(
       unconstrained_dof_v_limit);
-  optional<VectorX<double>> v_object;
-  DifferentialInverseKinematicsStatus object_status;
-  std::tie(v_object, object_status) =
+  DifferentialInverseKinematicsResult object_result =
       diff_ik.ComputeJointVelocities(q, v_last, V_WE, dt);
 
-  ASSERT_TRUE(v_function != nullopt);
-  ASSERT_TRUE(v_object != nullopt);
+  ASSERT_TRUE(function_result.joint_velocities != nullopt);
+  ASSERT_TRUE(object_result.joint_velocities != nullopt);
 
-  drake::log()->info("v_function = {}", v_function->transpose());
+  drake::log()->info("function_result.joint_velocities = {}",
+                     function_result.joint_velocities->transpose());
   const KinematicsCache<double> cache1 =
-      tree->doKinematics(q, v_function.value());
+      tree->doKinematics(q, function_result.joint_velocities.value());
 
   Vector6<double> V_WE_actual =
       tree->CalcFrameSpatialVelocityInWorldFrame(cache1, *frame_E);
@@ -104,19 +102,23 @@ GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
   const double velocity_tolerance{1e-7};
   EXPECT_TRUE(CompareMatrices(V_WE_actual.normalized(), V_WE.normalized(),
                               velocity_tolerance));
-  ASSERT_EQ(v_function->size(), num_velocities);
+  ASSERT_EQ(function_result.joint_velocities->size(), num_velocities);
   for (int i = 0; i < num_velocities; ++i) {
-    EXPECT_GE(q(i) + dt * (*v_function)(i), q_bounds.first(i));
-    EXPECT_LE(q(i) + dt * (*v_function)(i), q_bounds.second(i));
-    EXPECT_GE((*v_function)(i), v_bounds.first(i));
-    EXPECT_LE((*v_function)(i), v_bounds.second(i));
-    EXPECT_GE((*v_function)(i)-v_last(i),
+    EXPECT_GE(q(i) + dt * (*function_result.joint_velocities)(i),
+              q_bounds.first(i));
+    EXPECT_LE(q(i) + dt * (*function_result.joint_velocities)(i),
+              q_bounds.second(i));
+    EXPECT_GE((*function_result.joint_velocities)(i), v_bounds.first(i));
+    EXPECT_LE((*function_result.joint_velocities)(i), v_bounds.second(i));
+    EXPECT_GE((*function_result.joint_velocities)(i)-v_last(i),
               dt * vd_bounds.first(i) - velocity_tolerance);
-    EXPECT_LE((*v_function)(i)-v_last(i),
+    EXPECT_LE((*function_result.joint_velocities)(i)-v_last(i),
               dt * vd_bounds.second(i) + velocity_tolerance);
   }
 
-  EXPECT_TRUE(CompareMatrices(*v_object, *v_function, velocity_tolerance));
+  EXPECT_TRUE(CompareMatrices(*object_result.joint_velocities,
+                              *function_result.joint_velocities,
+                              velocity_tolerance));
 }
 
 }  // namespace
