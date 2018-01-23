@@ -13,9 +13,11 @@ using systems::Parameters;
 template <typename T>
 DifferentialInverseKinematicsSystem<T>::DifferentialInverseKinematicsSystem(
     std::unique_ptr<RigidBodyTree<T>> robot,
-    const std::string& end_effector_frame_name) {
-  const int num_positions = robot->get_num_positions();
-  const int num_velocities = robot->get_num_velocities();
+    const std::string& end_effector_frame_name)
+    : robot_(std::move(robot)),
+      end_effector_frame_(robot_->findFrame(end_effector_frame_name)) {
+  const int num_positions = robot_->get_num_positions();
+  const int num_velocities = robot_->get_num_velocities();
   // Input ports
   joint_position_input_port_ =
       this->DeclareInputPort(kVectorValued, num_positions).get_index();
@@ -31,16 +33,16 @@ DifferentialInverseKinematicsSystem<T>::DifferentialInverseKinematicsSystem(
           .get_index();
   // Parameters
   nominal_joint_position_index_ = this->DeclareNumericParameter(
-      BasicVector<T>(robot->getZeroConfiguration()));
+      BasicVector<T>(robot_->getZeroConfiguration()));
 
   nominal_joint_position_index_ = this->DeclareNumericParameter(
-      BasicVector<T>(robot->getZeroConfiguration()));
+      BasicVector<T>(robot_->getZeroConfiguration()));
 
   joint_position_lower_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(robot->joint_limit_min));
+      this->DeclareNumericParameter(BasicVector<T>(robot_->joint_limit_min));
 
   joint_position_upper_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(robot->joint_limit_max));
+      this->DeclareNumericParameter(BasicVector<T>(robot_->joint_limit_max));
 
   joint_velocity_lower_bound_index_ =
       this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Constant(
@@ -67,13 +69,6 @@ DifferentialInverseKinematicsSystem<T>::DifferentialInverseKinematicsSystem(
   unconstrained_degrees_of_freedom_velocity_limit_index_ =
       this->DeclareNumericParameter(BasicVector<T>(
           VectorX<T>::Constant(1, std::numeric_limits<T>::infinity())));
-
-  robot_index_ =
-      this->DeclareAbstractParameter(systems::Value<RigidBodyTree<T>>(*robot));
-
-  end_effector_frame_index_ =
-      this->DeclareAbstractParameter(systems::Value<RigidBodyFrame<T>>(
-          *robot->findFrame(end_effector_frame_name)));
 }
 
 template <typename T>

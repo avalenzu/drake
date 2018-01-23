@@ -102,15 +102,12 @@ class DifferentialInverseKinematicsSystem
     return context.get_numeric_parameter(timestep_index_).GetAtIndex(0);
   }
 
-  const RigidBodyTree<T>& Robot(const systems::Context<T>& context) const {
-    return context.get_abstract_parameter(robot_index_)
-        .template GetValue<RigidBodyTree<T>>();
+  const RigidBodyTree<T>& robot() const {
+    return *robot_;
   }
 
-  const RigidBodyFrame<T>& EndEffectorFrame(
-      const systems::Context<T>& context) const {
-    return context.get_abstract_parameter(end_effector_frame_index_)
-        .template GetValue<RigidBodyFrame<T>>();
+  const RigidBodyFrame<T>& end_effector_frame() const {
+    return *end_effector_frame_;
   }
 
   void CalcResult(const systems::Context<T>& context,
@@ -134,9 +131,9 @@ class DifferentialInverseKinematicsSystem
   int end_effector_velocity_gain_index_{-1};
   int timestep_index_{-1};
   int unconstrained_degrees_of_freedom_velocity_limit_index_{-1};
-  // Abstract parameter indices
-  int robot_index_{-1};
-  int end_effector_frame_index_{-1};
+  
+  std::unique_ptr<RigidBodyTree<double>> robot_{};
+  std::shared_ptr<RigidBodyFrame<double>> end_effector_frame_{};
 };
 }  // namespace planner
 }  // namespace manipulation

@@ -69,8 +69,8 @@ GTEST_TEST(DifferentialInverseKinematicsSystemTest, ConstructorTest) {
       CompareMatrices(dut->end_effector_velocity_gain(*context).get_value(),
                       VectorX<double>::Ones(6)));
   EXPECT_EQ(dut->Timestep(*context), 1);
-  EXPECT_EQ(&dut->EndEffectorFrame(*context),
-            dut->Robot(*context).findFrame(kEndEffectorFrameName).get());
+  EXPECT_EQ(&dut->end_effector_frame(),
+            dut->robot().findFrame(kEndEffectorFrameName).get());
 }
 }  // namespace
 }  // namespace planner
