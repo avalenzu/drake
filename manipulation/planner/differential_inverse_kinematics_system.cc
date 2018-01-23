@@ -10,9 +10,8 @@ using systems::BasicVector;
 using systems::kVectorValued;
 using systems::Parameters;
 
-template <typename T>
-DifferentialInverseKinematicsSystem<T>::DifferentialInverseKinematicsSystem(
-    std::unique_ptr<RigidBodyTree<T>> robot,
+DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
+    std::unique_ptr<RigidBodyTree<double>> robot,
     const std::string& end_effector_frame_name)
     : robot_(std::move(robot)),
       end_effector_frame_(robot_->findFrame(end_effector_frame_name)) {
@@ -32,55 +31,30 @@ DifferentialInverseKinematicsSystem<T>::DifferentialInverseKinematicsSystem(
               &DifferentialInverseKinematicsSystem::CalcResult)
           .get_index();
   // Parameters
-  nominal_joint_position_index_ = this->DeclareNumericParameter(
-      BasicVector<T>(robot_->getZeroConfiguration()));
-
-  nominal_joint_position_index_ = this->DeclareNumericParameter(
-      BasicVector<T>(robot_->getZeroConfiguration()));
-
-  joint_position_lower_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(robot_->joint_limit_min));
-
-  joint_position_upper_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(robot_->joint_limit_max));
-
-  joint_velocity_lower_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Constant(
-          num_velocities, -std::numeric_limits<T>::infinity())));
-
-  joint_velocity_upper_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Constant(
-          num_velocities, std::numeric_limits<T>::infinity())));
-
-  joint_acceleration_lower_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Constant(
-          num_velocities, -std::numeric_limits<T>::infinity())));
-
-  joint_acceleration_upper_bound_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Constant(
-          num_velocities, std::numeric_limits<T>::infinity())));
-
-  end_effector_velocity_gain_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Ones(6)));
-
-  timestep_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(VectorX<T>::Ones(1)));
-
-  unconstrained_degrees_of_freedom_velocity_limit_index_ =
-      this->DeclareNumericParameter(BasicVector<T>(
-          VectorX<T>::Constant(1, std::numeric_limits<T>::infinity())));
+  const VectorX<double> infinity_vector_num_velocities =
+      VectorX<double>::Constant(num_velocities,
+                                -std::numeric_limits<double>::infinity());
+  DifferentialInverseKinematicsParameters parameters{
+      robot_->get_num_positions(), robot_->get_num_velocities()};
+  parameters.SetJointPositionLimits(
+      {robot_->joint_limit_min, robot_->joint_limit_max});
+  parameters_index_ = this->DeclareAbstractParameter(
+      systems::Value<DifferentialInverseKinematicsParameters>(parameters));
 }
 
-template <typename T>
-void DifferentialInverseKinematicsSystem<T>::CalcResult(
-    const systems::Context<T>& context,
+void DifferentialInverseKinematicsSystem::CalcResult(
+    const systems::Context<double>& context,
     DifferentialInverseKinematicsResult* output) const {
-  // VectorX<T>* q_current =
-  // context.EvalVectorInput(context, joint_position_input_port_);
+  const VectorX<double>& joint_position =
+      this->EvaluateJointPosition(context).get_value();
+  const VectorX<double>& joint_velocity =
+      this->EvaluateJointVelocity(context).get_value();
+  const VectorX<double>& desired_end_effector_velocity =
+      this->EvaluateDesiredEndEffectorVelocity(context).get_value();
+  *output = DoDifferentialInverseKinematics(
+      *robot_, joint_position, joint_velocity, *end_effector_frame_,
+      desired_end_effector_velocity, Parameters(context));
 }
-
-// Explicitly instantiates on the most common scalar types.
-template class DifferentialInverseKinematicsSystem<double>;
 
 }  // namespace planner
 }  // namespace manipulation

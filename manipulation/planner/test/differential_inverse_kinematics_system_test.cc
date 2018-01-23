@@ -33,41 +33,24 @@ std::unique_ptr<RigidBodyTree<double>> BuildTree() {
 
 GTEST_TEST(DifferentialInverseKinematicsSystemTest, ConstructorTest) {
   DiagramBuilder<double> builder;
-  auto dut = builder.AddSystem<DifferentialInverseKinematicsSystem<double>>(
+  auto dut = builder.AddSystem<DifferentialInverseKinematicsSystem>(
       BuildTree(), kEndEffectorFrameName);
   auto robot{BuildTree()};
-  const int num_velocities{robot->get_num_velocities()};
   auto sys = builder.Build();
   auto context = sys->CreateDefaultContext();
 
   // Check default parameter values
-  EXPECT_TRUE(CompareMatrices(dut->nominal_joint_position(*context).get_value(),
+  EXPECT_TRUE(CompareMatrices(dut->nominal_joint_position(*context),
                               robot->getZeroConfiguration()));
-  EXPECT_TRUE(
-      CompareMatrices(dut->joint_position_lower_bound(*context).get_value(),
-                      robot->joint_limit_min));
-  EXPECT_TRUE(
-      CompareMatrices(dut->joint_position_upper_bound(*context).get_value(),
-                      robot->joint_limit_max));
-  EXPECT_TRUE(CompareMatrices(
-      dut->joint_velocity_lower_bound(*context).get_value(),
-      VectorX<double>::Constant(num_velocities,
-                                -std::numeric_limits<double>::infinity())));
-  EXPECT_TRUE(CompareMatrices(
-      dut->joint_velocity_upper_bound(*context).get_value(),
-      VectorX<double>::Constant(num_velocities,
-                                std::numeric_limits<double>::infinity())));
-  EXPECT_TRUE(CompareMatrices(
-      dut->joint_acceleration_lower_bound(*context).get_value(),
-      VectorX<double>::Constant(num_velocities,
-                                -std::numeric_limits<double>::infinity())));
-  EXPECT_TRUE(CompareMatrices(
-      dut->joint_acceleration_upper_bound(*context).get_value(),
-      VectorX<double>::Constant(num_velocities,
-                                std::numeric_limits<double>::infinity())));
-  EXPECT_TRUE(
-      CompareMatrices(dut->end_effector_velocity_gain(*context).get_value(),
-                      VectorX<double>::Ones(6)));
+  ASSERT_TRUE(dut->JointPositionLimits(*context));
+  EXPECT_TRUE(CompareMatrices(dut->JointPositionLimits(*context)->first,
+                              robot->joint_limit_min));
+  EXPECT_TRUE(CompareMatrices(dut->JointPositionLimits(*context)->second,
+                              robot->joint_limit_max));
+  ASSERT_FALSE(dut->JointVelocityLimits(*context));
+  ASSERT_FALSE(dut->JointAccelerationLimits(*context));
+  EXPECT_TRUE(CompareMatrices(dut->EndEffectorVelocityGain(*context),
+                              VectorX<double>::Ones(6)));
   EXPECT_EQ(dut->Timestep(*context), 1);
   EXPECT_EQ(&dut->end_effector_frame(),
             dut->robot().findFrame(kEndEffectorFrameName).get());

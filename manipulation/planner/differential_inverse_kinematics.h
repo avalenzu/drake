@@ -73,14 +73,14 @@ class DifferentialInverseKinematicsParameters {
   void SetJointAccelerationLimits(
       const std::pair<VectorX<double>, VectorX<double>>& v_bounds);
 
-  double timestep() const { return dt_; }
+  const double& timestep() const { return dt_; }
 
   void set_timestep(double dt) {
     DRAKE_ASSERT(dt > 0);
     dt_ = dt;
   }
 
-  double unconstrained_degrees_of_freedom_velocity_limit() const {
+  const double& unconstrained_degrees_of_freedom_velocity_limit() const {
     return unconstrained_degrees_of_freedom_velocity_limit_;
   }
 
