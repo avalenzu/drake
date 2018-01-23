@@ -38,6 +38,20 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "pose_interpolator",
+    srcs = ["pose_interpolator.cc"],
+    hdrs = ["pose_interpolator.h"],
+    deps = [
+        "//drake/common/trajectories:piecewise_polynomial",
+        "//drake/multibody:rigid_body_tree",
+        "//drake/multibody/parsers",
+        "//drake/systems/framework:leaf_system",
+        "@lcmtypes_bot2_core",
+        "@lcmtypes_robotlocomotion",
+    ],
+)
+
+drake_cc_library(
     name = "differential_inverse_kinematics",
     srcs = ["differential_inverse_kinematics.cc"],
     hdrs = ["differential_inverse_kinematics.h"],
