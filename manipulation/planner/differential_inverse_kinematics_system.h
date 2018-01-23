@@ -18,12 +18,12 @@ namespace planner {
  *  - result (DifferentialInverseKinematicsResult)
  * Numeric Parameters:
  *  - q_nominal (vector)
- *  - q_lower_bound (vector)
- *  - q_upper_bound (vector)
- *  - v_lower_bound (vector)
- *  - v_upper_bound (vector)
- *  - vd_lower_bound (vector)
- *  - vd_upper_bound (vector)
+ *  - joint_position_lower_bound (vector)
+ *  - joint_position_upper_bound (vector)
+ *  - joint_velocity_lower_bound (vector)
+ *  - joint_velocity_upper_bound (vector)
+ *  - joint_acceleration_lower_bound (vector)
+ *  - joint_acceleration_upper_bound (vector)
  *  - gain_E (vector)
  *  - dt (scalar)
  *  - unconstrained_dof_v_limit (scalar)
@@ -31,36 +31,89 @@ namespace planner {
  *  - robot (RigidBodyTree)
  *  - frame_E (RigidBodyFrame)
  */
+template <typename T>
 class DifferentialInverseKinematicsSystem
-    : public drake::systems::LeafSystem<double> {
+    : public drake::systems::LeafSystem<T> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(DifferentialInverseKinematicsSystem);
 
   DifferentialInverseKinematicsSystem(
-      std::unique_ptr<RigidBodyTree<double>> robot,
+      std::unique_ptr<RigidBodyTree<T>> robot,
       const std::string& end_effector_frame_name);
 
-  const systems::InputPortDescriptor<double>& joint_position_input_port()
-      const {
-    return get_input_port(joint_position_input_port_);
+  const systems::InputPortDescriptor<T>& joint_position_input_port() const {
+    return this->get_input_port(joint_position_input_port_);
   }
 
-  const systems::InputPortDescriptor<double>& joint_velocity_input_port()
-      const {
-    return get_input_port(joint_velocity_input_port_);
+  const systems::InputPortDescriptor<T>& joint_velocity_input_port() const {
+    return this->get_input_port(joint_velocity_input_port_);
   }
 
-  const systems::InputPortDescriptor<double>&
+  const systems::InputPortDescriptor<T>&
   desired_end_effector_velocity_input_port() const {
-    return get_input_port(desired_end_effector_velocity_input_port_);
+    return this->get_input_port(desired_end_effector_velocity_input_port_);
   }
 
-  const systems::OutputPort<double>& desired_joint_velocity_output_port()
-      const {
-    return get_output_port(desired_joint_velocity_output_port_);
+  const systems::OutputPort<T>& result_output_port() const {
+    return this->get_output_port(result_output_port_);
   }
 
-  void CalcResult(const systems::Context<double>& context,
+  const systems::BasicVector<T>& nominal_joint_position(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(nominal_joint_position_index_);
+  }
+
+  const systems::BasicVector<T>& joint_position_lower_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_position_lower_bound_index_);
+  }
+
+  const systems::BasicVector<T>& joint_position_upper_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_position_upper_bound_index_);
+  }
+
+  const systems::BasicVector<T>& joint_velocity_lower_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_velocity_lower_bound_index_);
+  }
+
+  const systems::BasicVector<T>& joint_velocity_upper_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_velocity_upper_bound_index_);
+  }
+
+  const systems::BasicVector<T>& joint_acceleration_lower_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_acceleration_lower_bound_index_);
+  }
+
+  const systems::BasicVector<T>& joint_acceleration_upper_bound(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(joint_acceleration_upper_bound_index_);
+  }
+
+  const systems::BasicVector<T>& end_effector_velocity_gain(
+      const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(end_effector_velocity_gain_index_);
+  }
+
+  const T& Timestep(const systems::Context<T>& context) const {
+    return context.get_numeric_parameter(timestep_index_).GetAtIndex(0);
+  }
+
+  const RigidBodyTree<T>& Robot(const systems::Context<T>& context) const {
+    return context.get_abstract_parameter(robot_index_)
+        .template GetValue<RigidBodyTree<T>>();
+  }
+
+  const RigidBodyFrame<T>& EndEffectorFrame(
+      const systems::Context<T>& context) const {
+    return context.get_abstract_parameter(end_effector_frame_index_)
+        .template GetValue<RigidBodyFrame<T>>();
+  }
+
+  void CalcResult(const systems::Context<T>& context,
                   DifferentialInverseKinematicsResult* output) const;
 
  private:
@@ -71,19 +124,19 @@ class DifferentialInverseKinematicsSystem
   // Output port indices
   int result_output_port_{-1};
   // Numerical parameter indices
-  int q_nominal_index_{-1};
-  int q_lower_bound_index_{-1};
-  int q_upper_bound_index_{-1};
-  int v_lower_bound_index_{-1};
-  int v_upper_bound_index_{-1};
-  int vd_lower_bound_index_{-1};
-  int vd_upper_bound_index_{-1};
-  int gain_E_index_{-1};
-  int dt_index_{-1};
-  int unconstrained_dof_v_limit_index_{-1};
+  int nominal_joint_position_index_{-1};
+  int joint_position_lower_bound_index_{-1};
+  int joint_position_upper_bound_index_{-1};
+  int joint_velocity_lower_bound_index_{-1};
+  int joint_velocity_upper_bound_index_{-1};
+  int joint_acceleration_lower_bound_index_{-1};
+  int joint_acceleration_upper_bound_index_{-1};
+  int end_effector_velocity_gain_index_{-1};
+  int timestep_index_{-1};
+  int unconstrained_degrees_of_freedom_velocity_limit_index_{-1};
   // Abstract parameter indices
-  int robot_index{-1};
-  int frame_E_index{-10};
+  int robot_index_{-1};
+  int end_effector_frame_index_{-1};
 };
 }  // namespace planner
 }  // namespace manipulation

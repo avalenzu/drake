@@ -115,8 +115,10 @@ drake_cc_googletest(
     ],
     deps = [
         ":differential_inverse_kinematics_system",
+        "//drake/common:find_resource",
         "//drake/common/test_utilities:eigen_matrix_compare",
         "//drake/manipulation/util:world_sim_tree_builder",
+        "//drake/systems/framework:framework",
     ],
 )
 
