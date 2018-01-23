@@ -71,10 +71,18 @@ GTEST_TEST(DifferentialInverseKinematicsTest, PositiveTest) {
       VectorX<double>::Constant(num_velocities, 40)};
   double unconstrained_dof_v_limit{0.6};
 
+  DifferentialInverseKinematicsParameters parameters{
+      tree->get_num_positions(), tree->get_num_velocities()};
+  parameters.set_nominal_joint_position(q_nominal);
+  parameters.set_unconstrained_degrees_of_freedom_velocity_limit(
+      unconstrained_dof_v_limit);
+  parameters.set_timestep(dt);
+  parameters.SetJointPositionLimits(q_bounds);
+  parameters.SetJointVelocityLimits(v_bounds);
+  parameters.SetJointAccelerationLimits(vd_bounds);
   DifferentialInverseKinematicsResult function_result =
-      DoDifferentialInverseKinematics(*tree, cache0, *frame_E, V_WE, dt,
-                                      q_nominal, v_last, q_bounds, v_bounds,
-                                      vd_bounds, unconstrained_dof_v_limit);
+      DoDifferentialInverseKinematics(*tree, cache0, v_last, *frame_E, V_WE,
+                                      parameters);
   DifferentialInverseKinematicsStatus function_status{function_result.status};
   drake::log()->info("function_status = {}", function_status);
 
