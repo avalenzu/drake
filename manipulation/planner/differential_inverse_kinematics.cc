@@ -142,11 +142,10 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
 }
 
 DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
-    const RigidBodyTree<double>& robot, const VectorX<double>& q_current,
+    const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const VectorX<double>& v_current, const RigidBodyFrame<double>& frame_E,
     const Isometry3<double>& X_WE_desired,
     const DifferentialInverseKinematicsParameters& parameters) {
-  KinematicsCache<double> cache = robot.doKinematics(q_current);
   const Isometry3<double> X_WE =
       robot.CalcFramePoseInWorldFrame(cache, frame_E);
   const Vector6<double> V_WE =
