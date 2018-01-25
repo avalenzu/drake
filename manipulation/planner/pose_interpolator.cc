@@ -43,6 +43,7 @@ void PoseInterpolator::DoCalcUnrestrictedUpdate(
     const Context<double>& context,
     const std::vector<const systems::UnrestrictedUpdateEvent<double>*>&,
     systems::State<double>* state) const {
+  // Extract the state and input trajectories.
   PiecewiseCartesianTrajectory<double>& trajectory_state =
       state->get_mutable_abstract_state<PiecewiseCartesianTrajectory<double>>(
           trajectory_state_index_);
@@ -52,7 +53,8 @@ void PoseInterpolator::DoCalcUnrestrictedUpdate(
   // Only update the state if the input is a different trajectory.
   if (!trajectory_input.is_approx(trajectory_state, kComparisonTolerance)) {
     trajectory_state = trajectory_input;
-    trajectory_state.get_position_trajectory().get_position_trajectory().shift
+    // t = 0 in the input trajectory corresponds to the current time.
+    trajectory_state.ShiftRight(context.get_time());
   }
 }
 }  // namespace planner
