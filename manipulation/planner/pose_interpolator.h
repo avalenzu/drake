@@ -10,11 +10,11 @@ namespace manipulation {
 namespace planner {
 
 /// This class implements a source of end-effector velocities.
-class PoseInterpolator : public systems::LeafSystem<double> {
+class PoseInterpolator final : public systems::LeafSystem<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(PoseInterpolator)
 
-  PoseInterpolator();
+  PoseInterpolator(double update_interval = kDefaultPlanUpdateInterval);
   ~PoseInterpolator() override;
 
   const systems::InputPortDescriptor<double>& trajectory_input_port() const {
@@ -32,10 +32,17 @@ class PoseInterpolator : public systems::LeafSystem<double> {
         trajectory_state_index_);
   }
 
+ protected:
+  void DoCalcUnrestrictedUpdate(const systems::Context<double>& context,
+            const std::vector<const systems::UnrestrictedUpdateEvent<double>*>&,
+            systems::State<double>* state) const override;
+
  private:
+  static constexpr double kDefaultPlanUpdateInterval = 0.1;
+  static constexpr double kComparisonTolerance = 1e-8;
   void CalcPoseOutput(
       const systems::Context<double>& context,
-      systems::BasicVector<double>* output) const;
+      Isometry3<double>* output) const;
   // Inputs
   int trajectory_input_port_{-1};
   // Outputs

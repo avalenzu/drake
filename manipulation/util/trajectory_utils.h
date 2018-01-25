@@ -100,6 +100,12 @@ class PiecewiseCubicTrajectory {
     return qdd_;
   }
 
+  void ShiftRight(double offset) {
+    q_.shiftRight(offset);
+    qd_.shiftRight(offset);
+    qdd_.shiftRight(offset);
+  }
+
  private:
   PiecewisePolynomial<T> q_;
   PiecewisePolynomial<T> qd_;
@@ -231,6 +237,11 @@ class PiecewiseCartesianTrajectory {
    */
   const PiecewiseQuaternionSlerp<T>& get_orientation_trajectory() const {
     return orientation_;
+  }
+
+  void ShiftRight(double offset) {
+    position_.ShiftRight(offset);
+    orientation_.shiftRight(offset);
   }
 
  private:
