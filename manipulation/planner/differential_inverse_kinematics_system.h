@@ -10,26 +10,31 @@ namespace drake {
 namespace manipulation {
 namespace planner {
 /**
- * Inputs:
- *  - q_current (vector)
- *  - v_current (vector)
- *  - V_WE_desired (vector)
- * Outputs:
- *  - result (DifferentialInverseKinematicsResult)
- * Numeric Parameters:
- *  - q_nominal (vector)
- *  - joint_position_lower_bound (vector)
- *  - joint_position_upper_bound (vector)
- *  - joint_velocity_lower_bound (vector)
- *  - joint_velocity_upper_bound (vector)
- *  - joint_acceleration_lower_bound (vector)
- *  - joint_acceleration_upper_bound (vector)
- *  - gain_E (vector)
- *  - dt (scalar)
- *  - unconstrained_dof_v_limit (scalar)
- * Abstract Parameters:
- *  - robot (RigidBodyTree)
- *  - frame_E (RigidBodyFrame)
+ Inputs:
+  - q_current (vector)
+  - v_current (vector)
+  - X_WE_desired (vector)
+ State:
+  - q_desired
+ Outputs:
+  - q_desired
+ Abstract Parameters:
+  - parameters (DifferentialInverseKinematicsParameters)
+ Member variables:
+  - robot (RigidBodyTree)
+  - frame_E (RigidBodyFrame)
+
+
+                      ┌────────────┐
+               q ────▶│            │
+                      │Differential│
+               v ────▶│Inverse     ├────▶ q_desired
+                      │Kinematics  │
+    X_WE_desired ────▶│            │
+                      └────────────┘
+
+
+
  */
 class DifferentialInverseKinematicsSystem final
     : public drake::systems::LeafSystem<double> {
@@ -51,12 +56,13 @@ class DifferentialInverseKinematicsSystem final
   }
 
   const systems::InputPortDescriptor<double>&
-  desired_end_effector_velocity_input_port() const {
-    return this->get_input_port(desired_end_effector_velocity_input_port_);
+  desired_end_effector_pose_input_port() const {
+    return this->get_input_port(desired_end_effector_pose_input_port_);
   }
 
-  const systems::OutputPort<double>& result_output_port() const {
-    return this->get_output_port(result_output_port_);
+  const systems::OutputPort<double>& desired_joint_position_output_port()
+      const {
+    return this->get_output_port(desired_joint_position_output_port_);
   }
 
   const systems::BasicVector<double>& EvaluateJointPosition(
@@ -75,13 +81,13 @@ class DifferentialInverseKinematicsSystem final
     return *joint_velocity;
   }
 
-  const systems::BasicVector<double>& EvaluateDesiredEndEffectorVelocity(
+  const systems::BasicVector<double>& EvaluateDesiredEndEffectorPose(
       const systems::Context<double>& context) const {
-    const systems::BasicVector<double>* desired_end_effector_velocity =
+    const systems::BasicVector<double>* desired_end_effector_pose =
         this->EvalVectorInput(context,
-                              desired_end_effector_velocity_input_port_);
-    DRAKE_THROW_UNLESS(desired_end_effector_velocity);
-    return *desired_end_effector_velocity;
+                              desired_end_effector_pose_input_port_);
+    DRAKE_THROW_UNLESS(desired_end_effector_pose);
+    return *desired_end_effector_pose;
   }
 
   const DifferentialInverseKinematicsParameters& Parameters(
@@ -131,16 +137,23 @@ class DifferentialInverseKinematicsSystem final
     return *end_effector_frame_;
   }
 
-  void CalcResult(const systems::Context<double>& context,
-                  DifferentialInverseKinematicsResult* output) const;
+ protected:
+  virtual void DoCalcTimeDerivatives(
+      const systems::Context<double>& context,
+      systems::ContinuousState<double>* derivatives) const override;
 
  private:
+  void CopyDesiredJointPosition(const systems::Context<double>& context,
+                                systems::BasicVector<double>* output) const;
+
   // Input port indices
   int joint_position_input_port_{-1};
   int joint_velocity_input_port_{-1};
-  int desired_end_effector_velocity_input_port_{-1};
+  int desired_end_effector_pose_input_port_{-1};
+  // State indices
+  int desired_joint_position_state_{-1};
   // Output port indices
-  int result_output_port_{-1};
+  int desired_joint_position_output_port_{-1};
   // Abstract parameter
   int parameters_index_{-1};
 
