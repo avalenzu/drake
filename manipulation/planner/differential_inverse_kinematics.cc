@@ -3,6 +3,24 @@
 namespace drake {
 namespace manipulation {
 namespace planner {
+/**
+ * X_W1 = X_WErr * X_W0 <=> X_WErr = X_W1 * X_W0.inv()
+ * p_err = pose1.translation() - pos0.translation()
+ * R_err = pose1.linear() * pose0.linear().transpose().
+ */
+Vector6<double> ComputePoseDiffInWorldFrame(const Isometry3<double>& pose0,
+                                            const Isometry3<double>& pose1) {
+  Vector6<double> diff = Vector6<double>::Zero();
+
+  // Linear.
+  diff.tail<3>() = (pose1.translation() - pose0.translation());
+
+  // Angular.
+  AngleAxis<double> rot_err(pose1.linear() * pose0.linear().transpose());
+  diff.head<3>() = rot_err.axis() * rot_err.angle();
+
+  return diff;
+}
 
 DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const VectorX<double> q_current, const VectorX<double>& v_current,
@@ -119,6 +137,20 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const Vector6<double>& V_WE,
     const DifferentialInverseKinematicsParameters& parameters) {
   KinematicsCache<double> cache = robot.doKinematics(q_current);
+  return DoDifferentialInverseKinematics(robot, cache, v_current, frame_E, V_WE,
+                                         parameters);
+}
+
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
+    const RigidBodyTree<double>& robot, const VectorX<double>& q_current,
+    const VectorX<double>& v_current, const RigidBodyFrame<double>& frame_E,
+    const Isometry3<double>& X_WE_desired,
+    const DifferentialInverseKinematicsParameters& parameters) {
+  KinematicsCache<double> cache = robot.doKinematics(q_current);
+  const Isometry3<double> X_WE =
+      robot.CalcFramePoseInWorldFrame(cache, frame_E);
+  const Vector6<double> V_WE =
+      ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / parameters.timestep();
   return DoDifferentialInverseKinematics(robot, cache, v_current, frame_E, V_WE,
                                          parameters);
 }
