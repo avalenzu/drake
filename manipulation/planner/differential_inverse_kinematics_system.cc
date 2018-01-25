@@ -22,10 +22,12 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
       this->DeclareInputPort(kVectorValued, num_positions).get_index();
   joint_velocity_input_port_ =
       this->DeclareInputPort(kVectorValued, num_velocities).get_index();
-  desired_end_effector_pose_input_port =
+  desired_end_effector_pose_input_port_ =
       this->DeclareAbstractInputPort().get_index();
   // State
   this->DeclareContinuousState(num_positions);
+  is_initialized_state_ =
+      this->DeclareAbstractState(systems::Value<bool>::Make(false)).get_index();
   // Ouput ports
   desired_joint_position_output_port_ =
       this->DeclareVectorOutputPort(
@@ -51,25 +53,27 @@ void DifferentialInverseKinematicsSystem::DoCalcTimeDerivatives(
       this->EvaluateJointPosition(context).get_value();
   const VectorX<double>& joint_velocity =
       this->EvaluateJointVelocity(context).get_value();
-  const VectorX<double>& desired_end_effector_velocity =
-      this->EvaluateDesiredEndEffectorVelocity(context).get_value();
+  const Isometry3<double>& desired_end_effector_pose =
+      this->EvaluateDesiredEndEffectorPose(context);
   KinematicsCache<double> cache = robot_->doKinematics(joint_position);
   DifferentialInverseKinematicsResult result = DoDifferentialInverseKinematics(
       *robot_, cache, joint_velocity, *end_effector_frame_,
-      desired_end_effector_velocity, Parameters(context));
+      desired_end_effector_pose, Parameters(context));
   if (joint_position.size() == joint_velocity.size()) {
     derivatives->SetFromVector(result.joint_velocities.value_or(
         VectorX<double>::Zero(joint_position.size())));
   } else {
     derivatives->SetFromVector(robot_->transformVelocityToQDot(
-        cache, result.joint_velocities.value_or(
-                   VectorX<double>::Zero(joint_position.size()))));
+        cache,
+        result.joint_velocities.value_or(
+            VectorX<double>::Zero(joint_position.size()))));
   }
 }
 
 void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
     const systems::Context<double>& context,
     BasicVector<double>* output) const {
+  DRAKE_THROW_UNLESS(context.get_abstract_state<bool>(is_initialized_state_));
   output->SetFrom(this->EvaluateJointPosition(context));
 }
 

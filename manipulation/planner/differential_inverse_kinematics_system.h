@@ -16,6 +16,7 @@ namespace planner {
   - X_WE_desired (vector)
  State:
   - q_desired
+  - is_initialized
  Outputs:
   - q_desired
  Abstract Parameters:
@@ -81,13 +82,13 @@ class DifferentialInverseKinematicsSystem final
     return *joint_velocity;
   }
 
-  const systems::BasicVector<double>& EvaluateDesiredEndEffectorPose(
+  const Isometry3<double>& EvaluateDesiredEndEffectorPose(
       const systems::Context<double>& context) const {
-    const systems::BasicVector<double>* desired_end_effector_pose =
-        this->EvalVectorInput(context,
+    const systems::AbstractValue * desired_end_effector_pose =
+        this->EvalAbstractInput(context,
                               desired_end_effector_pose_input_port_);
     DRAKE_THROW_UNLESS(desired_end_effector_pose);
-    return *desired_end_effector_pose;
+    return desired_end_effector_pose->GetValue<Isometry3<double>>();
   }
 
   const DifferentialInverseKinematicsParameters& Parameters(
@@ -152,6 +153,7 @@ class DifferentialInverseKinematicsSystem final
   int desired_end_effector_pose_input_port_{-1};
   // State indices
   int desired_joint_position_state_{-1};
+  int is_initialized_state_{-1};
   // Output port indices
   int desired_joint_position_output_port_{-1};
   // Abstract parameter
