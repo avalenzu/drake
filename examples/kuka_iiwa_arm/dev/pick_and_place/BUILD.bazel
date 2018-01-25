@@ -42,6 +42,22 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "lcm_point_to_point_controller",
+    srcs = ["lcm_point_to_point_controller.cc"],
+    hdrs = [
+        "lcm_point_to_point_controller.h",
+    ],
+    deps = [
+        ":iiwa_common",
+        ":iiwa_lcm",
+        "@lcmtypes_bot2_core",
+        "//drake/manipulation/planner:differential_inverse_kinematics_system",
+        "//drake/systems/framework:diagram_builder",
+        "//drake/systems/primitives:demultiplexer",
+    ],
+)
+
+drake_cc_library(
     name = "lcm_planner",
     srcs = [
         "lcm_planner.cc",
