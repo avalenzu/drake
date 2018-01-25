@@ -22,7 +22,7 @@ used to prevent an algebraic loop between the plant and the plan interpolator.
      ┌──────────▶│         │─────────┐      ┌────────┐
      │           │ Lcm     │         │      │        │
      │ ┌────────▶│ Planner │         │      │        │
-     │ │         │         │plan     │      │        │            ┌────────────┐
+     │ │         │         │pose     │      │        │            ┌────────────┐
      │ │ ┌──────▶│         ├─────┐   │      │        │ vis info   │ Drake      │
      │ │ │       └─────────┘     │   └─────▶│        ├───────────▶│ Visualizer │
      │ │ │                       │          │        │            └────────────┘
@@ -30,8 +30,8 @@ used to prevent an algebraic loop between the plant and the plan interpolator.
      │ │ │    │                             │ Plant  ├────────────────┐
      │ │ │    │  ┌──────────────┐    iiwa   │        │                │
      │ │ │    └─▶│ Lcm          │ command   │        │ wsg_status     │
-     │ │ │       │ Plan         ├──────────▶│        ├──────────────┐ │
-     │ │ │    ┌─▶│ Interpolator │           │        │              │ │
+     │ │ │       │ PointToPoint ├──────────▶│        ├──────────────┐ │
+     │ │ │    ┌─▶│ Controller   │           │        │              │ │
      │ │ │    │  └──────────────┘           │        │ iiwa_status  │ │
      │ │ │ ┌──┴──┐                          │        ├────────────┐ │ │
      │ │ │ │ ZOH │◀──────────┐              └────────┘            │ │ │
