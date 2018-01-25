@@ -124,3 +124,9 @@ void PiecewiseFunction::checkScalarValued() const {
     throw std::runtime_error("Not scalar valued.");
   }
 }
+
+void PiecewiseFunction::shiftRight(double offset) {
+  for (auto it = breaks.begin(); it != breaks.end(); ++it) {
+    *it += offset;
+  }
+}
