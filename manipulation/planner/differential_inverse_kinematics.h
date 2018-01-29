@@ -119,7 +119,7 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const DifferentialInverseKinematicsParameters& parameters);
 
 DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
-    const RigidBodyTree<double>& robot, const VectorX<double>& q_current,
+    const RigidBodyTree<double>& robot, const KinematicsCache<double>& cache,
     const VectorX<double>& v_current, const RigidBodyFrame<double>& frame_E,
     const Isometry3<double>& X_WE_desired,
     const DifferentialInverseKinematicsParameters& parameters);
