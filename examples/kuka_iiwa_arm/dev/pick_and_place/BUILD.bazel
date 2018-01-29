@@ -48,12 +48,12 @@ drake_cc_library(
         "lcm_point_to_point_controller.h",
     ],
     deps = [
-        ":iiwa_common",
-        ":iiwa_lcm",
-        "@lcmtypes_bot2_core",
+        "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
+        "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/manipulation/planner:differential_inverse_kinematics_system",
         "//drake/systems/framework:diagram_builder",
         "//drake/systems/primitives:demultiplexer",
+        "@lcmtypes_bot2_core",
     ],
 )
 
