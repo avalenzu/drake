@@ -27,7 +27,7 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
   // State
   this->DeclareContinuousState(num_positions);
   is_initialized_state_ =
-      this->DeclareAbstractState(systems::Value<bool>::Make(false)).get_index();
+      this->DeclareAbstractState(systems::Value<bool>::Make(false));
   // Ouput ports
   desired_joint_position_output_port_ =
       this->DeclareVectorOutputPort(
@@ -74,7 +74,13 @@ void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
     const systems::Context<double>& context,
     BasicVector<double>* output) const {
   DRAKE_THROW_UNLESS(context.get_abstract_state<bool>(is_initialized_state_));
-  output->SetFrom(this->EvaluateJointPosition(context));
+  output->SetFrom(context.get_continuous_state().get_vector());
+}
+
+void DifferentialInverseKinematicsSystem::Initialize(
+    const VectorX<double>& q0, systems::Context<double>* context) const {
+  context->get_mutable_continuous_state().SetFromVector(q0);
+  context->get_mutable_abstract_state<bool>(is_initialized_state_) = true;
 }
 
 }  // namespace planner

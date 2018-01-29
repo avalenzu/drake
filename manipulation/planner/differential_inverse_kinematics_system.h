@@ -138,6 +138,14 @@ class DifferentialInverseKinematicsSystem final
     return *end_effector_frame_;
   }
 
+  /**
+   * Sets the initial state of the controller to @p initial_joint_position.
+   * This function needs to be explicitly called before any simulation.
+   * Otherwise this aborts in CalcOutput().
+   */
+  void Initialize(const VectorX<double>& q0,
+                  systems::Context<double>* context) const;
+
  protected:
   virtual void DoCalcTimeDerivatives(
       const systems::Context<double>& context,
@@ -152,7 +160,6 @@ class DifferentialInverseKinematicsSystem final
   int joint_velocity_input_port_{-1};
   int desired_end_effector_pose_input_port_{-1};
   // State indices
-  int desired_joint_position_state_{-1};
   int is_initialized_state_{-1};
   // Output port indices
   int desired_joint_position_output_port_{-1};
