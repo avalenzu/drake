@@ -50,6 +50,7 @@ void IiwaMove::MoveJoints(const WorldState& est_state,
 
 void IiwaMove::MoveCartesian(const WorldState& est_state,
                              const Isometry3<double>& X_WG_desired,
+                             const Isometry3<double>& X_WG_desired,
                              double duration,
                              robotlocomotion::robot_plan_t* plan) {
   DRAKE_DEMAND(plan != nullptr);

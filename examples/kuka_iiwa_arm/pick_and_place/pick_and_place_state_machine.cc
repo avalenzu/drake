@@ -438,9 +438,8 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0,
-                         -0.5 * env_state.get_object_dimensions().x() +
-                             finger_length * std::cos(pitch_offset));
+        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
+                                finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -818,7 +817,12 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       if (!iiwa_move_.ActionStarted()) {
         DRAKE_THROW_UNLESS(static_cast<bool>(X_WG_desired_));
         robotlocomotion::robot_plan_t plan{};
-        iiwa_move_.MoveCartesian(env_state, X_WG_desired_->at(state_), 0,
+        auto robot = BuildTree(configuration_);
+        auto kinematics_cache = robot->doKinematics(env_state.get_iiwa_q());
+        const Isometry3<double> X_WG = robot->CalcFramePoseInWorldFrame(
+            kinematics_cache, *robot->findFrame(kGraspFrameName));
+
+        iiwa_move_.MoveCartesian(env_state, X_WG, X_WG_desired_->at(state_), 0,
                                  &plan);
         iiwa_callback(&plan);
 
@@ -890,7 +894,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       // robot.get());
       // if (interpolation_result_map_) {
       //// Proceed to execution.
-       state_ = PickAndPlaceState::kApproachPickPregrasp;
+      state_ = PickAndPlaceState::kApproachPickPregrasp;
       // planning_failure_count_ = 0;
       //} else {
       //// otherwise re-plan on next call to Update.
