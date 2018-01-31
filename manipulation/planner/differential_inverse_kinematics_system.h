@@ -84,9 +84,8 @@ class DifferentialInverseKinematicsSystem final
 
   const Isometry3<double>& EvaluateDesiredEndEffectorPose(
       const systems::Context<double>& context) const {
-    const systems::AbstractValue * desired_end_effector_pose =
-        this->EvalAbstractInput(context,
-                              desired_end_effector_pose_input_port_);
+    const systems::AbstractValue* desired_end_effector_pose =
+        this->EvalAbstractInput(context, desired_end_effector_pose_input_port_);
     DRAKE_THROW_UNLESS(desired_end_effector_pose);
     return desired_end_effector_pose->GetValue<Isometry3<double>>();
   }
@@ -95,6 +94,12 @@ class DifferentialInverseKinematicsSystem final
       const systems::Context<double>& context) const {
     return context.get_abstract_parameter(parameters_index_)
         .GetValue<DifferentialInverseKinematicsParameters>();
+  }
+
+  DifferentialInverseKinematicsParameters& MutableParameters(
+      systems::Context<double>* context) const {
+    return context->get_mutable_abstract_parameter(parameters_index_)
+        .GetMutableValue<DifferentialInverseKinematicsParameters>();
   }
 
   const VectorX<double>& nominal_joint_position(
@@ -126,7 +131,7 @@ class DifferentialInverseKinematicsSystem final
     return Parameters(context).timestep();
   }
 
-  const double& UnconstrainedDegreesOfFreedomVelocityLimit(
+  const optional<double>& UnconstrainedDegreesOfFreedomVelocityLimit(
       const systems::Context<double>& context) const {
     return Parameters(context)
         .unconstrained_degrees_of_freedom_velocity_limit();
@@ -137,6 +142,8 @@ class DifferentialInverseKinematicsSystem final
   const RigidBodyFrame<double>& end_effector_frame() const {
     return *end_effector_frame_;
   }
+
+  int num_positions() const { return robot_->get_num_positions(); }
 
   /**
    * Sets the initial state of the controller to @p initial_joint_position.

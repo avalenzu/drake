@@ -13,8 +13,8 @@ using systems::Parameters;
 DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
     std::unique_ptr<RigidBodyTree<double>> robot,
     const std::string& end_effector_frame_name)
-    : robot_(std::move(robot)),
-      end_effector_frame_(robot_->findFrame(end_effector_frame_name)) {
+    : robot_(std::move(robot)) {
+  end_effector_frame_ = robot_->findFrame(end_effector_frame_name);
   const int num_positions = robot_->get_num_positions();
   const int num_velocities = robot_->get_num_velocities();
   // Input ports
