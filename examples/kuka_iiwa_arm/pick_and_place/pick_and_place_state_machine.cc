@@ -258,17 +258,13 @@ PostureInterpolationResult PlanInterpolatingMotion(
   return result;
 }
 
-void OpenGripper(const WorldState& env_state,
-                 double grip_force,
-                 WsgAction* wsg_act,
-                 lcmt_schunk_wsg_command* msg) {
+void OpenGripper(const WorldState& env_state, double grip_force,
+                 WsgAction* wsg_act, lcmt_schunk_wsg_command* msg) {
   wsg_act->OpenGripper(env_state, grip_force, msg);
 }
 
-void CloseGripper(const WorldState& env_state,
-                  double grip_force,
-                  WsgAction* wsg_act,
-                  lcmt_schunk_wsg_command* msg) {
+void CloseGripper(const WorldState& env_state, double grip_force,
+                  WsgAction* wsg_act, lcmt_schunk_wsg_command* msg) {
   wsg_act->CloseGripper(env_state, grip_force, msg);
 }
 
@@ -442,8 +438,9 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     Isometry3<double> X_OG{Isometry3<double>::Identity()};
     X_OG.rotate(AngleAxis<double>(pitch_offset, Vector3<double>::UnitY()));
     X_OG.translation().x() =
-        std::min<double>(0, -0.5 * env_state.get_object_dimensions().x() +
-                                finger_length * std::cos(pitch_offset));
+        std::min<double>(0,
+                         -0.5 * env_state.get_object_dimensions().x() +
+                             finger_length * std::cos(pitch_offset));
     // Set ApproachPick pose.
     Isometry3<double> X_OiO{Isometry3<double>::Identity()};
     X_WG_desired.emplace(PickAndPlaceState::kApproachPick,
@@ -819,18 +816,10 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
     case PickAndPlaceState::kApproachPickPregrasp:
     case PickAndPlaceState::kApproachPlacePregrasp: {
       if (!iiwa_move_.ActionStarted()) {
-        DRAKE_THROW_UNLESS(static_cast<bool>(interpolation_result_map_));
+        DRAKE_THROW_UNLESS(static_cast<bool>(X_WG_desired_));
         robotlocomotion::robot_plan_t plan{};
-        std::vector<VectorX<double>> q;
-        PiecewisePolynomial<double>& q_traj =
-            interpolation_result_map_->at(state_);
-        const std::vector<double>& times{q_traj.getSegmentTimes()};
-        q.reserve(times.size());
-        for (double t : times) {
-          q.push_back(q_traj.value(t));
-        }
-
-        iiwa_move_.MoveJoints(env_state, joint_names_, times, q, &plan);
+        iiwa_move_.MoveCartesian(env_state, X_WG_desired_->at(state_), 0,
+                                 &plan);
         iiwa_callback(&plan);
 
         drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
@@ -844,7 +833,6 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
             if (!env_state.get_object_pose().translation().isApprox(
                     expected_object_pose_.translation(), 0.05)) {
               drake::log()->info("Target moved! Re-planning ...");
-              interpolation_result_map_->clear();
               state_ = PickAndPlaceState::kPlan;
             }
             break;
@@ -873,8 +861,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
     case PickAndPlaceState::kPlace: {
       if (!wsg_act_.ActionStarted()) {
         lcmt_schunk_wsg_command msg;
-        schunk_action(env_state, configuration_.grip_force,
-                      &wsg_act_, &msg);
+        schunk_action(env_state, configuration_.grip_force, &wsg_act_, &msg);
         wsg_callback(&msg);
 
         drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
@@ -889,27 +876,31 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
       // Compute all the desired configurations.
       expected_object_pose_ = env_state.get_object_pose();
-      std::unique_ptr<RigidBodyTree<double>> robot{BuildTree(
-          configuration_, true /*add_grasp_frame*/)};
+      std::unique_ptr<RigidBodyTree<double>> robot{
+          BuildTree(configuration_, true /*add_grasp_frame*/)};
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
-      interpolation_result_map_ = ComputeTrajectories(
-          env_state,
-          q_traj_seed_.value_or(PiecewisePolynomial<double>::ZeroOrderHold(
-              {0.0, 1.0}, {q_initial, q_initial})),
-          robot.get());
-      if (interpolation_result_map_) {
-        // Proceed to execution.
-        state_ = PickAndPlaceState::kApproachPickPregrasp;
-        planning_failure_count_ = 0;
-      } else {
-        // otherwise re-plan on next call to Update.
-        // Set a random seed for the next call to ComputeNominalConfigurations.
-        VectorX<double> q_seed = robot->getRandomConfiguration(rand_generator_);
-        q_traj_seed_.emplace(PiecewisePolynomial<double>::FirstOrderHold(
-            {0.0, 1.0}, {q_initial, q_seed}));
-        ++planning_failure_count_;
-      }
+      const double yaw_offset{0.0};
+      const double pitch_offset{M_PI / 6};
+      X_WG_desired_ = ComputeDesiredPoses(env_state, yaw_offset, pitch_offset);
+      // interpolation_result_map_ = ComputeTrajectories(
+      // env_state,
+      // q_traj_seed_.value_or(PiecewisePolynomial<double>::ZeroOrderHold(
+      //{0.0, 1.0}, {q_initial, q_initial})),
+      // robot.get());
+      // if (interpolation_result_map_) {
+      //// Proceed to execution.
+       state_ = PickAndPlaceState::kApproachPickPregrasp;
+      // planning_failure_count_ = 0;
+      //} else {
+      //// otherwise re-plan on next call to Update.
+      //// Set a random seed for the next call to ComputeNominalConfigurations.
+      // VectorX<double> q_seed =
+      // robot->getRandomConfiguration(rand_generator_);
+      // q_traj_seed_.emplace(PiecewisePolynomial<double>::FirstOrderHold(
+      //{0.0, 1.0}, {q_initial, q_seed}));
+      //++planning_failure_count_;
+      //}
       break;
     }
     case PickAndPlaceState::kReset: {

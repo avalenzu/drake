@@ -105,8 +105,12 @@ class PickAndPlaceStateMachine {
   pick_and_place::PlannerConfiguration configuration_;
 
   // Desired interpolation results for various states
-  optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
-      interpolation_result_map_{};
+  //optional<std::map<PickAndPlaceState, PiecewisePolynomial<double>>>
+      //interpolation_result_map_{};
+
+  // Desired interpolation results for various states
+  optional<std::map<PickAndPlaceState, Isometry3<double>>>
+      X_WG_desired_{};
 
   // Measured location of object at planning time
   Isometry3<double> expected_object_pose_;

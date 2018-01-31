@@ -51,21 +51,20 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
   const int num_robots(plant_configuration.robot_models.size());
   for (int i = 0; i < num_robots; ++i) {
     // Add plan interpolator.
-    auto plan_interpolator = builder.AddSystem<LcmPlanInterpolator>(
-        FindResourceOrThrow(plant_configuration.robot_models[i]),
-        InterpolatorType::Cubic);
-    plan_interpolators_.push_back(plan_interpolator);
+    auto point_to_point_controller =
+        builder.AddSystem<LcmPointToPointController>(planner_configurations[0]);
+    point_to_point_controllers_.push_back(point_to_point_controller);
     // Add a zero-order hold between the plant and the interpolator
     auto iiwa_status_zoh = builder.AddSystem<ZeroOrderHold<double>>(
         kIiwaLcmStatusPeriod, systems::Value<lcmt_iiwa_status>());
-    // Connect plan interpolator, and plant.
+    // Connect point-to-point controller and plant.
     // Plant --> plan interpolator
     builder.Connect(plant_->get_output_port_iiwa_status(i),
                     iiwa_status_zoh->get_input_port());
     builder.Connect(iiwa_status_zoh->get_output_port(),
-                    plan_interpolator->get_input_port_iiwa_status());
+                    point_to_point_controller->iiwa_status_input_port());
     // plan interpolator --> plant
-    builder.Connect(plan_interpolator->get_output_port_iiwa_command(),
+    builder.Connect(point_to_point_controller->iiwa_command_output_port(),
                     plant_->get_input_port_iiwa_command(i));
   }
 
@@ -92,9 +91,9 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
     builder.Connect(planner->get_output_port_wsg_command(),
                     plant_->get_input_port_wsg_command(robot_index));
     // Planner --> Plan Interpolator
-    builder.Connect(
-        planner->get_output_port_iiwa_plan(),
-        plan_interpolators_[robot_index]->get_input_port_iiwa_plan());
+    builder.Connect(planner->get_output_port_iiwa_plan(),
+                    point_to_point_controllers_[robot_index]
+                        ->desired_end_effector_pose_input_port());
   }
 
   // Loop over arms again to add constant sources for the robots not connected
@@ -109,7 +108,8 @@ MonolithicPickAndPlaceSystem::MonolithicPickAndPlaceSystem(
           builder.AddSystem<ConstantValueSource<double>>(
               AbstractValue::Make(robot_plan_t()));
       builder.Connect(plan_interpolator_source->get_output_port(0),
-                      plan_interpolators_[i]->get_input_port_iiwa_plan());
+                      point_to_point_controllers_[i]
+                          ->desired_end_effector_pose_input_port());
     }
   }
 
@@ -129,13 +129,13 @@ bool MonolithicPickAndPlaceSystem::is_done(
 
 void MonolithicPickAndPlaceSystem::Initialize(
     systems::Context<double>* context) {
-  for (auto& plan_interpolator : plan_interpolators_) {
+  for (auto& point_to_point_controller : point_to_point_controllers_) {
     const VectorX<double> q0{
-        VectorX<double>::Zero(plan_interpolator->num_joints())};
-    auto& plan_interpolator_context =
-        this->GetMutableSubsystemContext(*plan_interpolator, context);
-    plan_interpolator->Initialize(context->get_time(), q0,
-                                  &plan_interpolator_context);
+        VectorX<double>::Zero(point_to_point_controller->num_joints())};
+    auto& point_to_point_controller_context =
+        this->GetMutableSubsystemContext(*point_to_point_controller, context);
+    point_to_point_controller->Initialize(q0,
+                                          &point_to_point_controller_context);
   }
 }
 

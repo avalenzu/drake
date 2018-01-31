@@ -4,6 +4,7 @@
 
 #include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_planner.h"
 #include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_plant.h"
+#include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_point_to_point_controller.h"
 #include "drake/examples/kuka_iiwa_arm/lcm_plan_interpolator.h"
 #include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
 #include "drake/systems/framework/diagram.h"
@@ -78,7 +79,7 @@ class MonolithicPickAndPlaceSystem : public systems::Diagram<double> {
   // Subsystems
   pick_and_place::LcmPlant* plant_{};
   std::vector<pick_and_place::LcmPlanner*> planners_{};
-  std::vector<LcmPlanInterpolator*> plan_interpolators_{};
+  std::vector<LcmPointToPointController*> point_to_point_controllers_{};
 };
 }  // namespace monolithic_pick_and_place
 }  // namespace kuka_iiwa_arm

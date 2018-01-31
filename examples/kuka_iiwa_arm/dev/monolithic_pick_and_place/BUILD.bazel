@@ -19,6 +19,7 @@ drake_cc_library(
     deps = [
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/examples/kuka_iiwa_arm:lcm_plan_interpolator",
+        "//drake/examples/kuka_iiwa_arm/dev/pick_and_place:lcm_point_to_point_controller",
         "//drake/examples/kuka_iiwa_arm/dev/pick_and_place:lcm_planner",
         "//drake/examples/kuka_iiwa_arm/dev/pick_and_place:lcm_plant",
         "//drake/multibody:rigid_body_tree",
