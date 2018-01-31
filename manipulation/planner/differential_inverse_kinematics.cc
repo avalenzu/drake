@@ -1,5 +1,7 @@
 #include "drake/manipulation/planner/differential_inverse_kinematics.h"
 
+#include "drake/solvers/scs_solver.h"
+
 namespace drake {
 namespace manipulation {
 namespace planner {
@@ -45,6 +47,7 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
 
   // Add ee vel constraint.
   const solvers::QuadraticCost* cart_cost = nullptr;
+  drake::log()->debug("V = {}", V.transpose());
 
   if (num_cart_constraints > 0) {
     Vector6<double> V_dir = V.normalized();
@@ -55,9 +58,10 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     Eigen::MatrixXd A(6, J.cols() + 1);
     A.topLeftCorner(6, J.cols()) = J;
     A.topRightCorner(6, 1) = -V_dir;
-    drake::log()->info("A =\n{}", A);
+    // drake::log()->info("A =\n{}", A);
     prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(),
                                      {v_next, alpha});
+    prog.AddLinearConstraint(alpha(0) >= 0);
     cart_cost = prog.AddQuadraticErrorCost(drake::Vector1<double>(100),
                                            drake::Vector1<double>(V_mag), alpha)
                     .constraint()
@@ -65,13 +69,18 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
 
     Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
 
-    // Add constrained the unconstrained dof's velocity to be small, which is
-    // used to fullfil the regularization cost.
-    for (int i = num_cart_constraints; i < num_velocities; i++) {
-      prog.AddLinearConstraint(
-          svd.matrixV().col(i).transpose(),
-          -parameters.unconstrained_degrees_of_freedom_velocity_limit(),
-          parameters.unconstrained_degrees_of_freedom_velocity_limit(), v_next);
+    if (parameters.unconstrained_degrees_of_freedom_velocity_limit()) {
+      // Add constrained the unconstrained dof's velocity to be small, which is
+      // used to fullfil the regularization cost.
+      for (int i = num_cart_constraints; i < num_velocities; i++) {
+        prog.AddLinearConstraint(
+            svd.matrixV().col(i).transpose(),
+            -parameters.unconstrained_degrees_of_freedom_velocity_limit()
+                 .value(),
+            parameters.unconstrained_degrees_of_freedom_velocity_limit()
+                .value(),
+            v_next);
+      }
     }
   }
 
@@ -109,7 +118,8 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   }
 
   // Solve
-  drake::solvers::SolutionResult result = prog.Solve();
+  solvers::ScsSolver scs_solver;
+  drake::solvers::SolutionResult result = scs_solver.Solve(prog);
 
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};

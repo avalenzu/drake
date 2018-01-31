@@ -80,7 +80,7 @@ class DifferentialInverseKinematicsParameters {
     dt_ = dt;
   }
 
-  const double& unconstrained_degrees_of_freedom_velocity_limit() const {
+  const optional<double>& unconstrained_degrees_of_freedom_velocity_limit() const {
     return unconstrained_degrees_of_freedom_velocity_limit_;
   }
 
@@ -95,8 +95,7 @@ class DifferentialInverseKinematicsParameters {
   optional<std::pair<VectorX<double>, VectorX<double>>> q_bounds_{};
   optional<std::pair<VectorX<double>, VectorX<double>>> v_bounds_{};
   optional<std::pair<VectorX<double>, VectorX<double>>> vd_bounds_{};
-  double unconstrained_degrees_of_freedom_velocity_limit_{
-      std::numeric_limits<double>::infinity()};
+  optional<double> unconstrained_degrees_of_freedom_velocity_limit_{};
   Vector6<double> gain_E_{Vector6<double>::Ones()};
   double dt_{1};
 };
