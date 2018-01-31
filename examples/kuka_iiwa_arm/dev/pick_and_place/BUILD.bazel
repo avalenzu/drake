@@ -50,10 +50,12 @@ drake_cc_library(
     deps = [
         "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
+        "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",  # noqa
         "//drake/manipulation/planner:differential_inverse_kinematics_system",
+        "//drake/manipulation/util:world_sim_tree_builder",
         "//drake/systems/framework:diagram_builder",
         "//drake/systems/primitives:demultiplexer",
-        "@lcmtypes_bot2_core",
+        "//drake/util:lcm_util",
     ],
 )
 
@@ -164,6 +166,25 @@ drake_cc_binary(
         "@gflags",
         "@lcmtypes_bot2_core",
         "@optitrack_driver//lcmtypes:optitrack_lcmtypes",
+    ],
+)
+
+drake_cc_binary(
+    name = "iiwa_point_to_point_controller",
+    srcs = ["iiwa_point_to_point_controller.cc"],
+    data = [
+        "//drake/examples/kuka_iiwa_arm:models",
+        "//drake/examples/kuka_iiwa_arm/pick_and_place:configuration",
+        "//drake/manipulation/models/iiwa_description:models",
+    ],
+    deps = [
+        ":lcm_point_to_point_controller",
+        "//drake/common:text_logging_gflags",
+        "//drake/systems/lcm:lcm_driven_loop",
+        "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration_parsing",  # noqa
+        "//drake/examples/kuka_iiwa_arm:iiwa_common",
+        "//drake/lcm",
+        "@gflags",
     ],
 )
 

@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "drake/examples/kuka_iiwa_arm/pick_and_place/pick_and_place_configuration.h"
+#include "drake/manipulation/planner/differential_inverse_kinematics.h"
 #include "drake/manipulation/planner/differential_inverse_kinematics_system.h"
 #include "drake/systems/framework/diagram.h"
 
@@ -10,8 +12,8 @@ namespace examples {
 namespace kuka_iiwa_arm {
 class LcmPointToPointController : public systems::Diagram<double> {
  public:
-  LcmPointToPointController(const std::string& model_path,
-                            const std::string& end_effector_frame_name);
+  LcmPointToPointController(
+      const pick_and_place::PlannerConfiguration& configuration);
 
   const systems::InputPortDescriptor<double>& iiwa_status_input_port() const {
     return get_input_port(iiwa_status_input_port_);
@@ -34,7 +36,16 @@ class LcmPointToPointController : public systems::Diagram<double> {
   void Initialize(const VectorX<double>& initial_joint_position,
                   systems::Context<double>* context) const;
 
-  int num_joints() const { return num_joints_; }
+  int num_joints() const {
+    return differential_inverse_kinematics_->num_positions();
+  }
+
+  manipulation::planner::DifferentialInverseKinematicsParameters&
+  MutableParameters(systems::Context<double>* context) const {
+    return differential_inverse_kinematics_->MutableParameters(
+        &this->GetMutableSubsystemContext(*differential_inverse_kinematics_,
+                                          context));
+  }
 
  private:
   // Input ports.
@@ -47,8 +58,6 @@ class LcmPointToPointController : public systems::Diagram<double> {
   // Subsystems.
   manipulation::planner::DifferentialInverseKinematicsSystem*
       differential_inverse_kinematics_{};
-
-  int num_joints_{0};
 };
 }  // namespace kuka_iiwa_arm
 }  // namespace examples
