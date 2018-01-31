@@ -167,7 +167,7 @@ class DifferentialInverseKinematicsSystem final
   int joint_velocity_input_port_{-1};
   int desired_end_effector_pose_input_port_{-1};
   // State indices
-  int is_initialized_state_{-1};
+  //int is_initialized_state_{-1};
   // Output port indices
   int desired_joint_position_output_port_{-1};
   // Abstract parameter

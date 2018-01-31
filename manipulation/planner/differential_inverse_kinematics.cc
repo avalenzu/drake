@@ -67,9 +67,8 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
                     .constraint()
                     .get();
 
-    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-
     if (parameters.unconstrained_degrees_of_freedom_velocity_limit()) {
+      Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
       // Add constrained the unconstrained dof's velocity to be small, which is
       // used to fullfil the regularization cost.
       for (int i = num_cart_constraints; i < num_velocities; i++) {
