@@ -95,13 +95,16 @@ class IiwaMove : public Action {
                   const std::vector<VectorX<double>>& q,
                   robotlocomotion::robot_plan_t* plan);
 
+  void MoveCartesian(const WorldState& est_state,
+                     const Isometry3<double>& X_WE_desired,
+                     double duration,
+                     robotlocomotion::robot_plan_t* plan);
+
   void Reset() override;
 
   // TODO(siyuanfeng): have something meaningful here, like the object slipped
   // out.
-  bool ActionFailed(const WorldState&) const override {
-    return false;
-  }
+  bool ActionFailed(const WorldState&) const override { return false; }
 
   /**
    * Returns true if the time since the beginning of the action is longer than
@@ -129,8 +132,7 @@ class WsgAction : public Action {
    * against anything in this direction, it mostly affects the
    * velocity of the fingers.
    */
-  void OpenGripper(const WorldState& est_state,
-                   double grip_force,
+  void OpenGripper(const WorldState& est_state, double grip_force,
                    lcmt_schunk_wsg_command* msg);
 
   /**
@@ -142,15 +144,12 @@ class WsgAction : public Action {
    * precise (and the actual outcome may depend on the gripper
    * configuration).
    */
-  void CloseGripper(const WorldState& est_state,
-                    double grip_force,
+  void CloseGripper(const WorldState& est_state, double grip_force,
                     lcmt_schunk_wsg_command* msg);
 
   // TODO(siyuanfeng): Implement something meaningful here like a check for a
   // force threshold being crossed.
-  bool ActionFailed(const WorldState&) const override {
-    return false;
-  }
+  bool ActionFailed(const WorldState&) const override { return false; }
 
   /**
    * Returns true if the following criteria are satisfied:
@@ -163,8 +162,8 @@ class WsgAction : public Action {
 
  private:
   enum { kOpen, kClose } last_command_{kOpen};
-  static constexpr double kFinalSpeedThreshold = 1e-2;  // m/s
-  static constexpr double kOpenPositionThreshold = .095;   // m
+  static constexpr double kFinalSpeedThreshold = 1e-2;    // m/s
+  static constexpr double kOpenPositionThreshold = .095;  // m
 };
 
 }  // namespace pick_and_place
