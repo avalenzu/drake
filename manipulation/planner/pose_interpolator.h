@@ -18,7 +18,7 @@ namespace planner {
      ──────────▶│PoseInterpolator├────▶
                 └────────────────┘
  */
-class PoseInterpolator final : public systems::LeafSystem<double> {
+class PoseInterpolator : public systems::LeafSystem<double> {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(PoseInterpolator)
 
@@ -47,7 +47,7 @@ class PoseInterpolator final : public systems::LeafSystem<double> {
 
  private:
   static constexpr double kDefaultPlanUpdateInterval = 0.1;
-  static constexpr double kComparisonTolerance = 1e-8;
+  const double kComparisonTolerance = 1e-8;
   void CalcPoseOutput(const systems::Context<double>& context,
                       Isometry3<double>* output) const;
   // Inputs

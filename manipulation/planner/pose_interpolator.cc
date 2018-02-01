@@ -31,6 +31,8 @@ PoseInterpolator::PoseInterpolator(double update_interval) {
   this->DeclarePeriodicUnrestrictedUpdate(update_interval, 0);
 }
 
+PoseInterpolator::~PoseInterpolator() {}
+
 void PoseInterpolator::CalcPoseOutput(const Context<double>& context,
                                       Isometry3<double>* output) const {
   const auto trajectory =
