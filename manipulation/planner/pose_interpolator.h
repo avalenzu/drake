@@ -56,6 +56,7 @@ class PoseInterpolator : public systems::LeafSystem<double> {
   int pose_output_port_{-1};
   // Abstract state
   int trajectory_state_index_{-1};
+  int start_time_index_{-1};
 };
 
 }  // namespace planner

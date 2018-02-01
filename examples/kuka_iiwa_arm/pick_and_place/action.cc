@@ -65,7 +65,7 @@ void IiwaMove::MoveCartesian(const WorldState& est_state,
   EncodePose(X_WG, plan->plan[0].pose);
   plan->plan[0].utime = 0;
   EncodePose(X_WG_desired, plan->plan[1].pose);
-  plan->plan[1].utime = duration;
+  plan->plan[1].utime = 1e6*duration;
   plan->num_grasp_transitions = 0;
   plan->left_arm_control_type = plan->POSITION;
   plan->right_arm_control_type = plan->NONE;

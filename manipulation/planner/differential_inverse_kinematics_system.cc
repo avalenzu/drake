@@ -48,11 +48,37 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
 
 void DifferentialInverseKinematicsSystem::DoCalcTimeDerivatives(
     const systems::Context<double>& context,
-    systems::ContinuousState<double>* derivatives) const {}
+    systems::ContinuousState<double>* derivatives) const {
+  //const VectorX<double>& joint_position =
+      //this->EvaluateJointPosition(context).get_value();
+  //const VectorX<double>& joint_velocity =
+      //this->EvaluateJointVelocity(context).get_value();
+  //const Isometry3<double>& desired_end_effector_pose =
+      //this->EvaluateDesiredEndEffectorPose(context);
+  //KinematicsCache<double> cache = robot_->doKinematics(joint_position);
+  //DifferentialInverseKinematicsResult result = DoDifferentialInverseKinematics(
+      //*robot_, cache, joint_velocity, *end_effector_frame_,
+      //desired_end_effector_pose, Parameters(context));
+  //if (joint_position.size() == joint_velocity.size()) {
+    //derivatives->SetFromVector(result.joint_velocities.value_or(
+        //VectorX<double>::Zero(joint_position.size())));
+  //} else {
+    //derivatives->SetFromVector(robot_->transformVelocityToQDot(
+        //cache,
+        //result.joint_velocities.value_or(
+            //VectorX<double>::Zero(joint_position.size()))));
+  //}
+  //VectorX<double> q = context.get_continuous_state().get_vector().CopyToVector();
+  //VectorX<double> qdot = derivatives->get_vector().CopyToVector();
+  //drake::log()->debug("qdot = {}", qdot.transpose());
+  //drake::log()->debug("q = {}", q.transpose());
+}
 
 void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
     const systems::Context<double>& context,
     BasicVector<double>* output) const {
+  //DRAKE_THROW_UNLESS(context.get_abstract_state<bool>(is_initialized_state_));
+  //output->SetFrom(context.get_continuous_state().get_vector());
   const VectorX<double>& joint_position =
       this->EvaluateJointPosition(context).get_value();
   const VectorX<double>& joint_velocity =
@@ -79,6 +105,8 @@ void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
 
 void DifferentialInverseKinematicsSystem::Initialize(
     const VectorX<double>& q0, systems::Context<double>* context) const {
+  //context->get_mutable_continuous_state().SetFromVector(q0);
+  //context->get_mutable_abstract_state<bool>(is_initialized_state_) = true;
 }
 
 }  // namespace planner

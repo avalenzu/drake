@@ -10,8 +10,8 @@ namespace manipulation {
 namespace planner {
 
 using systems::BasicVector;
-using systems::kVectorValued;
 using systems::Context;
+using systems::kVectorValued;
 using systems::Value;
 
 PoseInterpolator::PoseInterpolator(double update_interval) {
@@ -26,6 +26,8 @@ PoseInterpolator::PoseInterpolator(double update_interval) {
   trajectory_state_index_ = this->DeclareAbstractState(
       Value<PiecewiseCartesianTrajectory<double>>::Make(
           PiecewiseCartesianTrajectory<double>()));
+  this->DeclareDiscreteState(1);
+  start_time_index_ = 0;
 
   // Set update rate.
   this->DeclarePeriodicUnrestrictedUpdate(update_interval, 0);
@@ -38,7 +40,14 @@ void PoseInterpolator::CalcPoseOutput(const Context<double>& context,
   const auto trajectory =
       context.get_abstract_state<PiecewiseCartesianTrajectory<double>>(
           trajectory_state_index_);
-  *output = trajectory.get_pose(context.get_time());
+  const auto start_time =
+      context.get_discrete_state().get_vector().GetAtIndex(start_time_index_);
+  if (trajectory.empty()) {
+    *output = Isometry3<double>::Identity();
+  } else {
+    // drake::log()->debug("xyz = {}", output->translation().transpose());
+    *output = trajectory.get_pose(context.get_time() - start_time);
+  }
 }
 
 void PoseInterpolator::DoCalcUnrestrictedUpdate(
@@ -53,10 +62,17 @@ void PoseInterpolator::DoCalcUnrestrictedUpdate(
       this->EvalAbstractInput(context, trajectory_input_port_)
           ->GetValue<PiecewiseCartesianTrajectory<double>>();
   // Only update the state if the input is a different trajectory.
-  if (!trajectory_input.is_approx(trajectory_state, kComparisonTolerance)) {
+  if (trajectory_state.empty() ||
+      !trajectory_input.is_approx(trajectory_state, kComparisonTolerance)) {
     trajectory_state = trajectory_input;
     // t = 0 in the input trajectory corresponds to the current time.
-    trajectory_state.ShiftRight(context.get_time());
+    state->get_mutable_discrete_state()
+        .get_mutable_vector()
+        .get_mutable_value()(start_time_index_) = context.get_time();
+    drake::log()->debug(
+        "t0' = {}, tf' = {}",
+        trajectory_state.get_position_trajectory().get_start_time(),
+        trajectory_state.get_position_trajectory().get_end_time());
   }
 }
 }  // namespace planner

@@ -17,12 +17,12 @@ namespace drake {
 namespace examples {
 namespace kuka_iiwa_arm {
 
+using manipulation::PiecewiseCartesianTrajectory;
 using manipulation::planner::DifferentialInverseKinematicsSystem;
 using manipulation::planner::PoseInterpolator;
-using manipulation::PiecewiseCartesianTrajectory;
 using manipulation::util::WorldSimTreeBuilder;
-using systems::DiagramBuilder;
 using robotlocomotion::robot_plan_t;
+using systems::DiagramBuilder;
 
 namespace {
 
@@ -48,18 +48,21 @@ class PlanToEndEffectorTrajectoryConverter
     if (plan_input.plan.empty()) {
       *trajectory = PiecewiseCartesianTrajectory<double>::
           MakeCubicLinearWithEndLinearVelocity(
-              {0.0, 0.0},
+              {0.0, 1.0},
               {Isometry3<double>::Identity(), Isometry3<double>::Identity()},
               Vector3<double>::Zero(), Vector3<double>::Zero());
     } else {
       *trajectory = PiecewiseCartesianTrajectory<double>::
           MakeCubicLinearWithEndLinearVelocity(
-              {0.0,
-               1e6 * (plan_input.plan.back().utime -
-                      plan_input.plan.front().utime)},
+              {0.0, 1e-6 * (plan_input.plan.back().utime -
+                            plan_input.plan.front().utime)},
               {DecodePose(plan_input.plan.front().pose),
                DecodePose(plan_input.plan.back().pose)},
               Vector3<double>::Zero(), Vector3<double>::Zero());
+      drake::log()->debug(
+          "t0 = {}, tf = {}",
+          trajectory->get_position_trajectory().get_start_time(),
+          trajectory->get_position_trajectory().get_end_time());
     }
   }
 };
@@ -149,8 +152,8 @@ LcmPointToPointController::LcmPointToPointController(
   // Export the inputs.
   iiwa_status_input_port_ =
       builder.ExportInput(status_receiver->get_input_port(0));
-  desired_end_effector_pose_input_port_ =
-      builder.ExportInput(plan_to_end_effector_trajectory_converter->get_input_port(0));
+  desired_end_effector_pose_input_port_ = builder.ExportInput(
+      plan_to_end_effector_trajectory_converter->get_input_port(0));
 
   // Export the output.
   iiwa_command_output_port_ =
@@ -166,7 +169,7 @@ LcmPointToPointController::LcmPointToPointController(
       state_demux->get_output_port(1),
       differential_inverse_kinematics_->joint_velocity_input_port());
   builder.Connect(plan_to_end_effector_trajectory_converter->get_output_port(0),
-      pose_interpolator->trajectory_input_port());
+                  pose_interpolator->trajectory_input_port());
   builder.Connect(
       pose_interpolator->pose_output_port(),
       differential_inverse_kinematics_->desired_end_effector_pose_input_port());

@@ -817,10 +817,10 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
       if (!iiwa_move_.ActionStarted()) {
         DRAKE_THROW_UNLESS(static_cast<bool>(X_WG_desired_));
         robotlocomotion::robot_plan_t plan{};
-        auto robot = BuildTree(configuration_);
+        auto robot = BuildTree(configuration_, true /*add_grasp_frame*/);
         auto kinematics_cache = robot->doKinematics(env_state.get_iiwa_q());
-        const Isometry3<double> X_WG = robot->CalcFramePoseInWorldFrame(
-            kinematics_cache, *robot->findFrame(kGraspFrameName));
+        const Isometry3<double> X_WG = robot->CalcBodyPoseInWorldFrame(
+            kinematics_cache, *robot->FindBody(kGraspFrameName));
 
         iiwa_move_.MoveCartesian(env_state, X_WG, X_WG_desired_->at(state_), 2,
                                  &plan);

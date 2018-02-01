@@ -73,6 +73,11 @@ class PiecewiseCubicTrajectory {
   double get_end_time() const { return q_.getEndTime(); }
 
   /**
+   * Returns true if the position trajectory is empty.
+   */
+  bool empty() const { return q_.empty(); }
+
+  /**
    * Returns true if the position trajectory and its first and second
    * derivatives are all within @p tol to @p other.
    */
@@ -243,6 +248,8 @@ class PiecewiseCartesianTrajectory {
     position_.ShiftRight(offset);
     orientation_.shiftRight(offset);
   }
+
+  bool empty() const { return position_.empty(); }
 
  private:
   PiecewiseCubicTrajectory<T> position_;

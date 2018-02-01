@@ -107,12 +107,7 @@ int DoMain() {
   double msg_time =
       loop.get_message_to_time_converter().GetTimeInSeconds(first_msg);
   const lcmt_iiwa_status& first_status = first_msg.GetValue<lcmt_iiwa_status>();
-  VectorX<double> q0(kNumJoints);
   DRAKE_DEMAND(kNumJoints == first_status.num_joints);
-  for (int i = 0; i < kNumJoints; i++)
-    q0[i] = first_status.joint_position_measured[i];
-
-  q0[3] = -M_PI_2;
 
   systems::Context<double>& diagram_context = loop.get_mutable_context();
   systems::Context<double>& status_sub_context =
@@ -123,12 +118,19 @@ int DoMain() {
   diagram_context.set_time(msg_time);
   auto& point_to_point_controller_context = diagram->GetMutableSubsystemContext(
       *point_to_point_controller, &diagram_context);
-  point_to_point_controller->Initialize(q0, &point_to_point_controller_context);
   VectorX<double> max_joint_velocities = 0.9 * get_iiwa_max_joint_velocities();
   VectorX<double> min_joint_velocities = -max_joint_velocities;
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .SetJointVelocityLimits({min_joint_velocities, max_joint_velocities});
+  VectorX<double> comfortable_joint_position{VectorX<double>::Zero(kNumJoints)};
+  comfortable_joint_position(1) = -M_PI_4;
+  comfortable_joint_position(3) = -M_PI_2;
+  point_to_point_controller
+      ->MutableParameters(&point_to_point_controller_context)
+      .set_nominal_joint_position(comfortable_joint_position);
+  point_to_point_controller->Initialize(comfortable_joint_position,
+                                        &point_to_point_controller_context);
 
   loop.RunToSecondsAssumingInitialized();
   return 0;
