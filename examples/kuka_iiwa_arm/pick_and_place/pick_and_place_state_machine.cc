@@ -822,7 +822,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
         const Isometry3<double> X_WG = robot->CalcFramePoseInWorldFrame(
             kinematics_cache, *robot->findFrame(kGraspFrameName));
 
-        iiwa_move_.MoveCartesian(env_state, X_WG, X_WG_desired_->at(state_), 0,
+        iiwa_move_.MoveCartesian(env_state, X_WG, X_WG_desired_->at(state_), 2,
                                  &plan);
         iiwa_callback(&plan);
 

@@ -95,9 +95,8 @@ class IiwaMove : public Action {
                   const std::vector<VectorX<double>>& q,
                   robotlocomotion::robot_plan_t* plan);
 
-  void MoveCartesian(const WorldState& est_state,
-                     const Isometry3<double>& X_WE_desired,
-                     double duration,
+  void MoveCartesian(const WorldState& est_state, const Isometry3<double>& X_WG,
+                     const Isometry3<double>& X_WE_desired, double duration,
                      robotlocomotion::robot_plan_t* plan);
 
   void Reset() override;

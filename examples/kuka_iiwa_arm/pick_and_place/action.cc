@@ -49,12 +49,12 @@ void IiwaMove::MoveJoints(const WorldState& est_state,
 }
 
 void IiwaMove::MoveCartesian(const WorldState& est_state,
-                             const Isometry3<double>& X_WG_desired,
+                             const Isometry3<double>& X_WG,
                              const Isometry3<double>& X_WG_desired,
                              double duration,
                              robotlocomotion::robot_plan_t* plan) {
   DRAKE_DEMAND(plan != nullptr);
-  int num_time_steps = 1;
+  int num_time_steps = 2;
   plan->utime = 0;  // I (sam.creasey) don't think this is used?
   plan->robot_name = "iiwa";  // Arbitrary, probably ignored
   plan->num_states = num_time_steps;
@@ -62,9 +62,10 @@ void IiwaMove::MoveCartesian(const WorldState& est_state,
   plan->plan.resize(num_time_steps, default_robot_state);
   plan->plan_info.resize(num_time_steps, 0);
   /// Encode X_WG_desired into the pose of the robot states.
-  for (int i = 0; i < num_time_steps; i++) {
-    EncodePose(X_WG_desired, plan->plan[i].pose);
-  }
+  EncodePose(X_WG, plan->plan[0].pose);
+  plan->plan[0].utime = 0;
+  EncodePose(X_WG_desired, plan->plan[1].pose);
+  plan->plan[1].utime = duration;
   plan->num_grasp_transitions = 0;
   plan->left_arm_control_type = plan->POSITION;
   plan->right_arm_control_type = plan->NONE;
