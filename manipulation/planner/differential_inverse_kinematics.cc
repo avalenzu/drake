@@ -38,9 +38,6 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   DRAKE_ASSERT(J.rows() == num_cart_constraints);
   DRAKE_ASSERT(J.cols() == parameters.num_velocities());
 
-  const auto identity_num_positions =
-      MatrixX<double>::Identity(num_positions, num_positions);
-
   drake::solvers::MathematicalProgram prog;
   drake::solvers::VectorXDecisionVariable v_next =
       prog.NewContinuousVariables(num_velocities, "v_next");
@@ -52,38 +49,7 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   drake::log()->trace("V = {}", V.transpose());
 
   if (num_cart_constraints > 0) {
-    // Vector6<double> V_dir = V.normalized();
-    // double V_mag = V.norm();
-
-    // Constrain the end effector motion to be in the direction of V_dir,
-    // and penalize magnitude difference from V_mag.
-    // Eigen::MatrixXd A(6, J.cols() + 1);
-    // A.topLeftCorner(6, J.cols()) = J;
-    // A.topRightCorner(6, 1) = -V_dir;
-    // drake::log()->info("A =\n{}", A);
-    // prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(),
-    //{v_next, alpha});
-    // prog.AddLinearConstraint(alpha(0) >= 0);
-    // cart_cost = prog.AddQuadraticErrorCost(drake::Vector1<double>(100),
-    // drake::Vector1<double>(V_mag), alpha)
-    //.constraint()
-    //.get();
     prog.AddL2NormCost(J, V, v_next);
-
-    if (parameters.unconstrained_degrees_of_freedom_velocity_limit()) {
-      Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-      // Add constrained the unconstrained dof's velocity to be small, which is
-      // used to fullfil the regularization cost.
-      for (int i = num_cart_constraints; i < num_velocities; i++) {
-        prog.AddLinearConstraint(
-            svd.matrixV().col(i).transpose(),
-            -parameters.unconstrained_degrees_of_freedom_velocity_limit()
-                 .value(),
-            parameters.unconstrained_degrees_of_freedom_velocity_limit()
-                .value(),
-            v_next);
-      }
-    }
   }
 
   const VectorX<double> q_error{q_current -
@@ -93,15 +59,10 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   const double dt{parameters.timestep()};
   if (num_cart_constraints < num_velocities) {
     Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-    // for (int i = num_cart_constraints; i < num_velocities; i++) {
     MatrixX<double> K =
         svd.matrixV().rightCols(num_velocities - num_cart_constraints);
-    MatrixX<double> M = K * K.transpose();
-    prog.AddQuadraticCost(M.transpose() * M * dt * dt,
-                          dt * M.transpose() * q_error, v_next);
-    //prog.AddQuadraticCost(M.transpose() * M,
-                          //VectorX<double>::Zero(num_velocities), v_next);
-    //}
+    prog.AddL2NormCost(dt * K.transpose(), -K.transpose() * q_error,
+                       v_next);
   }
 
   // Add q upper and lower joint limit.
@@ -118,43 +79,25 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
                                   v_next);
   }
 
-  // Add vd constraint.
-  if (parameters.joint_acceleration_limits()) {
-    prog.AddLinearConstraint(
-        identity_num_positions,
-        parameters.joint_acceleration_limits()->first * dt + v_current,
-        parameters.joint_acceleration_limits()->second * dt + v_current,
-        v_next);
-  }
-
   // Solve
-  //solvers::ScsSolver scs_solver;
-  //drake::solvers::SolutionResult result = scs_solver.Solve(prog);
-  //solvers::GurobiSolver gurobi_solver;
-  //drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
-   solvers::MosekSolver mosek_solver;
-   drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
-   //drake::solvers::SolutionResult result = prog.Solve();
+  // solvers::ScsSolver scs_solver;
+  // drake::solvers::SolutionResult result = scs_solver.Solve(prog);
+  // solvers::GurobiSolver gurobi_solver;
+  // drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
+  solvers::MosekSolver mosek_solver;
+  drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
+  // drake::solvers::SolutionResult result = prog.Solve();
 
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
   }
 
   Eigen::VectorXd cost(1);
-  // cart_cost->Eval(prog.GetSolution(alpha), cost);
-
-  // Not tracking the desired vel norm, and computed vel is small.
-  // if (false && num_cart_constraints && cost(0) > 5 &&
-  // prog.GetSolution(alpha)[0] <= 1e-2) {
   drake::log()->trace("v_min  = {}",
                       parameters.joint_velocity_limits()->first.transpose());
   drake::log()->trace("v_next = {}", prog.GetSolution(v_next).transpose());
   drake::log()->trace("v_max  = {}",
                       parameters.joint_velocity_limits()->second.transpose());
-  // drake::log()->trace("alpha = {}", prog.GetSolution(alpha).transpose());
-  // return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
-  //}
-  // drake::log()->trace("alpha = {}", prog.GetSolution(alpha).transpose());
 
   return {prog.GetSolution(v_next),
           DifferentialInverseKinematicsStatus::kSolutionFound};
