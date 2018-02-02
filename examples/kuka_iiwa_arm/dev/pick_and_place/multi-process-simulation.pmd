@@ -26,7 +26,7 @@ group "1.planners" {
 
 group "2.interpolators" {
     cmd "2.0.single-iiwa-interpolator" {
-        exec = "bazel-bin/examples/kuka_iiwa_arm/iiwa_controller";
+        exec = "bazel-bin/examples/kuka_iiwa_arm/dev/pick_and_place/iiwa_point_to_point_controller --configuration_file drake/examples/kuka_iiwa_arm/pick_and_place/configuration/single_iiwa.pick_and_place_configuration";
         host = "localhost";
     }
     cmd "2.1.dual-iiwa-interpolator-0" {
