@@ -822,8 +822,8 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
         const Isometry3<double> X_WG = robot->CalcBodyPoseInWorldFrame(
             kinematics_cache, *robot->FindBody(kGraspFrameName));
 
-        iiwa_move_.MoveCartesian(env_state, X_WG, X_WG_desired_->at(state_), 1,
-                                 &plan);
+        iiwa_move_.MoveCartesian(env_state, {X_WG, X_WG_desired_->at(state_)},
+                                 {0, 1}, &plan);
         iiwa_callback(&plan);
 
         drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
