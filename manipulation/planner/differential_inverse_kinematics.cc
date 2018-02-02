@@ -52,14 +52,14 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   drake::log()->trace("V = {}", V.transpose());
 
   if (num_cart_constraints > 0) {
-    Vector6<double> V_dir = V.normalized();
+    // Vector6<double> V_dir = V.normalized();
     // double V_mag = V.norm();
 
     // Constrain the end effector motion to be in the direction of V_dir,
     // and penalize magnitude difference from V_mag.
-    Eigen::MatrixXd A(6, J.cols() + 1);
-    A.topLeftCorner(6, J.cols()) = J;
-    A.topRightCorner(6, 1) = -V_dir;
+    // Eigen::MatrixXd A(6, J.cols() + 1);
+    // A.topLeftCorner(6, J.cols()) = J;
+    // A.topRightCorner(6, 1) = -V_dir;
     // drake::log()->info("A =\n{}", A);
     // prog.AddLinearEqualityConstraint(A, Vector6<double>::Zero(),
     //{v_next, alpha});
@@ -93,12 +93,15 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   const double dt{parameters.timestep()};
   if (num_cart_constraints < num_velocities) {
     Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-    for (int i = num_cart_constraints; i < num_velocities; i++) {
-      MatrixX<double> M = svd.matrixV().col(i) * svd.matrixV().col(i).transpose();
-      prog.AddQuadraticCost(
-          M.transpose() * identity_num_positions * M * dt * dt,
-          q_error * M / dt, v_next);
-    }
+    // for (int i = num_cart_constraints; i < num_velocities; i++) {
+    MatrixX<double> K =
+        svd.matrixV().rightCols(num_velocities - num_cart_constraints);
+    MatrixX<double> M = K * K.transpose();
+    prog.AddQuadraticCost(M.transpose() * M * dt * dt,
+                          dt * M.transpose() * q_error, v_next);
+     prog.AddQuadraticCost(M.transpose() * M,
+     VectorX<double>::Zero(num_velocities), v_next);
+    //}
   }
 
   // Add q upper and lower joint limit.
@@ -125,10 +128,10 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   }
 
   // Solve
-  // solvers::ScsSolver scs_solver;
-  // drake::solvers::SolutionResult result = scs_solver.Solve(prog);
-  solvers::GurobiSolver gurobi_solver;
-  drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
+  solvers::ScsSolver scs_solver;
+  drake::solvers::SolutionResult result = scs_solver.Solve(prog);
+  // solvers::GurobiSolver gurobi_solver;
+  // drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
   // solvers::MosekSolver mosek_solver;
   // drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
   // drake::solvers::SolutionResult result = prog.Solve();
