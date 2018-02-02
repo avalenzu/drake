@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "drake/manipulation/planner/differential_inverse_kinematics.h"
@@ -13,7 +12,8 @@ namespace planner {
  Inputs:
   - q_current (vector)
   - v_current (vector)
-  - X_WE_desired (vector)
+  - V (n-element vector)
+  - J (n x num_velocities matrix)
  State:
   - q_desired
   - is_initialized
@@ -46,6 +46,8 @@ class DifferentialInverseKinematicsSystem final
       std::unique_ptr<RigidBodyTree<double>> robot,
       const std::string& end_effector_frame_name);
 
+  ~DifferentialInverseKinematicsSystem() {};
+
   const systems::InputPortDescriptor<double>& joint_position_input_port()
       const {
     return this->get_input_port(joint_position_input_port_);
@@ -56,9 +58,8 @@ class DifferentialInverseKinematicsSystem final
     return this->get_input_port(joint_velocity_input_port_);
   }
 
-  const systems::InputPortDescriptor<double>&
-  desired_end_effector_pose_input_port() const {
-    return this->get_input_port(desired_end_effector_pose_input_port_);
+  const systems::InputPortDescriptor<double>& constraint_input_port() const {
+    return this->get_input_port(constraint_input_port_);
   }
 
   const systems::OutputPort<double>& desired_joint_position_output_port()
@@ -82,12 +83,22 @@ class DifferentialInverseKinematicsSystem final
     return *joint_velocity;
   }
 
-  const Isometry3<double>& EvaluateDesiredEndEffectorPose(
+  const VectorX<double>& EvaluateConstraintVelocity(
       const systems::Context<double>& context) const {
-    const systems::AbstractValue* desired_end_effector_pose =
-        this->EvalAbstractInput(context, desired_end_effector_pose_input_port_);
-    DRAKE_THROW_UNLESS(desired_end_effector_pose);
-    return desired_end_effector_pose->GetValue<Isometry3<double>>();
+    const systems::AbstractValue* constraint =
+        this->EvalAbstractInput(context, constraint_input_port_);
+    DRAKE_THROW_UNLESS(constraint);
+    return constraint->GetValue<std::pair<VectorX<double>, MatrixX<double>>>()
+        .first;
+  }
+
+  const MatrixX<double>& EvaluateConstraintJacobian(
+      const systems::Context<double>& context) const {
+    const systems::AbstractValue* constraint =
+        this->EvalAbstractInput(context, constraint_input_port_);
+    DRAKE_THROW_UNLESS(constraint);
+    return constraint->GetValue<std::pair<VectorX<double>, MatrixX<double>>>()
+        .second;
   }
 
   const DifferentialInverseKinematicsParameters& Parameters(
@@ -145,19 +156,6 @@ class DifferentialInverseKinematicsSystem final
 
   int num_positions() const { return robot_->get_num_positions(); }
 
-  /**
-   * Sets the initial state of the controller to @p initial_joint_position.
-   * This function needs to be explicitly called before any simulation.
-   * Otherwise this aborts in CalcOutput().
-   */
-  void Initialize(const VectorX<double>& q0,
-                  systems::Context<double>* context) const;
-
- protected:
-  virtual void DoCalcTimeDerivatives(
-      const systems::Context<double>& context,
-      systems::ContinuousState<double>* derivatives) const override;
-
  private:
   void CopyDesiredJointPosition(const systems::Context<double>& context,
                                 systems::BasicVector<double>* output) const;
@@ -165,9 +163,9 @@ class DifferentialInverseKinematicsSystem final
   // Input port indices
   int joint_position_input_port_{-1};
   int joint_velocity_input_port_{-1};
-  int desired_end_effector_pose_input_port_{-1};
+  int constraint_input_port_{-1};
   // State indices
-  //int is_initialized_state_{-1};
+  // int is_initialized_state_{-1};
   // Output port indices
   int desired_joint_position_output_port_{-1};
   // Abstract parameter

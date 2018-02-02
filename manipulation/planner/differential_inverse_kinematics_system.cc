@@ -22,12 +22,7 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
       this->DeclareInputPort(kVectorValued, num_positions).get_index();
   joint_velocity_input_port_ =
       this->DeclareInputPort(kVectorValued, num_velocities).get_index();
-  desired_end_effector_pose_input_port_ =
-      this->DeclareAbstractInputPort().get_index();
-  // State
-  // this->DeclareContinuousState(num_positions);
-  // is_initialized_state_ =
-  // this->DeclareAbstractState(systems::Value<bool>::Make(false));
+  constraint_input_port_= this->DeclareAbstractInputPort().get_index();
   // Ouput ports
   desired_joint_position_output_port_ =
       this->DeclareVectorOutputPort(
@@ -46,49 +41,21 @@ DifferentialInverseKinematicsSystem::DifferentialInverseKinematicsSystem(
       systems::Value<DifferentialInverseKinematicsParameters>(parameters));
 }
 
-void DifferentialInverseKinematicsSystem::DoCalcTimeDerivatives(
-    const systems::Context<double>& context,
-    systems::ContinuousState<double>* derivatives) const {
-  //const VectorX<double>& joint_position =
-      //this->EvaluateJointPosition(context).get_value();
-  //const VectorX<double>& joint_velocity =
-      //this->EvaluateJointVelocity(context).get_value();
-  //const Isometry3<double>& desired_end_effector_pose =
-      //this->EvaluateDesiredEndEffectorPose(context);
-  //KinematicsCache<double> cache = robot_->doKinematics(joint_position);
-  //DifferentialInverseKinematicsResult result = DoDifferentialInverseKinematics(
-      //*robot_, cache, joint_velocity, *end_effector_frame_,
-      //desired_end_effector_pose, Parameters(context));
-  //if (joint_position.size() == joint_velocity.size()) {
-    //derivatives->SetFromVector(result.joint_velocities.value_or(
-        //VectorX<double>::Zero(joint_position.size())));
-  //} else {
-    //derivatives->SetFromVector(robot_->transformVelocityToQDot(
-        //cache,
-        //result.joint_velocities.value_or(
-            //VectorX<double>::Zero(joint_position.size()))));
-  //}
-  //VectorX<double> q = context.get_continuous_state().get_vector().CopyToVector();
-  //VectorX<double> qdot = derivatives->get_vector().CopyToVector();
-  //drake::log()->debug("qdot = {}", qdot.transpose());
-  //drake::log()->debug("q = {}", q.transpose());
-}
-
 void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
     const systems::Context<double>& context,
     BasicVector<double>* output) const {
-  //DRAKE_THROW_UNLESS(context.get_abstract_state<bool>(is_initialized_state_));
-  //output->SetFrom(context.get_continuous_state().get_vector());
   const VectorX<double>& joint_position =
       this->EvaluateJointPosition(context).get_value();
   const VectorX<double>& joint_velocity =
       this->EvaluateJointVelocity(context).get_value();
-  const Isometry3<double>& desired_end_effector_pose =
-      this->EvaluateDesiredEndEffectorPose(context);
+  const VectorX<double>& constraint_velocity =
+      this->EvaluateConstraintVelocity(context);
+  const MatrixX<double>& constraint_jacobian =
+      this->EvaluateConstraintJacobian(context);
   KinematicsCache<double> cache = robot_->doKinematics(joint_position);
   DifferentialInverseKinematicsResult result = DoDifferentialInverseKinematics(
-      *robot_, cache, joint_velocity, *end_effector_frame_,
-      desired_end_effector_pose, Parameters(context));
+      joint_position, joint_velocity, constraint_velocity, constraint_jacobian,
+      Parameters(context));
   if (joint_position.size() == joint_velocity.size()) {
     output->SetFromVector(
         joint_position + Parameters(context).timestep() *
@@ -96,19 +63,13 @@ void DifferentialInverseKinematicsSystem::CopyDesiredJointPosition(
                                  VectorX<double>::Zero(joint_position.size())));
   } else {
     output->SetFromVector(
-        joint_position + Parameters(context).timestep() *
-        robot_->transformVelocityToQDot(cache,
-                             result.joint_velocities.value_or(
-                                 VectorX<double>::Zero(joint_position.size()))));
+        joint_position +
+        Parameters(context).timestep() *
+            robot_->transformVelocityToQDot(
+                cache, result.joint_velocities.value_or(
+                           VectorX<double>::Zero(joint_position.size()))));
   }
 }
-
-void DifferentialInverseKinematicsSystem::Initialize(
-    const VectorX<double>& q0, systems::Context<double>* context) const {
-  //context->get_mutable_continuous_state().SetFromVector(q0);
-  //context->get_mutable_abstract_state<bool>(is_initialized_state_) = true;
-}
-
 }  // namespace planner
 }  // namespace manipulation
 }  // namespace drake

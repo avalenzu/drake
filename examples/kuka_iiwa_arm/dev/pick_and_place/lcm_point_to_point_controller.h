@@ -20,8 +20,8 @@ class LcmPointToPointController : public systems::Diagram<double> {
   }
 
   const systems::InputPortDescriptor<double>&
-  desired_end_effector_pose_input_port() const {
-    return get_input_port(desired_end_effector_pose_input_port_);
+  plan_input_port() const {
+    return get_input_port(plan_input_port_);
   }
 
   const systems::OutputPort<double>& iiwa_command_output_port() const {
@@ -50,7 +50,7 @@ class LcmPointToPointController : public systems::Diagram<double> {
  private:
   // Input ports.
   int iiwa_status_input_port_{-1};
-  int desired_end_effector_pose_input_port_{-1};
+  int plan_input_port_{-1};
 
   // Ouptut ports.
   int iiwa_command_output_port_{-1};

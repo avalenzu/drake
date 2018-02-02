@@ -10,6 +10,7 @@
 #include "drake/multibody/joints/floating_base_types.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/systems/framework/leaf_system.h"
 #include "drake/systems/primitives/demultiplexer.h"
 #include "drake/util/lcmUtil.h"
 
@@ -50,10 +51,9 @@ class PlanToEndEffectorTrajectoryConverter
       X.rotate(AngleAxis<double>(M_PI_4, Vector3<double>::UnitY()));
       X.translation() << 0.5, 0.0, 0.5;
       *trajectory = PiecewiseCartesianTrajectory<double>::
-          MakeCubicLinearWithEndLinearVelocity(
-              {0.0, 1.0},
-              {X, X},
-              Vector3<double>::Zero(), Vector3<double>::Zero());
+          MakeCubicLinearWithEndLinearVelocity({0.0, 1.0}, {X, X},
+                                               Vector3<double>::Zero(),
+                                               Vector3<double>::Zero());
     } else {
       *trajectory = PiecewiseCartesianTrajectory<double>::
           MakeCubicLinearWithEndLinearVelocity(
@@ -68,6 +68,170 @@ class PlanToEndEffectorTrajectoryConverter
           trajectory->get_position_trajectory().get_end_time());
     }
   }
+};
+
+/**
+ * X_W1 = X_WErr * X_W0 <=> X_WErr = X_W1 * X_W0.inv()
+ * p_err = pose1.translation() - pos0.translation()
+ * R_err = pose1.linear() * pose0.linear().transpose().
+ */
+Vector6<double> ComputePoseDiffInWorldFrame(const Isometry3<double>& pose0,
+                                            const Isometry3<double>& pose1) {
+  Vector6<double> diff = Vector6<double>::Zero();
+
+  // Linear.
+  diff.tail<3>() = (pose1.translation() - pose0.translation());
+
+  // Angular.
+  AngleAxis<double> rot_err(pose1.linear() * pose0.linear().transpose());
+  diff.head<3>() = rot_err.axis() * rot_err.angle();
+
+  return diff;
+}
+
+class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
+ public:
+  FrameSpatialVelocityConstraint(
+      std::unique_ptr<RigidBodyTree<double>> robot,
+      const std::string& end_effector_frame_name,
+      double update_interval = kDefaultPlanUpdateInterval)
+      : robot_(std::move(robot)), update_interval_(update_interval) {
+    end_effector_frame_ = robot_->findFrame(end_effector_frame_name);
+    const int num_positions = robot_->get_num_positions();
+    const int num_velocities = robot_->get_num_velocities();
+    // Input ports
+    joint_position_input_port_ =
+        this->DeclareInputPort(systems::kVectorValued, num_positions)
+            .get_index();
+    joint_velocity_input_port_ =
+        this->DeclareInputPort(systems::kVectorValued, num_velocities)
+            .get_index();
+    plan_input_port_ = this->DeclareAbstractInputPort().get_index();
+    // State
+    trajectory_state_index_ = this->DeclareAbstractState(
+        systems::Value<PiecewiseCartesianTrajectory<double>>::Make(
+            PiecewiseCartesianTrajectory<double>()));
+    last_encoded_msg_index_ = this->DeclareAbstractState(
+        systems::Value<std::vector<char>>::Make(std::vector<char>()));
+    this->DeclareDiscreteState(1);
+    start_time_index_ = 0;
+    // Output ports
+    std::pair<VectorX<double>, MatrixX<double>> initial_constraint{
+        VectorX<double>::Zero(6), MatrixX<double>::Zero(6, num_velocities)};
+    this->DeclareAbstractOutputPort(
+        initial_constraint,
+        &FrameSpatialVelocityConstraint::CalcConstraintOutput);
+    this->DeclarePeriodicUnrestrictedUpdate(update_interval_, 0);
+  }
+
+  const systems::InputPortDescriptor<double>& joint_position_input_port()
+      const {
+    return this->get_input_port(joint_position_input_port_);
+  }
+
+  const systems::InputPortDescriptor<double>& joint_velocity_input_port()
+      const {
+    return this->get_input_port(joint_velocity_input_port_);
+  }
+
+  const systems::InputPortDescriptor<double>& plan_input_port() const {
+    return this->get_input_port(plan_input_port_);
+  }
+
+  const systems::OutputPort<double>& constraint_output_port() const {
+    return this->get_output_port(0);
+  }
+
+ protected:
+  void DoCalcUnrestrictedUpdate(
+      const systems::Context<double>& context,
+      const std::vector<const systems::UnrestrictedUpdateEvent<double>*>&,
+      systems::State<double>* state) const {
+    const robot_plan_t& plan_input =
+        this->EvalAbstractInput(context, plan_input_port_)
+            ->GetValue<robot_plan_t>();
+    if (!plan_input.plan.empty()) {
+      std::vector<char> last_encoded_msg =
+          state->get_abstract_state<std::vector<char>>(last_encoded_msg_index_);
+      std::vector<char> encoded_msg(plan_input.getEncodedSize());
+      plan_input.encode(encoded_msg.data(), 0, encoded_msg.size());
+      if (encoded_msg != last_encoded_msg) {
+        // Extract the state and input trajectories.
+        PiecewiseCartesianTrajectory<double>& trajectory_state =
+            state->get_mutable_abstract_state<
+                PiecewiseCartesianTrajectory<double>>(trajectory_state_index_);
+        trajectory_state = PiecewiseCartesianTrajectory<double>::
+            MakeCubicLinearWithEndLinearVelocity(
+                {0.0, 1e-6 * (plan_input.plan.back().utime -
+                              plan_input.plan.front().utime)},
+                {DecodePose(plan_input.plan.front().pose),
+                 DecodePose(plan_input.plan.back().pose)},
+                Vector3<double>::Zero(), Vector3<double>::Zero());
+        // t = 0 in the input trajectory corresponds to the current time.
+        state->get_mutable_discrete_state()
+            .get_mutable_vector()
+            .get_mutable_value()(start_time_index_) = context.get_time();
+      }
+    }
+  }
+
+ private:
+  const systems::BasicVector<double>& EvaluateJointPosition(
+      const systems::Context<double>& context) const {
+    const systems::BasicVector<double>* joint_position =
+        this->EvalVectorInput(context, joint_position_input_port_);
+    DRAKE_THROW_UNLESS(joint_position);
+    return *joint_position;
+  }
+
+  void CalcConstraintOutput(
+      const systems::Context<double>& context,
+      std::pair<VectorX<double>, MatrixX<double>>* constraint) const {
+    const VectorX<double>& joint_position =
+        this->EvaluateJointPosition(context).get_value();
+    const auto& trajectory =
+        context.get_abstract_state<PiecewiseCartesianTrajectory<double>>(
+            trajectory_state_index_);
+    const auto start_time =
+        context.get_discrete_state().get_vector().GetAtIndex(start_time_index_);
+
+    KinematicsCache<double> cache = robot_->doKinematics(joint_position);
+    Isometry3<double> X_WE =
+        robot_->CalcFramePoseInWorldFrame(cache, *end_effector_frame_);
+    Vector6<double> V_WE;
+    if (trajectory.empty()) {
+      V_WE = Vector6<double>::Zero();
+    } else {
+      Isometry3<double> X_WE_desired = trajectory.get_pose(context.get_time() - start_time);
+      V_WE = trajectory.get_velocity(context.get_time() - start_time) +
+             ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
+    }
+
+    drake::Matrix6<double> R_EW = drake::Matrix6<double>::Zero();
+    R_EW.block<3, 3>(0, 0) = X_WE.linear().transpose();
+    R_EW.block<3, 3>(3, 3) = R_EW.block<3, 3>(0, 0);
+
+    // Rotate the velocity into E frame.
+    constraint->first = R_EW * V_WE;
+    constraint->second =
+        R_EW * robot_->CalcFrameSpatialVelocityJacobianInWorldFrame(
+                   cache, *end_effector_frame_);
+  }
+
+  static constexpr double kDefaultPlanUpdateInterval = 0.01;
+
+  // Input port indices
+  int joint_position_input_port_{-1};
+  int joint_velocity_input_port_{-1};
+  int plan_input_port_{-1};
+  // State indices
+  int trajectory_state_index_{-1};
+  int last_encoded_msg_index_{-1};
+  int start_time_index_{-1};
+
+  std::unique_ptr<RigidBodyTree<double>> robot_;
+  std::shared_ptr<RigidBodyFrame<double>> end_effector_frame_{};
+  double update_interval_{kDefaultPlanUpdateInterval};
 };
 
 std::unique_ptr<RigidBodyTree<double>> BuildTree(
@@ -141,12 +305,10 @@ LcmPointToPointController::LcmPointToPointController(
       builder.AddSystem<systems::Demultiplexer>(num_joints() * 2, num_joints());
   state_demux->set_name("state_demux");
 
-  // Add a block to convert the base pose of the robot_plan_t to a trajectory.
-  auto plan_to_end_effector_trajectory_converter =
-      builder.AddSystem<PlanToEndEffectorTrajectoryConverter>();
-
-  // Add a block to interpolate the trajectory.
-  auto pose_interpolator = builder.AddSystem<PoseInterpolator>();
+  // Add a block to convert the base pose of the robot_plan_t to a constraint.
+  auto frame_spatial_velocity_constraint =
+      builder.AddSystem<FrameSpatialVelocityConstraint>(
+          BuildTree(configuration, true), kGraspFrameName);
 
   // Add a block to convert the desired position vector to iiwa command.
   auto command_sender = builder.AddSystem<IiwaCommandSender>(num_joints());
@@ -155,8 +317,8 @@ LcmPointToPointController::LcmPointToPointController(
   // Export the inputs.
   iiwa_status_input_port_ =
       builder.ExportInput(status_receiver->get_input_port(0));
-  desired_end_effector_pose_input_port_ = builder.ExportInput(
-      plan_to_end_effector_trajectory_converter->get_input_port(0));
+  plan_input_port_ =
+      builder.ExportInput(frame_spatial_velocity_constraint->plan_input_port());
 
   // Export the output.
   iiwa_command_output_port_ =
@@ -167,27 +329,24 @@ LcmPointToPointController::LcmPointToPointController(
                   state_demux->get_input_port(0));
   builder.Connect(
       state_demux->get_output_port(0),
+      frame_spatial_velocity_constraint->joint_position_input_port());
+  builder.Connect(
+      state_demux->get_output_port(1),
+      frame_spatial_velocity_constraint->joint_velocity_input_port());
+  builder.Connect(
+      state_demux->get_output_port(0),
       differential_inverse_kinematics_->joint_position_input_port());
   builder.Connect(
       state_demux->get_output_port(1),
       differential_inverse_kinematics_->joint_velocity_input_port());
-  builder.Connect(plan_to_end_effector_trajectory_converter->get_output_port(0),
-                  pose_interpolator->trajectory_input_port());
-  builder.Connect(
-      pose_interpolator->pose_output_port(),
-      differential_inverse_kinematics_->desired_end_effector_pose_input_port());
+  builder.Connect(frame_spatial_velocity_constraint->constraint_output_port(),
+                  differential_inverse_kinematics_->constraint_input_port());
   builder.Connect(
       differential_inverse_kinematics_->desired_joint_position_output_port(),
       command_sender->get_position_input_port());
 
   // Build the system.
   builder.BuildInto(this);
-}
-
-void LcmPointToPointController::Initialize(
-    const VectorX<double>& initial_joint_position,
-    systems::Context<double>* context) const {
-  differential_inverse_kinematics_->Initialize(initial_joint_position, context);
 }
 
 }  // namespace kuka_iiwa_arm

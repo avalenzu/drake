@@ -87,7 +87,7 @@ int DoMain() {
   // Connect subscribers to input ports.
   builder.Connect(
       plan_sub->get_output_port(0),
-      point_to_point_controller->desired_end_effector_pose_input_port());
+      point_to_point_controller->plan_input_port());
   builder.Connect(status_sub->get_output_port(0),
                   point_to_point_controller->iiwa_status_input_port());
 
@@ -132,8 +132,6 @@ int DoMain() {
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .set_nominal_joint_position(comfortable_joint_position);
-  point_to_point_controller->Initialize(comfortable_joint_position,
-                                        &point_to_point_controller_context);
 
   auto mosek_licence = solvers::MosekSolver::AcquireLicense();
   loop.RunToSecondsAssumingInitialized();
