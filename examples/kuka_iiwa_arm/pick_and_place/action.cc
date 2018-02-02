@@ -91,7 +91,7 @@ bool IiwaMove::ActionFinished(const WorldState& est_state) const {
 
   const double max_finished_velocity = 1e-1;
   if (get_time_since_action_start(est_state.get_iiwa_time()) > duration_ &&
-      est_state.get_iiwa_v().norm() < max_finished_velocity) {
+      (est_state.get_iiwa_v().array().abs() < max_finished_velocity).all()) {
     return true;
   } else {
     return false;
