@@ -25,9 +25,11 @@
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/primitives/demultiplexer.h"
+#include "drake/solvers/mosek_solver.h"
 
 using robotlocomotion::robot_plan_t;
 
+DEFINE_double(dt, 0.01, "Timestep for controller");
 DEFINE_string(lcm_status_channel, "IIWA_STATUS",
               "Channel on which to listen for lcmt_iiwa_status messages.");
 DEFINE_string(lcm_command_channel, "IIWA_COMMAND",
@@ -120,18 +122,20 @@ int DoMain() {
       *point_to_point_controller, &diagram_context);
   VectorX<double> max_joint_velocities = 0.9 * get_iiwa_max_joint_velocities();
   VectorX<double> min_joint_velocities = -max_joint_velocities;
+  point_to_point_controller->MutableParameters(&point_to_point_controller_context).set_timestep(FLAGS_dt);
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .SetJointVelocityLimits({min_joint_velocities, max_joint_velocities});
   VectorX<double> comfortable_joint_position{VectorX<double>::Zero(kNumJoints)};
-  comfortable_joint_position(1) = -M_PI_4;
-  comfortable_joint_position(3) = -M_PI_2;
+  //comfortable_joint_position(1) = -M_PI_4;
+  //comfortable_joint_position(3) = -M_PI_2;
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .set_nominal_joint_position(comfortable_joint_position);
   point_to_point_controller->Initialize(comfortable_joint_position,
                                         &point_to_point_controller_context);
 
+  auto mosek_licence = solvers::MosekSolver::AcquireLicense();
   loop.RunToSecondsAssumingInitialized();
   return 0;
 }

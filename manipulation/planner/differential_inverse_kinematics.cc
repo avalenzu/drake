@@ -99,8 +99,8 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     MatrixX<double> M = K * K.transpose();
     prog.AddQuadraticCost(M.transpose() * M * dt * dt,
                           dt * M.transpose() * q_error, v_next);
-     prog.AddQuadraticCost(M.transpose() * M,
-     VectorX<double>::Zero(num_velocities), v_next);
+    //prog.AddQuadraticCost(M.transpose() * M,
+                          //VectorX<double>::Zero(num_velocities), v_next);
     //}
   }
 
@@ -128,13 +128,13 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   }
 
   // Solve
-  solvers::ScsSolver scs_solver;
-  drake::solvers::SolutionResult result = scs_solver.Solve(prog);
-  // solvers::GurobiSolver gurobi_solver;
-  // drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
-  // solvers::MosekSolver mosek_solver;
-  // drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
-  // drake::solvers::SolutionResult result = prog.Solve();
+  //solvers::ScsSolver scs_solver;
+  //drake::solvers::SolutionResult result = scs_solver.Solve(prog);
+  //solvers::GurobiSolver gurobi_solver;
+  //drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
+   solvers::MosekSolver mosek_solver;
+   drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
+   //drake::solvers::SolutionResult result = prog.Solve();
 
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
     return {nullopt, DifferentialInverseKinematicsStatus::kNoSolutionFound};
@@ -146,7 +146,11 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   // Not tracking the desired vel norm, and computed vel is small.
   // if (false && num_cart_constraints && cost(0) > 5 &&
   // prog.GetSolution(alpha)[0] <= 1e-2) {
-  // drake::log()->trace("v_next = {}", prog.GetSolution(v_next).transpose());
+  drake::log()->trace("v_min  = {}",
+                      parameters.joint_velocity_limits()->first.transpose());
+  drake::log()->trace("v_next = {}", prog.GetSolution(v_next).transpose());
+  drake::log()->trace("v_max  = {}",
+                      parameters.joint_velocity_limits()->second.transpose());
   // drake::log()->trace("alpha = {}", prog.GetSolution(alpha).transpose());
   // return {nullopt, DifferentialInverseKinematicsStatus::kStuck};
   //}

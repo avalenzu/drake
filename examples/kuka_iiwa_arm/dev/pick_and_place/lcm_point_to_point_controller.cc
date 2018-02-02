@@ -46,10 +46,13 @@ class PlanToEndEffectorTrajectoryConverter
     const robot_plan_t& plan_input =
         this->EvalAbstractInput(context, 0)->GetValue<robot_plan_t>();
     if (plan_input.plan.empty()) {
+      Isometry3<double> X = Isometry3<double>::Identity();
+      X.rotate(AngleAxis<double>(M_PI_4, Vector3<double>::UnitY()));
+      X.translation() << 0.5, 0.0, 0.5;
       *trajectory = PiecewiseCartesianTrajectory<double>::
           MakeCubicLinearWithEndLinearVelocity(
               {0.0, 1.0},
-              {Isometry3<double>::Identity(), Isometry3<double>::Identity()},
+              {X, X},
               Vector3<double>::Zero(), Vector3<double>::Zero());
     } else {
       *trajectory = PiecewiseCartesianTrajectory<double>::
