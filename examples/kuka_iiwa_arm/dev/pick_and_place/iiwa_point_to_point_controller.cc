@@ -127,8 +127,8 @@ int DoMain() {
       ->MutableParameters(&point_to_point_controller_context)
       .SetJointVelocityLimits({min_joint_velocities, max_joint_velocities});
   VectorX<double> comfortable_joint_position{VectorX<double>::Zero(kNumJoints)};
-  //comfortable_joint_position(1) = -M_PI_4;
-  //comfortable_joint_position(3) = -M_PI_2;
+  comfortable_joint_position(1) = -M_PI_4;
+  comfortable_joint_position(3) = -M_PI_2;
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .set_nominal_joint_position(comfortable_joint_position);
