@@ -103,6 +103,7 @@ int DoMain() {
       *diagram, *status_sub, nullptr, &lcm,
       std::make_unique<
           systems::lcm::UtimeMessageToSeconds<lcmt_iiwa_status>>());
+  //loop.set_publish_on_every_received_message(false);
 
   // Waits for the first message.
   const systems::AbstractValue& first_msg = loop.WaitForMessage();
@@ -134,6 +135,8 @@ int DoMain() {
       .set_nominal_joint_position(comfortable_joint_position);
 
   auto mosek_licence = solvers::MosekSolver::AcquireLicense();
+  point_to_point_controller->Initialize(comfortable_joint_position,
+                                        &point_to_point_controller_context);
   loop.RunToSecondsAssumingInitialized();
   return 0;
 }

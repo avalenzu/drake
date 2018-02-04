@@ -57,8 +57,9 @@ class PlanToEndEffectorTrajectoryConverter
     } else {
       *trajectory = PiecewiseCartesianTrajectory<double>::
           MakeCubicLinearWithEndLinearVelocity(
-              {0.0, 1e-6 * (plan_input.plan.back().utime -
-                            plan_input.plan.front().utime)},
+              {0.0,
+               1e-6 * (plan_input.plan.back().utime -
+                       plan_input.plan.front().utime)},
               {DecodePose(plan_input.plan.front().pose),
                DecodePose(plan_input.plan.back().pose)},
               Vector3<double>::Zero(), Vector3<double>::Zero());
@@ -151,8 +152,9 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
         this->EvalAbstractInput(context, plan_input_port_)
             ->GetValue<robot_plan_t>();
     if (!plan_input.plan.empty()) {
-      std::vector<char> last_encoded_msg =
-          state->get_abstract_state<std::vector<char>>(last_encoded_msg_index_);
+      std::vector<char>& last_encoded_msg =
+          state->get_mutable_abstract_state<std::vector<char>>(
+              last_encoded_msg_index_);
       std::vector<char> encoded_msg(plan_input.getEncodedSize());
       plan_input.encode(encoded_msg.data(), 0, encoded_msg.size());
       if (encoded_msg != last_encoded_msg) {
@@ -162,8 +164,9 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
                 PiecewiseCartesianTrajectory<double>>(trajectory_state_index_);
         trajectory_state = PiecewiseCartesianTrajectory<double>::
             MakeCubicLinearWithEndLinearVelocity(
-                {0.0, 1e-6 * (plan_input.plan.back().utime -
-                              plan_input.plan.front().utime)},
+                {0.0,
+                 1e-6 * (plan_input.plan.back().utime -
+                         plan_input.plan.front().utime)},
                 {DecodePose(plan_input.plan.front().pose),
                  DecodePose(plan_input.plan.back().pose)},
                 Vector3<double>::Zero(), Vector3<double>::Zero());
@@ -171,6 +174,7 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
         state->get_mutable_discrete_state()
             .get_mutable_vector()
             .get_mutable_value()(start_time_index_) = context.get_time();
+        last_encoded_msg = encoded_msg;
       }
     }
   }
@@ -198,13 +202,20 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
     KinematicsCache<double> cache = robot_->doKinematics(joint_position);
     Isometry3<double> X_WE =
         robot_->CalcFramePoseInWorldFrame(cache, *end_effector_frame_);
-    Vector6<double> V_WE;
+    Vector6<double> V_WE = Vector6<double>::Zero();;
     if (trajectory.empty()) {
       V_WE = Vector6<double>::Zero();
+      drake::log()->debug("t = {}, Traj: N, V = {}",
+                          context.get_time() - start_time,
+                          V_WE.tail(3).transpose());
     } else {
-      Isometry3<double> X_WE_desired = trajectory.get_pose(context.get_time() - start_time);
-      V_WE = trajectory.get_velocity(context.get_time() - start_time) +
-             ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
+      Isometry3<double> X_WE_desired =
+          trajectory.get_pose(context.get_time() - start_time);
+      V_WE += trajectory.get_velocity(context.get_time() - start_time);
+      V_WE += 1e-1*ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
+      drake::log()->debug("t = {}, Traj: Y, V = {}",
+                          context.get_time() - start_time,
+                          V_WE.tail(3).transpose());
     }
 
     drake::Matrix6<double> R_EW = drake::Matrix6<double>::Zero();
@@ -213,9 +224,9 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
 
     // Rotate the velocity into E frame.
     constraint->first = R_EW * V_WE;
-    constraint->second =
-        R_EW * robot_->CalcFrameSpatialVelocityJacobianInWorldFrame(
-                   cache, *end_effector_frame_);
+    constraint->second = R_EW *
+                         robot_->CalcFrameSpatialVelocityJacobianInWorldFrame(
+                             cache, *end_effector_frame_);
   }
 
   static constexpr double kDefaultPlanUpdateInterval = 0.01;
@@ -308,7 +319,7 @@ LcmPointToPointController::LcmPointToPointController(
   // Add a block to convert the base pose of the robot_plan_t to a constraint.
   auto frame_spatial_velocity_constraint =
       builder.AddSystem<FrameSpatialVelocityConstraint>(
-          BuildTree(configuration, true), kGraspFrameName);
+          BuildTree(configuration, true), kGraspFrameName, 0.005);
 
   // Add a block to convert the desired position vector to iiwa command.
   auto command_sender = builder.AddSystem<IiwaCommandSender>(num_joints());
@@ -347,6 +358,12 @@ LcmPointToPointController::LcmPointToPointController(
 
   // Build the system.
   builder.BuildInto(this);
+}
+
+void LcmPointToPointController::Initialize(
+    const VectorX<double>& initial_joint_position,
+    systems::Context<double>* context) const {
+  differential_inverse_kinematics_->Initialize(initial_joint_position, context);
 }
 
 }  // namespace kuka_iiwa_arm

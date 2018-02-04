@@ -46,7 +46,7 @@ class DifferentialInverseKinematicsSystem final
       std::unique_ptr<RigidBodyTree<double>> robot,
       const std::string& end_effector_frame_name);
 
-  ~DifferentialInverseKinematicsSystem() {};
+  ~DifferentialInverseKinematicsSystem(){};
 
   const systems::InputPortDescriptor<double>& joint_position_input_port()
       const {
@@ -156,6 +156,19 @@ class DifferentialInverseKinematicsSystem final
 
   int num_positions() const { return robot_->get_num_positions(); }
 
+  /**
+   * Sets the initial state of the controller to @p initial_joint_position.
+   * This function needs to be explicitly called before any simulation.
+   * Otherwise this aborts in CalcOutput().
+   */
+  void Initialize(const VectorX<double>& q0,
+                  systems::Context<double>* context) const;
+
+ protected:
+  virtual void DoCalcTimeDerivatives(
+      const systems::Context<double>& context,
+      systems::ContinuousState<double>* derivatives) const override;
+
  private:
   void CopyDesiredJointPosition(const systems::Context<double>& context,
                                 systems::BasicVector<double>* output) const;
@@ -165,7 +178,7 @@ class DifferentialInverseKinematicsSystem final
   int joint_velocity_input_port_{-1};
   int constraint_input_port_{-1};
   // State indices
-  // int is_initialized_state_{-1};
+  int is_initialized_state_{-1};
   // Output port indices
   int desired_joint_position_output_port_{-1};
   // Abstract parameter
