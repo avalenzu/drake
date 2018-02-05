@@ -18,6 +18,7 @@
 #include "drake/lcmt_iiwa_command.hpp"
 #include "drake/lcmt_iiwa_status.hpp"
 //#include "drake/systems/analysis/simulator.h"
+#include "drake/solvers/mosek_solver.h"
 #include "drake/systems/framework/context.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
@@ -25,7 +26,6 @@
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/primitives/demultiplexer.h"
-#include "drake/solvers/mosek_solver.h"
 
 using robotlocomotion::robot_plan_t;
 
@@ -85,9 +85,8 @@ int DoMain() {
   command_pub->set_name("command_pub");
 
   // Connect subscribers to input ports.
-  builder.Connect(
-      plan_sub->get_output_port(0),
-      point_to_point_controller->plan_input_port());
+  builder.Connect(plan_sub->get_output_port(0),
+                  point_to_point_controller->plan_input_port());
   builder.Connect(status_sub->get_output_port(0),
                   point_to_point_controller->iiwa_status_input_port());
 
@@ -103,7 +102,7 @@ int DoMain() {
       *diagram, *status_sub, nullptr, &lcm,
       std::make_unique<
           systems::lcm::UtimeMessageToSeconds<lcmt_iiwa_status>>());
-  //loop.set_publish_on_every_received_message(false);
+  // loop.set_publish_on_every_received_message(false);
 
   // Waits for the first message.
   const systems::AbstractValue& first_msg = loop.WaitForMessage();
@@ -111,6 +110,9 @@ int DoMain() {
       loop.get_message_to_time_converter().GetTimeInSeconds(first_msg);
   const lcmt_iiwa_status& first_status = first_msg.GetValue<lcmt_iiwa_status>();
   DRAKE_DEMAND(kNumJoints == first_status.num_joints);
+  VectorX<double> q0(kNumJoints);
+  for (int i = 0; i < kNumJoints; i++)
+    q0[i] = first_status.joint_position_measured[i];
 
   systems::Context<double>& diagram_context = loop.get_mutable_context();
   systems::Context<double>& status_sub_context =
@@ -123,7 +125,9 @@ int DoMain() {
       *point_to_point_controller, &diagram_context);
   VectorX<double> max_joint_velocities = 0.9 * get_iiwa_max_joint_velocities();
   VectorX<double> min_joint_velocities = -max_joint_velocities;
-  point_to_point_controller->MutableParameters(&point_to_point_controller_context).set_timestep(FLAGS_dt);
+  point_to_point_controller
+      ->MutableParameters(&point_to_point_controller_context)
+      .set_timestep(FLAGS_dt);
   point_to_point_controller
       ->MutableParameters(&point_to_point_controller_context)
       .SetJointVelocityLimits({min_joint_velocities, max_joint_velocities});
@@ -134,9 +138,8 @@ int DoMain() {
       ->MutableParameters(&point_to_point_controller_context)
       .set_nominal_joint_position(comfortable_joint_position);
 
-  auto mosek_licence = solvers::MosekSolver::AcquireLicense();
-  point_to_point_controller->Initialize(comfortable_joint_position,
-                                        &point_to_point_controller_context);
+  //auto mosek_licence = solvers::MosekSolver::AcquireLicense();
+  point_to_point_controller->Initialize(q0, &point_to_point_controller_context);
   loop.RunToSecondsAssumingInitialized();
   return 0;
 }
