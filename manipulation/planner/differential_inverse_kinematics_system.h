@@ -44,7 +44,7 @@ class DifferentialInverseKinematicsSystem final
 
   DifferentialInverseKinematicsSystem(
       std::unique_ptr<RigidBodyTree<double>> robot,
-      const std::string& end_effector_frame_name);
+      const std::string& end_effector_frame_name, double dt = 0.005);
 
   ~DifferentialInverseKinematicsSystem(){};
 
@@ -156,6 +156,8 @@ class DifferentialInverseKinematicsSystem final
 
   int num_positions() const { return robot_->get_num_positions(); }
 
+  int num_velocities() const { return robot_->get_num_velocities(); }
+
   /**
    * Sets the initial state of the controller to @p initial_joint_position.
    * This function needs to be explicitly called before any simulation.
@@ -165,9 +167,14 @@ class DifferentialInverseKinematicsSystem final
                   systems::Context<double>* context) const;
 
  protected:
-  virtual void DoCalcTimeDerivatives(
+  virtual void DoCalcDiscreteVariableUpdates(
       const systems::Context<double>& context,
-      systems::ContinuousState<double>* derivatives) const override;
+      const std::vector<const systems::DiscreteUpdateEvent<double>*>& events,
+      systems::DiscreteValues<double>* discrete_state) const override;
+
+  virtual optional<bool> DoHasDirectFeedthrough(int, int) const override {
+    return false;
+  }
 
  private:
   void CopyDesiredJointPosition(const systems::Context<double>& context,
@@ -186,6 +193,7 @@ class DifferentialInverseKinematicsSystem final
 
   std::unique_ptr<RigidBodyTree<double>> robot_{};
   std::shared_ptr<RigidBodyFrame<double>> end_effector_frame_{};
+  double dt_{0};
 };
 }  // namespace planner
 }  // namespace manipulation

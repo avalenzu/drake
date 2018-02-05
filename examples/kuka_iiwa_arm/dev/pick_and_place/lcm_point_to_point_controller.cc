@@ -212,7 +212,7 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
       Isometry3<double> X_WE_desired =
           trajectory.get_pose(context.get_time() - start_time);
       V_WE += trajectory.get_velocity(context.get_time() - start_time);
-      V_WE += 1e-1*ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
+      V_WE += ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
       drake::log()->debug("t = {}, Traj: Y, V = {}",
                           context.get_time() - start_time,
                           V_WE.tail(3).transpose());
@@ -339,7 +339,7 @@ LcmPointToPointController::LcmPointToPointController(
   builder.Connect(status_receiver->get_measured_position_output_port(),
                   state_demux->get_input_port(0));
   builder.Connect(
-      state_demux->get_output_port(0),
+      differential_inverse_kinematics_->desired_joint_position_output_port(),
       frame_spatial_velocity_constraint->joint_position_input_port());
   builder.Connect(
       state_demux->get_output_port(1),
