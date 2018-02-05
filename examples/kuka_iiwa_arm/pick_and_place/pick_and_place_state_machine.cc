@@ -399,7 +399,7 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
           state_ = next_state;
         } else {
           iiwa_move_.MoveCartesian(env_state, {X_WG, X_WG_desired_->at(state_)},
-                                   {0.0, 1.0}, &plan);
+                                   {0.0, 1.5}, &plan);
           iiwa_callback(&plan);
 
           drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
