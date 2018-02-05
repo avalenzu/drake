@@ -821,12 +821,15 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
         auto kinematics_cache = robot->doKinematics(env_state.get_iiwa_q());
         const Isometry3<double> X_WG = robot->CalcBodyPoseInWorldFrame(
             kinematics_cache, *robot->FindBody(kGraspFrameName));
+        if (X_WG_desired_->at(state_).isApprox(X_WG, 1e-2)) {
+          state_ = next_state;
+        } else {
+          iiwa_move_.MoveCartesian(env_state, {X_WG, X_WG_desired_->at(state_)},
+                                   {0.0, 1.0}, &plan);
+          iiwa_callback(&plan);
 
-        iiwa_move_.MoveCartesian(env_state, {X_WG, X_WG_desired_->at(state_)},
-                                 {0, 1}, &plan);
-        iiwa_callback(&plan);
-
-        drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+          drake::log()->info("{} at {}", state_, env_state.get_iiwa_time());
+        }
       }
       if (iiwa_move_.ActionFinished(env_state)) {
         // If the object has moved since kPlan, we need to replan.
