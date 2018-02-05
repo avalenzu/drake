@@ -135,7 +135,11 @@ ComputeInitialAndFinalObjectPoses(const WorldState& env_state) {
   // relative to fixed sensor frame, inverting the returned transform yields the
   // world pose of the fixed sensor frame.
   const Isometry3<double> X_WS{env_state.get_iiwa_base().inverse()};
-  const Isometry3<double> X_WO_initial = X_WS * env_state.get_object_pose();
+  Isometry3<double> X_WO_initial = X_WS * env_state.get_object_pose();
+  const Vector3<double> r_WO = X_WO_initial.translation();
+  const double yaw_offset =
+      (r_WO.dot(X_WO_initial.linear().matrix().col(0)) > 0) ? 0 : M_PI;
+  X_WO_initial.rotate(AngleAxis<double>(yaw_offset, Vector3<double>::UnitZ()));
 
   // Check that the object is oriented correctly.
   if (X_WO_initial.linear()(2, 2) < std::cos(20 * M_PI / 180)) {
@@ -196,7 +200,7 @@ ComputeInitialAndFinalObjectPoses(const WorldState& env_state) {
 }
 
 optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
-    const WorldState& env_state, double yaw_offset, double pitch_offset) {
+    const WorldState& env_state, double pitch_offset) {
   //       (ApproachPickPregrasp,                         (ApproachPlacePregrasp
   //        LiftFromPick ),                                LiftFromPlace)
   //       +--------------------------------------------------------+
@@ -220,8 +224,6 @@ optional<std::map<PickAndPlaceState, Isometry3<double>>> ComputeDesiredPoses(
     std::map<PickAndPlaceState, Isometry3<double>> X_WG_desired;
     Isometry3<double>& X_WOi = X_WO_initial_and_final->first;
     Isometry3<double>& X_WOf = X_WO_initial_and_final->second;
-
-    X_WOi.rotate(AngleAxis<double>(yaw_offset, Vector3<double>::UnitZ()));
 
     // A conservative estimate of the fingers' length.
     const double finger_length = 0.07;
@@ -459,9 +461,8 @@ void PickAndPlaceStateMachine::Update(const WorldState& env_state,
           BuildTree(configuration_, true /*add_grasp_frame*/)};
 
       VectorX<double> q_initial{env_state.get_iiwa_q()};
-      const double yaw_offset{0.0};
       const double pitch_offset{M_PI / 6};
-      X_WG_desired_ = ComputeDesiredPoses(env_state, yaw_offset, pitch_offset);
+      X_WG_desired_ = ComputeDesiredPoses(env_state, pitch_offset);
       state_ = PickAndPlaceState::kApproachPickPregrasp;
       break;
     }
