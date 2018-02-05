@@ -138,7 +138,7 @@ int DoMain() {
       ->MutableParameters(&point_to_point_controller_context)
       .set_nominal_joint_position(comfortable_joint_position);
 
-  //auto mosek_licence = solvers::MosekSolver::AcquireLicense();
+  auto mosek_licence = solvers::MosekSolver::AcquireLicense();
   point_to_point_controller->Initialize(q0, &point_to_point_controller_context);
   loop.RunToSecondsAssumingInitialized();
   return 0;

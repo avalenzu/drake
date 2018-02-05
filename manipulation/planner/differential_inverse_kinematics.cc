@@ -80,12 +80,12 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   }
 
   // Solve
-   solvers::ScsSolver scs_solver;
-   drake::solvers::SolutionResult result = scs_solver.Solve(prog);
+   //solvers::ScsSolver scs_solver;
+   //drake::solvers::SolutionResult result = scs_solver.Solve(prog);
   // solvers::GurobiSolver gurobi_solver;
   // drake::solvers::SolutionResult result = gurobi_solver.Solve(prog);
-  //solvers::MosekSolver mosek_solver;
-  //drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
+  solvers::MosekSolver mosek_solver;
+  drake::solvers::SolutionResult result = mosek_solver.Solve(prog);
    //drake::solvers::SolutionResult result = prog.Solve();
 
   if (result != drake::solvers::SolutionResult::kSolutionFound) {
