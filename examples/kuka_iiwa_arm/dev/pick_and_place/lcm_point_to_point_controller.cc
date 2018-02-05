@@ -1,8 +1,10 @@
 #include "drake/examples/kuka_iiwa_arm/dev/pick_and_place/lcm_point_to_point_controller.h"
 
+#include <lcm/lcm-cpp.hpp>
 #include "robotlocomotion/robot_plan_t.hpp"
 
 #include "drake/examples/kuka_iiwa_arm/iiwa_lcm.h"
+#include "drake/lcmt_viewer_draw.hpp"
 #include "drake/manipulation/planner/pose_interpolator.h"
 #include "drake/manipulation/util/trajectory_utils.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
@@ -88,6 +90,18 @@ Vector6<double> ComputePoseDiffInWorldFrame(const Isometry3<double>& pose0,
   diff.head<3>() = rot_err.axis() * rot_err.angle();
 
   return diff;
+}
+
+void FillFrameMessage(const Eigen::Isometry3d &pose, int idx,
+                      drake::lcmt_viewer_draw *msg) {
+  for (int j = 0; j < 3; j++)
+    msg->position[idx][j] = static_cast<float>(pose.translation()[j]);
+
+  Eigen::Quaterniond quat(pose.linear());
+  msg->quaternion[idx][0] = static_cast<float>(quat.w());
+  msg->quaternion[idx][1] = static_cast<float>(quat.x());
+  msg->quaternion[idx][2] = static_cast<float>(quat.y());
+  msg->quaternion[idx][3] = static_cast<float>(quat.z());
 }
 
 class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
@@ -202,7 +216,8 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
     KinematicsCache<double> cache = robot_->doKinematics(joint_position);
     Isometry3<double> X_WE =
         robot_->CalcFramePoseInWorldFrame(cache, *end_effector_frame_);
-    Vector6<double> V_WE = Vector6<double>::Zero();;
+    Vector6<double> V_WE = Vector6<double>::Zero();
+    ;
     if (trajectory.empty()) {
       V_WE = Vector6<double>::Zero();
       drake::log()->debug("t = {}, Traj: N, V = {}",
@@ -212,10 +227,26 @@ class FrameSpatialVelocityConstraint : public systems::LeafSystem<double> {
       Isometry3<double> X_WE_desired =
           trajectory.get_pose(context.get_time() - start_time);
       V_WE += trajectory.get_velocity(context.get_time() - start_time);
-      V_WE += ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
+      V_WE +=
+          ComputePoseDiffInWorldFrame(X_WE, X_WE_desired) / update_interval_;
       drake::log()->debug("t = {}, Traj: Y, V = {}",
                           context.get_time() - start_time,
                           V_WE.tail(3).transpose());
+      // Draw frames
+      lcm::LCM lcm;
+      drake::lcmt_viewer_draw frame_msg{};
+      frame_msg.link_name = {"Tool_measured", "Tool_desired"};
+      frame_msg.num_links = frame_msg.link_name.size();
+      // The robot num is not relevant here.
+      frame_msg.robot_num.resize(frame_msg.num_links, 0);
+      std::vector<float> pos = {0, 0, 0};
+      std::vector<float> quaternion = {1, 0, 0, 0};
+      frame_msg.position.resize(frame_msg.num_links, pos);
+      frame_msg.quaternion.resize(frame_msg.num_links, quaternion);
+      frame_msg.timestamp = static_cast<int64_t>(context.get_time() * 1e6);
+      FillFrameMessage(X_WE, 0, &frame_msg);
+      FillFrameMessage(X_WE_desired, 1, &frame_msg);
+      lcm.publish("DRAKE_DRAW_FRAMES", &frame_msg);
     }
 
     drake::Matrix6<double> R_EW = drake::Matrix6<double>::Zero();

@@ -51,6 +51,7 @@ drake_cc_library(
         "//drake/examples/kuka_iiwa_arm:iiwa_lcm",
         "//drake/examples/kuka_iiwa_arm:iiwa_common",
         "//drake/examples/kuka_iiwa_arm/pick_and_place:pick_and_place_configuration",  # noqa
+        "//drake/lcmtypes:viewer",
         "//drake/manipulation/planner:differential_inverse_kinematics_system",
         "//drake/manipulation/planner:pose_interpolator",
         "//drake/manipulation/util:trajectory_utils",
