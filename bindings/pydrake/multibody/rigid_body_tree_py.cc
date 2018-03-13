@@ -211,10 +211,16 @@ PYBIND11_MODULE(rigid_body_tree, m) {
          })
     .def_readonly("B", &RigidBodyTree<double>::B)
     .def_readonly("joint_limit_min", &RigidBodyTree<double>::joint_limit_min)
-    .def_readonly("joint_limit_max", &RigidBodyTree<double>::joint_limit_max);
+    .def_readonly("joint_limit_max", &RigidBodyTree<double>::joint_limit_max)
+    .def("ComputeMaximumDepthCollisionPoints",
+        [](RigidBodyTree<double>* self, const KinematicsCache<double>& cache) {
+          return self->ComputeMaximumDepthCollisionPoints<double>(cache);
+        });
 
   py::class_<KinematicsCache<double> >(m, "KinematicsCacheDouble");
   py::class_<KinematicsCache<AutoDiffXd> >(m, "KinematicsCacheAutoDiffXd");
+
+  py::class_<multibody::collision::PointPair<double> >(m, "PointPairDouble");
 
   py::class_<RigidBody<double> >(m, "RigidBody")
     .def("get_name", &RigidBody<double>::get_name)
