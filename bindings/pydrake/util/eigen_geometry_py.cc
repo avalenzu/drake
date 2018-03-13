@@ -174,6 +174,10 @@ PYBIND11_MODULE(eigen_geometry, m) {
         CheckQuaternion(out);
         return out;
       }), py::arg("rotation"))
+      .def(py::init([](T angle, const Vector3<T>& axis) {
+        Class out(AngleAxis<T>(angle, axis));
+        return out;
+      }), py::arg("angle"), py::arg("axis"))
       .def("w", [](const Class* self) { return self->w(); })
       .def("x", [](const Class* self) { return self->x(); })
       .def("y", [](const Class* self) { return self->y(); })
