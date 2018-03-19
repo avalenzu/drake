@@ -50,6 +50,7 @@ bool Element::CanCollideWith(const Element* other) const {
   // pair is *excluded* from consideration if this element's group is ignored
   // by the other, or the other's group is ignored by this element.
   bool excluded =
+      (is_anchored() && other->is_anchored()) ||
       (collision_filter_group_ & other->collision_filter_ignores_).any() ||
       (other->collision_filter_group_ & collision_filter_ignores_).any();
   if (!excluded) {
