@@ -352,6 +352,55 @@
   <link name="iiwa_link_ee">
     </link>
   <frame link="iiwa_link_ee" name="iiwa_frame_ee" rpy="3.14159265359 0 1.57079632679" xyz="0.09 0 0"/>
+  <link name="gripper">
+    <!--body-->
+    <visual>
+      <origin rpy="0 0 0" xyz="-0.049133 0 0"/>
+      <geometry>
+        <box size="0.0725 0.146 0.049521"/>
+      </geometry>
+    </visual>
+    <!--left finger-->
+    <visual>
+      <origin rpy="0 0 0" xyz="0.029 -0.063 0"/>
+      <geometry>
+        <box size="0.083 0.016 0.02"/>
+      </geometry>
+    </visual>
+    <!--right finger-->
+    <visual>
+      <origin rpy="0 0 0" xyz="0.029 0.063 0"/>
+      <geometry>
+        <box size="0.083 0.016 0.02"/>
+      </geometry>
+    </visual>
+    <!--body-->
+    <collision group="gripper_finger">
+      <origin rpy="0 0 0" xyz="-0.049133 0 0"/>
+      <geometry>
+        <box size="0.0725 0.146 0.049521"/>
+      </geometry>
+    </collision>
+    <!--left finger-->
+    <collision group="gripper_finger">
+      <origin rpy="0 0 0" xyz="0.029 -0.063 0"/>
+      <geometry>
+        <box size="0.083 0.016 0.02"/>
+      </geometry>
+    </collision>
+    <!--right finger-->
+    <collision group="gripper_finger">
+      <origin rpy="0 0 0" xyz="0.029 0.063 0"/>
+      <geometry>
+        <box size="0.083 0.016 0.02"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_joint" type="fixed">
+    <parent link="iiwa_link_ee"/>
+    <child link="gripper"/>
+    <origin rpy="-0.39269908 0 0" xyz="0.13 0 0"/>
+  </joint>
   <!-- Load Gazebo lib and set the robot namespace -->
   <gazebo>
     <plugin filename="libgazebo_ros_control.so" name="gazebo_ros_controller">
@@ -487,6 +536,7 @@
     <member link="iiwa_link_5"/>
     <member link="iiwa_link_6"/>
     <member link="iiwa_link_7"/>
+    <member link="gripper"/>
     <ignored_collision_filter_group collision_filter_group="wrist"/>
   </collision_filter_group>
 </robot>
