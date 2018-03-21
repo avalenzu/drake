@@ -40,6 +40,7 @@ drake_cc_library(
     srcs = [
         "pick_and_place_configuration_parsing.cc",
     ],
+    visibility = ["//visibility:public"],
     hdrs = [
         "pick_and_place_configuration_parsing.h",
     ],
