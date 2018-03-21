@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 
+#include "drake/math/transform.h"
 #include "drake/multibody/rigid_body_plant/compliant_contact_model.h"
 #include "drake/multibody/rigid_body_tree.h"
 
@@ -36,6 +37,14 @@ class WorldSimTreeBuilder {
   ~WorldSimTreeBuilder();
 
   /// Adds a fixed model instance specified by its name, @p model_name, to the
+  /// `RigidBodyTree` being built at the pose specified by @pose. The model name
+  /// must have been previously loaded via a call to StoreModel().
+  ///
+  /// @return model_instance_id of the object that is added.
+  int AddFixedModelInstance(
+      const std::string& model_name, const math::Transform<double>& pose);
+
+  /// Adds a fixed model instance specified by its name, @p model_name, to the
   /// `RigidBodyTree` being built at the pose specified by position @p xyz and
   /// orientation @p rpy. The model name must have been previously loaded via
   /// a call to StoreModel().
@@ -44,6 +53,14 @@ class WorldSimTreeBuilder {
   int AddFixedModelInstance(
       const std::string& model_name, const Eigen::Vector3d& xyz,
       const Eigen::Vector3d& rpy = Eigen::Vector3d::Zero());
+
+  /// Adds a floating model instance specified by its name, @p model_name, to
+  /// the `RigidBodyTree` being built at the pose specified @p pose. The model
+  /// name must have been previously loaded via a call to StoreModel().
+  ///
+  /// @return model_instance_id of the object that is added.
+  int AddFloatingModelInstance(
+      const std::string& model_name, const math::Transform<double>& pose);
 
   /// Adds a floating model instance specified by its name, @p model_name, to
   /// the `RigidBodyTree` being built at the pose specified by position @p xyz

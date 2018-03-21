@@ -16,6 +16,7 @@
 
 using Eigen::aligned_allocator;
 using Eigen::Vector3d;
+using drake::math::Transform;
 using drake::multibody::joints::kQuaternion;
 using std::allocate_shared;
 using std::string;
@@ -51,6 +52,18 @@ template <typename T>
 WorldSimTreeBuilder<T>::~WorldSimTreeBuilder() {}
 
 template <typename T>
+int WorldSimTreeBuilder<T>::AddFixedModelInstance(
+    const string& model_name, const Transform<double>& pose) {
+  DRAKE_DEMAND(!built_);
+
+  auto weld_to_frame = allocate_shared<RigidBodyFrame<T>>(
+      aligned_allocator<RigidBodyFrame<T>>(), "world", nullptr,
+      pose.GetAsIsometry3());
+
+  return AddModelInstanceToFrame(model_name, weld_to_frame);
+}
+
+template <typename T>
 int WorldSimTreeBuilder<T>::AddFixedModelInstance(const string& model_name,
                                                   const Vector3d& xyz,
                                                   const Vector3d& rpy) {
@@ -60,6 +73,18 @@ int WorldSimTreeBuilder<T>::AddFixedModelInstance(const string& model_name,
       aligned_allocator<RigidBodyFrame<T>>(), "world", nullptr, xyz, rpy);
 
   return AddModelInstanceToFrame(model_name, weld_to_frame);
+}
+
+template <typename T>
+int WorldSimTreeBuilder<T>::AddFloatingModelInstance(
+    const string& model_name, const Transform<double>& pose) {
+  DRAKE_DEMAND(!built_);
+
+  auto weld_to_frame = allocate_shared<RigidBodyFrame<T>>(
+      aligned_allocator<RigidBodyFrame<T>>(), "world", nullptr,
+      pose.GetAsIsometry3());
+
+  return AddModelInstanceToFrame(model_name, weld_to_frame, kQuaternion);
 }
 
 template <typename T>
