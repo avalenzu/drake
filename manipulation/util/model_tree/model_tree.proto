@@ -1,0 +1,38 @@
+syntax = "proto2";
+
+package drake.manipulation.util.model_tree.proto;
+
+message Pose {
+  // Position.
+  // DEFAULT: (0, 0, 0)
+  repeated double xyz = 1;
+  // Orientation in SpaceXYZ Euler angles.
+  // DEFAULT: (0, 0, 0)
+  repeated double rpy = 2;
+}
+
+message AttachmentInfo {
+  required string parent_model_instance_name = 1;
+  required string parent_frame_instance_name = 2;
+  required Pose X_PM = 3;
+}
+
+message ModelTreeNode {
+  required string name = 1;
+  oneof attachment_info_oneof {
+    AttachmentInfo attachment_info = 2;
+  }
+  required string model_file_path = 3;
+  enum ModelFileType {
+    kUrdf = 0;
+    kSdf = 1;
+    kModelTree = 2;
+  }
+  oneof model_file_type_oneof {
+    ModelFileType model_file_type = 4;
+  }
+}
+
+message ModelTree {
+  repeated ModelTreeNode model_tree_node = 1;
+}
