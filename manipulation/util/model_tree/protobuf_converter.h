@@ -19,17 +19,21 @@ class ProtobufConverter {
           drake::FindResourceOrThrow)
       : resolve_relative_path_callback_(resolve_relative_path_callback){};
 
-  void ParseModelTreeFromFileOrThrow(const std::string& filename,
-                                     ModelTree* model_tree) const;
+  ModelTree ParseModelTreeFromFileOrThrow(const std::string& filename) const;
 
  private:
+  proto::ModelTree ParseProtoModelTreeFromFileOrThrow(
+      const std::string& filename) const;
+
   std::string FindAbsoluteFilePathOrThrow(std::string filename) const;
 
-  void ConvertModelTree(const proto::ModelTree& proto_model_tree,
-                        ModelTree* model_tree) const;
+  ModelTree ConvertModelTree(
+      const proto::ModelTree& proto_model_tree,
+      const drake::optional<proto::ModelTreeNode>& corresponding_proto_node =
+          drake::nullopt) const;
 
-  void ConvertModelTreeNode(const proto::ModelTreeNode& proto_node,
-                            ModelTreeNode* node) const;
+  ModelTreeNode ConvertModelTreeNode(
+      const proto::ModelTreeNode& proto_node) const;
 
   std::function<std::string(std::string)> resolve_relative_path_callback_{};
 };

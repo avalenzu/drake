@@ -54,5 +54,13 @@ drake_cc_library(
 
 # === test/ ===
 
+drake_cc_googletest(
+    name = "model_tree_node_test",
+    deps = [
+        ":model_tree_node",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
 add_lint_tests()
 

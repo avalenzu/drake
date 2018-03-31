@@ -3,9 +3,11 @@
 #include <google/protobuf/text_format.h>
 #include <spruce.hh>
 
+#include "drake/common/drake_optional.h"
 #include "drake/common/proto/protobuf.h"
 
 using drake::optional;
+using drake::nullopt;
 using std::string;
 
 namespace drake {
@@ -39,37 +41,85 @@ proto::ModelTreeNode::ModelFileType GetModelFileType(
              ? proto_node.model_file_type()
              : GuessFileType(proto_node.model_file_path());
 }
+
+AttachmentInfo ConvertAttachmentInfo(
+    const proto::AttachmentInfo& proto_attachment_info) {
+  return {proto_attachment_info.parent_model_instance_name(),
+          proto_attachment_info.parent_body_or_frame_name()};
+}
+
+optional<AttachmentInfo> GetAttachmentInfo(
+    const proto::ModelTreeNode& proto_node) {
+  return proto_node.has_attachment_info()
+             ? optional<AttachmentInfo>(
+                   ConvertAttachmentInfo(proto_node.attachment_info()))
+             : nullopt;
+}
+
+ModelFileType ConvertModelFileType(
+    proto::ModelTreeNode::ModelFileType proto_model_file_type) {
+  DRAKE_ASSERT(proto_model_file_type !=
+               proto::ModelTreeNode::ModelFileType::
+                   ModelTreeNode_ModelFileType_kModelTree);
+  if (proto_model_file_type ==
+      proto::ModelTreeNode::ModelFileType::ModelTreeNode_ModelFileType_kSdf) {
+    return ModelFileType::kSdf;
+  } else {
+    return ModelFileType::kUrdf;
+  }
+}
+
 }  // namespace
 
-void ProtobufConverter::ParseModelTreeFromFileOrThrow(
-    const string& filename, ModelTree* model_tree) const {
+proto::ModelTree ProtobufConverter::ParseProtoModelTreeFromFileOrThrow(
+    const string& filename) const {
   string absolute_path = FindAbsoluteFilePathOrThrow(filename);
   auto istream = drake::MakeFileInputStreamOrThrow(absolute_path);
   proto::ModelTree proto_model_tree;
   google::protobuf::TextFormat::Parse(istream.get(), &proto_model_tree);
-  ConvertModelTree(proto_model_tree, model_tree);
+  return proto_model_tree;
 }
 
-void ProtobufConverter::ConvertModelTree(
-    const proto::ModelTree& proto_model_tree, ModelTree* model_tree) const {
+ModelTree ProtobufConverter::ParseModelTreeFromFileOrThrow(
+    const string& filename) const {
+  return ConvertModelTree(ParseProtoModelTreeFromFileOrThrow(filename));
+}
+
+ModelTree ProtobufConverter::ConvertModelTree(
+    const proto::ModelTree& proto_model_tree,
+    const drake::optional<proto::ModelTreeNode>& corresponding_proto_node)
+    const {
+  std::vector<ModelTreeNode> children;
   for (int i = 0; i < proto_model_tree.model_tree_node_size(); ++i) {
-    std::unique_ptr<ModelTreeNode> node{new ModelTreeNode()};
-    ConvertModelTreeNode(proto_model_tree.model_tree_node(i), node.get());
-    model_tree->AddChild(std::move(node));
+    children.push_back(
+        ConvertModelTreeNode(proto_model_tree.model_tree_node(i)));
+  }
+  if (corresponding_proto_node) {
+    // This is a nested model tree.
+    return ModelTree(corresponding_proto_node->name(),
+                     GetAttachmentInfo(*corresponding_proto_node), nullopt,
+                     children);
+  } else {
+    // This is a top-level model tree.
+    return ModelTree("", nullopt, nullopt, children);
   }
 }
 
-void ProtobufConverter::ConvertModelTreeNode(
-    const proto::ModelTreeNode& proto_node, ModelTreeNode* node) const {
+ModelTreeNode ProtobufConverter::ConvertModelTreeNode(
+    const proto::ModelTreeNode& proto_node) const {
   string absolute_path =
       FindAbsoluteFilePathOrThrow(proto_node.model_file_path());
   proto::ModelTreeNode::ModelFileType proto_model_file_type =
       GetModelFileType(proto_node);
   if (proto_model_file_type == proto::ModelTreeNode::ModelFileType::
                                    ModelTreeNode_ModelFileType_kModelTree) {
-    ParseModelTreeFromFileOrThrow(absolute_path, node);
+    return ConvertModelTree(ParseProtoModelTreeFromFileOrThrow(absolute_path),
+                            proto_node);
   } else {
-	  node->set_name(proto_node.name());
+    return ModelTreeNode(
+        proto_node.name(), GetAttachmentInfo(proto_node),
+        ModelFile(absolute_path, ConvertModelFileType(proto_model_file_type)),
+        {});
   }
 }
 
