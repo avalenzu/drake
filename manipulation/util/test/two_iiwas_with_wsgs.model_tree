@@ -1,0 +1,12 @@
+model_tree_node: {
+    name: "robot_0"
+    model_file_path: "drake/manipulation/util/test/iiwa14_and_wsg_50.model_tree"
+}
+
+model_tree_node: {
+    name: "robot_1"
+    model_file_path: "drake/manipulation/util/test/iiwa14_and_wsg_50.model_tree"
+    X_PM: {
+    	xyz: [1.0, 0.0, 0.0]
+    }
+}

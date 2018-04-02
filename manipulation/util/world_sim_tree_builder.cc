@@ -14,15 +14,80 @@
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/rigid_body_tree_construction.h"
 
+using drake::optional;
+using drake::manipulation::util::model_tree::ModelTree;
+using drake::manipulation::util::model_tree::ModelTreeNode;
+using drake::multibody::joints::kQuaternion;
 using Eigen::aligned_allocator;
 using Eigen::Vector3d;
-using drake::multibody::joints::kQuaternion;
 using std::allocate_shared;
 using std::string;
 
 namespace drake {
 namespace manipulation {
 namespace util {
+
+namespace {
+template <typename T>
+std::shared_ptr<RigidBodyFrame<T>> GetWeldToFrameForModelTreeNode(
+    const ModelTreeNode& node, const parsers::ModelInstanceIdTable& id_table,
+    RigidBodyTree<T>* tree) {
+  // These defaults correspond to attaching the model directly to the world.
+  Isometry3<double> X_BM = node.X_PB().GetAsIsometry3();
+  RigidBody<double>* predecessor_body{};
+
+  // If the node specifies an attachment point, we need to respect that.
+  if (node.predecessor_info()) {
+    std::string frame_name = node.name() + "_attachment_frame";
+    // Attach to existing model instance.
+    std::string model_instance_name =
+        node.predecessor_info()->model_instance_name;
+    std::string body_or_frame_name =
+        node.predecessor_info()->body_or_frame_name;
+    auto predecessor_model_id_itr = id_table.find(model_instance_name);
+    if (predecessor_model_id_itr == id_table.end()) {
+      throw std::runtime_error("No model named " + model_instance_name +
+                               " has been added to the tree.");
+    }
+
+    const int predecessor_model_id = predecessor_model_id_itr->second;
+    if (node.predecessor_info()->is_frame) {
+      std::shared_ptr<RigidBodyFrame<double>> parent_frame =
+          tree->findFrame(body_or_frame_name, predecessor_model_id);
+      predecessor_body = parent_frame->get_mutable_rigid_body();
+      X_BM =
+          parent_frame->get_transform_to_body() * node.X_PB().GetAsIsometry3();
+    } else {
+      predecessor_body =
+          tree->FindBody(body_or_frame_name, "", predecessor_model_id);
+    }
+    return std::make_shared<RigidBodyFrame<double>>(frame_name,
+                                                    predecessor_body, X_BM);
+  } else {
+    return std::make_shared<RigidBodyFrame<double>>("world", nullptr, X_BM);
+  }
+}
+
+parsers::ModelInstanceIdTable AddModelInstancesFromModelFile(
+    const model_tree::ModelFile& model_file,
+    const std::shared_ptr<RigidBodyFrame<double>>& weld_to_frame,
+    multibody::joints::FloatingBaseType floating_base_type, bool do_compile,
+    RigidBodyTree<double>* tree) {
+  switch (model_file.type) {
+    case model_tree::ModelFileType::kUrdf: {
+      return parsers::urdf::AddModelInstanceFromUrdfFile(
+          model_file.absolute_path, floating_base_type, weld_to_frame,
+          do_compile, tree);
+    }
+    case model_tree::ModelFileType::kSdf: {
+      return parsers::sdf::AddModelInstancesFromSdfFile(
+          model_file.absolute_path, floating_base_type, weld_to_frame,
+          do_compile, tree);
+    }
+  }
+}
+
+}  // namespace
 
 template <typename T>
 WorldSimTreeBuilder<T>::WorldSimTreeBuilder() {
@@ -51,6 +116,45 @@ template <typename T>
 WorldSimTreeBuilder<T>::~WorldSimTreeBuilder() {}
 
 template <typename T>
+void WorldSimTreeBuilder<T>::AddModelInstancesFromModelTreeNode(
+    const ModelTreeNode& node, bool do_compile,
+    parsers::ModelInstanceIdTable* id_table) {
+  if (node.model_file()) {
+    std::shared_ptr<RigidBodyFrame<T>> weld_to_frame =
+        GetWeldToFrameForModelTreeNode(node, *id_table, rigid_body_tree_.get());
+    parsers::ModelInstanceIdTable local_id_table =
+        AddModelInstancesFromModelFile(*node.model_file(), weld_to_frame,
+                                       node.base_joint_type(), do_compile,
+                                       rigid_body_tree_.get());
+    if (local_id_table.size() > 1) {
+      for (const auto& model_entry : local_id_table) {
+        parsers::AddModelInstancesToTable(
+            {{node.name() + "/" + model_entry.first, model_entry.second}},
+            id_table);
+        drake::log()->debug("Added model named {}.",
+                            node.name() + "/" + model_entry.first);
+      }
+    } else {
+      parsers::AddModelInstancesToTable(
+          {{node.name(), local_id_table.begin()->second}}, id_table);
+      drake::log()->debug("Added model named {}.", node.name());
+    }
+  }
+  for (const auto& child : node.children()) {
+    AddModelInstancesFromModelTreeNode(child, do_compile, id_table);
+  }
+}
+
+template <typename T>
+parsers::ModelInstanceIdTable
+WorldSimTreeBuilder<T>::AddModelInstancesFromModelTree(
+    const ModelTree& model_tree, bool do_compile) {
+  parsers::ModelInstanceIdTable id_table;
+  AddModelInstancesFromModelTreeNode(model_tree, do_compile, &id_table);
+  return id_table;
+}
+
+template <typename T>
 int WorldSimTreeBuilder<T>::AddFixedModelInstance(const string& model_name,
                                                   const Vector3d& xyz,
                                                   const Vector3d& rpy) {
@@ -77,14 +181,15 @@ int WorldSimTreeBuilder<T>::AddFloatingModelInstance(const string& model_name,
 template <typename T>
 int WorldSimTreeBuilder<T>::AddModelInstanceToFrame(
     const string& model_name, const string& weld_to_body_name,
-    const int weld_to_body_model_instance_id,
-    const string& frame_name, const Eigen::Isometry3d& X_BF,
+    const int weld_to_body_model_instance_id, const string& frame_name,
+    const Eigen::Isometry3d& X_BF,
     const drake::multibody::joints::FloatingBaseType floating_base_type) {
   // Create a new frame.
   auto weld_to_frame = std::make_shared<RigidBodyFrame<T>>(
       frame_name,
       rigid_body_tree_->get_mutable_body(rigid_body_tree_->FindBodyIndex(
-          weld_to_body_name, weld_to_body_model_instance_id)), X_BF);
+          weld_to_body_name, weld_to_body_model_instance_id)),
+      X_BF);
   rigid_body_tree_->addFrame(weld_to_frame);
   return AddModelInstanceToFrame(model_name, weld_to_frame, floating_base_type);
 }

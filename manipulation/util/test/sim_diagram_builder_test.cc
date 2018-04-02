@@ -3,8 +3,10 @@
 
 #include <gtest/gtest.h>
 
+#include "drake/common/find_resource.h"
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
 #include "drake/lcm/drake_lcm.h"
+#include "drake/manipulation/util/model_tree/protobuf_converter.h"
 #include "drake/manipulation/util/world_sim_tree_builder.h"
 #include "drake/multibody/parsers/urdf_parser.h"
 #include "drake/systems/analysis/simulator.h"
@@ -255,6 +257,16 @@ GTEST_TEST(SimDiagramBuilderTest, TestAddingOneSchunkToTwoArms) {
                                                 iiwa.at(i).instance_id),
                  std::logic_error);
   }
+}
+
+// Tests adding multiple models from a .model_tree file.
+GTEST_TEST(SimDiagramBuilderTest, TestAddingModelTree) {
+  auto tree_builder = std::make_unique<WorldSimTreeBuilder<double>>();
+
+  model_tree::ProtobufConverter protobuf_converter{};
+  tree_builder->AddModelInstancesFromModelTree(
+      protobuf_converter.ParseModelTreeFromFile(
+          "drake/manipulation/util/test/two_iiwas_with_wsgs.model_tree"));
 }
 
 }  // namespace
