@@ -26,6 +26,9 @@ drake_cc_proto_library(
 
 drake_cc_library(
     name = "model_tree_node",
+    srcs = [
+        "model_tree_node.cc",
+    ],
     hdrs = [
         "model_tree_node.h",
     ],
@@ -63,6 +66,12 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "protobuf_converter_test",
+    data = [
+        ":test",
+        "//manipulation/models/iiwa_description:models",
+        "//manipulation/models/wsg_50_description:models",
+        "//manipulation/models/xtion_description:models",
+    ],
     deps = [
         ":protobuf_converter",
         "//common/test_utilities:eigen_matrix_compare",

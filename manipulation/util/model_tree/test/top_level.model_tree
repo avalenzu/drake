@@ -1,6 +1,7 @@
 model_tree_node: {
     name: "iiwa"
-    model_file_path: "drake/manipulation/models/iiwa_description/iiwa14_spheres_collision.urdf"
+    model_file_path: "drake/manipulation/models/iiwa_description/urdf/iiwa14_spheres_collision.urdf"
+    base_joint_type: kFixed
 }
 
 model_tree_node: {
@@ -14,5 +15,6 @@ model_tree_node: {
 	}
     }
     model_file_path: "drake/manipulation/util/model_tree/test/nested.model_tree"
+    base_joint_type: kFixed
 }
 

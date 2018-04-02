@@ -14,7 +14,9 @@ message Pose {
 message AttachmentInfo {
   required string parent_model_instance_name = 1;
   required string parent_body_or_frame_name = 2;
-  required Pose X_PM = 3;
+  oneof X_PM_oneof {
+    Pose X_PM = 3;
+  }
 }
 
 message ModelTreeNode {

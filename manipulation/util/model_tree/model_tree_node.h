@@ -16,11 +16,14 @@ namespace model_tree {
  */
 struct AttachmentInfo {
   AttachmentInfo(const std::string& parent_model_instance_name_in,
-                 const std::string& parent_body_or_frame_name_in)
+                 const std::string& parent_body_or_frame_name_in,
+                 const drake::math::Transform<double> X_PM_in = {})
       : parent_model_instance_name(parent_model_instance_name_in),
-        parent_body_or_frame_name(parent_body_or_frame_name_in) {}
+        parent_body_or_frame_name(parent_body_or_frame_name_in),
+        X_PM(X_PM_in) {}
   std::string parent_model_instance_name{};
   std::string parent_body_or_frame_name{};
+  drake::math::Transform<double> X_PM{};
 };
 
 /** Enumerates supported model file types.
@@ -36,16 +39,9 @@ struct ModelFile {
   ModelFileType type{};
 };
 
-bool operator==(const AttachmentInfo& info_0, const AttachmentInfo& info_1) {
-  return (info_0.parent_model_instance_name ==
-          info_1.parent_model_instance_name) &&
-         (info_0.parent_body_or_frame_name == info_1.parent_body_or_frame_name);
-}
+bool operator==(const AttachmentInfo& info_0, const AttachmentInfo& info_1);
 
-bool operator==(const ModelFile& file_0, const ModelFile& file_1) {
-  return (file_0.absolute_path == file_1.absolute_path) &&
-         (file_0.type == file_1.type);
-}
+bool operator==(const ModelFile& file_0, const ModelFile& file_1);
 
 /** Represents a node in a model tree.
  */
@@ -71,11 +67,7 @@ class ModelTreeNode {
 
   drake::optional<ModelFile> model_file() const { return model_file_; }
 
-  bool operator==(const ModelTreeNode& other) const {
-    return (name_ == other.name_) &&
-           (attachment_info_ == other.attachment_info_) &&
-           (model_file_ == other.model_file_) && (children_ == other.children_);
-  }
+  bool operator==(const ModelTreeNode& other) const;
 
   bool operator!=(const ModelTreeNode& other) const {
     return !operator==(other);

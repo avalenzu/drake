@@ -21,5 +21,5 @@ model_tree_node: {
         parent_model_instance_name: "xtion_wsg_fixture"
         parent_body_or_frame_name: "xtion_wsg_fixture"
     }
-
+    base_joint_type: kFixed
 }

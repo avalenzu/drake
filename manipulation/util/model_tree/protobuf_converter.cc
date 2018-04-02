@@ -8,9 +8,12 @@
 
 #include "drake/common/drake_optional.h"
 #include "drake/common/proto/protobuf.h"
+#include "drake/math/transform.h"
 
 using drake::nullopt;
 using drake::optional;
+using drake::math::RotationMatrix;
+using drake::math::Transform;
 using std::string;
 
 namespace drake {
@@ -44,6 +47,19 @@ proto::ModelTreeNode::ModelFileType GuessFileType(string filename) {
         ModelTreeNode_ModelFileType_kUrdf;
   }
 }
+Transform<double> ConvertPoseOrThrow(const proto::Pose& pose) {
+  Transform<double> X{};
+  if (!pose.xyz().empty()) {
+    DRAKE_THROW_UNLESS(pose.xyz_size() == 3);
+    X.set_translation({pose.xyz(0), pose.xyz(1), pose.xyz(2)});
+  }
+  if (!pose.rpy().empty()) {
+    DRAKE_THROW_UNLESS(pose.rpy_size() == 3);
+    X.set_rotation(RotationMatrix<double>::MakeSpaceXYZRotation(
+        {pose.rpy(0), pose.rpy(1), pose.rpy(2)}));
+  }
+  return X;
+}
 
 proto::ModelTreeNode::ModelFileType GetModelFileType(
     const proto::ModelTreeNode& proto_node) {
@@ -52,10 +68,16 @@ proto::ModelTreeNode::ModelFileType GetModelFileType(
              : GuessFileType(proto_node.model_file_path());
 }
 
+proto::Pose GetX_PM(const proto::AttachmentInfo& proto_attachment_info) {
+  return proto_attachment_info.has_x_pm() ? proto_attachment_info.x_pm()
+                                          : proto::Pose();
+}
+
 AttachmentInfo ConvertAttachmentInfo(
     const proto::AttachmentInfo& proto_attachment_info) {
   return {proto_attachment_info.parent_model_instance_name(),
-          proto_attachment_info.parent_body_or_frame_name()};
+          proto_attachment_info.parent_body_or_frame_name(),
+          ConvertPoseOrThrow(GetX_PM(proto_attachment_info))};
 }
 
 optional<AttachmentInfo> GetAttachmentInfo(
