@@ -17,6 +17,13 @@ namespace model_tree {
 
 namespace {
 
+// Returns true iff the path is relative (not absolute).
+// Copied from drake/common/find_resource.h
+bool IsRelativePath(const string& path) {
+  // TODO(jwnimmer-tri) Prevent .. escape?
+  return !path.empty() && (path[0] != '/');
+}
+
 proto::ModelTreeNode::ModelFileType GuessFileType(string filename) {
   spruce::path p(filename);
   // Converts the file extension to be lower case.
@@ -70,6 +77,20 @@ ModelFileType ConvertModelFileType(
 }
 
 }  // namespace
+
+string ProtobufConverter::FindAbsoluteFilePathOrThrow(
+    const string& filename) const {
+  if (IsRelativePath(filename)) {
+    return DoResolveRelativePathOrThrow(filename);
+  } else {
+    return filename;
+  }
+}
+
+string ProtobufConverter::DoResolveRelativePathOrThrow(
+    const string& relative_path) const {
+  return FindResourceOrThrow(relative_path);
+}
 
 proto::ModelTree ProtobufConverter::ParseProtoModelTreeFromFileOrThrow(
     const string& filename) const {

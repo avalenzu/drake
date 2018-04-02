@@ -14,18 +14,19 @@ namespace model_tree {
 
 class ProtobufConverter {
  public:
-  ProtobufConverter(
-      std::function<std::string(std::string)> resolve_relative_path_callback =
-          drake::FindResourceOrThrow)
-      : resolve_relative_path_callback_(resolve_relative_path_callback){};
+  virtual ~ProtobufConverter(){};
 
   ModelTree ParseModelTreeFromFileOrThrow(const std::string& filename) const;
+
+ protected:
+  virtual std::string DoResolveRelativePathOrThrow(
+      const std::string& relative_path) const;
 
  private:
   proto::ModelTree ParseProtoModelTreeFromFileOrThrow(
       const std::string& filename) const;
 
-  std::string FindAbsoluteFilePathOrThrow(std::string filename) const;
+  std::string FindAbsoluteFilePathOrThrow(const std::string& filename) const;
 
   ModelTree ConvertModelTree(
       const proto::ModelTree& proto_model_tree,
@@ -34,8 +35,6 @@ class ProtobufConverter {
 
   ModelTreeNode ConvertModelTreeNode(
       const proto::ModelTreeNode& proto_node) const;
-
-  std::function<std::string(std::string)> resolve_relative_path_callback_{};
 };
 
 }  // namespace model_tree

@@ -31,6 +31,11 @@ message ModelTreeNode {
   oneof model_file_type_oneof {
     ModelFileType model_file_type = 4;
   }
+  enum BaseJointType {
+    kFixed = 0;
+    kFloating = 1;
+  }
+  required BaseJointType base_joint_type = 5;
 }
 
 message ModelTree {

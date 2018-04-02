@@ -1,0 +1,18 @@
+model_tree_node: {
+    name: "iiwa"
+    model_file_path: "drake/manipulation/models/iiwa_description/iiwa14_spheres_collision.urdf"
+}
+
+model_tree_node: {
+    name: "gripper_with_camera"
+    attachment_info: {
+        parent_model_instance_name: "iiwa"
+	parent_body_or_frame_name: "iiwa_frame_ee"
+	X_PM: {
+	    xyz: [0.0, 0.04, 0.0]
+	    rpy: [0.0, -0.39269908, 0.0]
+	}
+    }
+    model_file_path: "drake/manipulation/util/model_tree/test/nested.model_tree"
+}
+
