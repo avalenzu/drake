@@ -16,6 +16,7 @@ drake_cc_library(
     hdrs = ["world_sim_tree_builder.h"],
     deps = [
         "//common:find_resource",
+        "//manipulation/util/model_tree:model_tree_node",
         "//multibody:rigid_body_tree",
         "//multibody:rigid_body_tree_construction",
         "//multibody/parsers",
@@ -179,6 +180,7 @@ drake_cc_googletest(
 drake_cc_googletest(
     name = "sim_diagram_builder_test",
     data = [
+        ":test",
         "//examples/kuka_iiwa_arm:models",
         "//manipulation/models/iiwa_description:models",
         "//manipulation/models/wsg_50_description:models",
@@ -188,6 +190,7 @@ drake_cc_googletest(
         "//common/test_utilities:eigen_matrix_compare",
         "//lcm",
         "//manipulation/util:world_sim_tree_builder",
+        "//manipulation/util/model_tree:protobuf_converter",
         "//multibody/rigid_body_plant",
         "//systems/analysis",
         "//systems/controllers:inverse_dynamics_controller",

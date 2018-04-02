@@ -2,6 +2,9 @@
 
 #include "drake/common/text_logging.h"
 
+using drake::nullopt;
+using drake::optional;
+
 namespace drake {
 namespace manipulation {
 namespace util {
@@ -26,7 +29,9 @@ bool operator==(const AttachmentInfo& info_0, const AttachmentInfo& info_1) {
       info_0.parent_body_or_frame_name, info_1.parent_body_or_frame_name);
   return (info_0.parent_model_instance_name ==
           info_1.parent_model_instance_name) &&
-         (info_0.parent_body_or_frame_name == info_1.parent_body_or_frame_name);
+         (info_0.parent_body_or_frame_name ==
+          info_1.parent_body_or_frame_name) &&
+         (info_0.attached_to_frame == info_1.attached_to_frame);
 }
 
 bool operator==(const ModelFile& file_0, const ModelFile& file_1) {
@@ -68,6 +73,50 @@ bool ModelTreeNode::operator==(const ModelTreeNode& other) const {
          X_PM_.IsNearlyEqualTo(other.X_PM_, 0.0) &&
          (base_joint_type_ == other.base_joint_type_) &&
          (children_ == other.children_);
+}
+
+std::string ModelTreeNode::name() const {
+  return parent_ ? parent_->name() + name_ : name_;
+}
+
+optional<std::string> ModelTreeNode::model_absolute_path() const {
+  return model_file_ ? optional<std::string>(model_file_->absolute_path)
+                     : nullopt;
+}
+
+optional<ModelFileType> ModelTreeNode::model_file_type() const {
+  return model_file_ ? optional<ModelFileType>(model_file_->type) : nullopt;
+}
+
+optional<std::string> ModelTreeNode::parent_model_instance_name() const {
+  if (attachment_info_) {
+    if (parent_) {
+      return parent_->name() + attachment_info_->parent_model_instance_name;
+    } else {
+      return attachment_info_->parent_model_instance_name;
+    }
+  } else {
+    if (parent_) {
+      return parent_->parent_model_instance_name();
+    } else {
+      return nullopt;
+    }
+  }
+}
+
+optional<std::string> ModelTreeNode::parent_body_or_frame_name() const {
+  if (attachment_info_) {
+    return attachment_info_->parent_body_or_frame_name;
+  } else if (parent_) {
+    return parent_->parent_body_or_frame_name();
+  } else {
+    return nullopt;
+  }
+}
+
+optional<bool> ModelTreeNode::attached_to_frame() const {
+  return attachment_info_ ? optional<bool>(attachment_info_->attached_to_frame)
+                          : nullopt;
 }
 
 }  // namespace model_tree

@@ -77,7 +77,10 @@ proto::Pose GetX_PM(const proto::ModelTreeNode& proto_node) {
 AttachmentInfo ConvertAttachmentInfo(
     const proto::AttachmentInfo& proto_attachment_info) {
   return {proto_attachment_info.parent_model_instance_name(),
-          proto_attachment_info.parent_body_or_frame_name()};
+          proto_attachment_info.parent_body_or_frame_name(),
+          proto_attachment_info.has_attached_to_frame()
+              ? proto_attachment_info.attached_to_frame()
+              : false};
 }
 
 optional<AttachmentInfo> GetAttachmentInfo(

@@ -14,9 +14,12 @@
 #include "drake/multibody/rigid_body_tree.h"
 #include "drake/multibody/rigid_body_tree_construction.h"
 
+using drake::optional;
+using drake::manipulation::util::model_tree::ModelTree;
+using drake::manipulation::util::model_tree::ModelTreeNode;
+using drake::multibody::joints::kQuaternion;
 using Eigen::aligned_allocator;
 using Eigen::Vector3d;
-using drake::multibody::joints::kQuaternion;
 using std::allocate_shared;
 using std::string;
 
@@ -51,6 +54,87 @@ template <typename T>
 WorldSimTreeBuilder<T>::~WorldSimTreeBuilder() {}
 
 template <typename T>
+void WorldSimTreeBuilder<T>::AddModelInstancesFromModelTreeNode(
+    const ModelTreeNode& node, parsers::ModelInstanceIdTable* id_table) {
+  if (node.has_model_file()) {
+    StoreModel(node.name(), *node.model_absolute_path());
+    std::shared_ptr<RigidBodyFrame<T>> weld_to_frame{};
+    std::string frame_name = node.name() + "_attachment_frame";
+
+    // These defaults correspond to attaching the model directly to the world.
+    Isometry3<double> X_BM = node.X_PM().GetAsIsometry3();
+    RigidBody<double>* parent_body{};
+
+    // If the node specifies an attachment point, we need to respect that.
+    if (node.has_attachment_info()) {
+      // Attach to existing model instance.
+      DRAKE_ASSERT(static_cast<bool>(node.parent_model_instance_name()));
+      DRAKE_ASSERT(static_cast<bool>(node.parent_body_or_frame_name()));
+      DRAKE_ASSERT(static_cast<bool>(node.attached_to_frame()));
+
+      std::string parent_model_instance_name =
+          node.parent_model_instance_name().value();
+      auto parent_model_id_itr = id_table->find(parent_model_instance_name);
+      if (parent_model_id_itr == id_table->end()) {
+        throw std::runtime_error("No model named " +
+                                 parent_model_instance_name +
+                                 " has been added to the tree.");
+      }
+
+      const int parent_model_id = parent_model_id_itr->second;
+      if (node.attached_to_frame().value()) {
+        std::shared_ptr<RigidBodyFrame<double>> parent_frame =
+            rigid_body_tree_->findFrame(
+                node.parent_body_or_frame_name().value(), parent_model_id);
+        parent_body = parent_frame->get_mutable_rigid_body();
+        X_BM = parent_frame->get_transform_to_body() *
+               node.X_PM().GetAsIsometry3();
+      } else {
+        parent_body = rigid_body_tree_->FindBody(
+            node.parent_body_or_frame_name().value(), "", parent_model_id);
+      }
+    }
+    weld_to_frame =
+        std::make_shared<RigidBodyFrame<double>>(frame_name, parent_body, X_BM);
+
+    parsers::ModelInstanceIdTable model_instance_id_table;
+    switch (node.model_file_type().value()) {
+      case model_tree::ModelFileType::kUrdf: {
+        model_instance_id_table = parsers::urdf::AddModelInstanceFromUrdfFile(
+            node.model_absolute_path().value(), node.base_joint_type(),
+            weld_to_frame, false /*do_compile*/, rigid_body_tree_.get());
+        parsers::AddModelInstancesToTable(
+            {{node.name(), model_instance_id_table.begin()->second}}, id_table);
+        break;
+      }
+      case model_tree::ModelFileType::kSdf: {
+        model_instance_id_table = parsers::sdf::AddModelInstancesFromSdfFile(
+            node.model_absolute_path().value(), node.base_joint_type(),
+            weld_to_frame, false /*do_compile*/, rigid_body_tree_.get());
+        for (const auto& model_entry : model_instance_id_table) {
+          parsers::AddModelInstancesToTable(
+              {{node.name() + "/" + model_entry.first, model_entry.second}},
+              id_table);
+        }
+        break;
+      }
+    }
+  }
+  for (const auto& child : node.children()) {
+    AddModelInstancesFromModelTreeNode(child, id_table);
+  }
+}
+
+template <typename T>
+parsers::ModelInstanceIdTable
+WorldSimTreeBuilder<T>::AddModelInstancesFromModelTree(
+    const ModelTree& model_tree) {
+  parsers::ModelInstanceIdTable id_table;
+  AddModelInstancesFromModelTreeNode(model_tree, &id_table);
+  return id_table;
+}
+
+template <typename T>
 int WorldSimTreeBuilder<T>::AddFixedModelInstance(const string& model_name,
                                                   const Vector3d& xyz,
                                                   const Vector3d& rpy) {
@@ -77,14 +161,15 @@ int WorldSimTreeBuilder<T>::AddFloatingModelInstance(const string& model_name,
 template <typename T>
 int WorldSimTreeBuilder<T>::AddModelInstanceToFrame(
     const string& model_name, const string& weld_to_body_name,
-    const int weld_to_body_model_instance_id,
-    const string& frame_name, const Eigen::Isometry3d& X_BF,
+    const int weld_to_body_model_instance_id, const string& frame_name,
+    const Eigen::Isometry3d& X_BF,
     const drake::multibody::joints::FloatingBaseType floating_base_type) {
   // Create a new frame.
   auto weld_to_frame = std::make_shared<RigidBodyFrame<T>>(
       frame_name,
       rigid_body_tree_->get_mutable_body(rigid_body_tree_->FindBodyIndex(
-          weld_to_body_name, weld_to_body_model_instance_id)), X_BF);
+          weld_to_body_name, weld_to_body_model_instance_id)),
+      X_BF);
   rigid_body_tree_->addFrame(weld_to_frame);
   return AddModelInstanceToFrame(model_name, weld_to_frame, floating_base_type);
 }
