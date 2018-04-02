@@ -6,6 +6,7 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/drake_optional.h"
 #include "drake/math/transform.h"
+#include "drake/multibody/joints/floating_base_types.h"
 
 namespace drake {
 namespace manipulation {
@@ -19,11 +20,9 @@ struct AttachmentInfo {
                  const std::string& parent_body_or_frame_name_in,
                  const drake::math::Transform<double> X_PM_in = {})
       : parent_model_instance_name(parent_model_instance_name_in),
-        parent_body_or_frame_name(parent_body_or_frame_name_in),
-        X_PM(X_PM_in) {}
+        parent_body_or_frame_name(parent_body_or_frame_name_in) {}
   std::string parent_model_instance_name{};
   std::string parent_body_or_frame_name{};
-  drake::math::Transform<double> X_PM{};
 };
 
 /** Enumerates supported model file types.
@@ -49,23 +48,33 @@ class ModelTreeNode {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(ModelTreeNode);
   ModelTreeNode(const std::string& name,
-                const drake::optional<AttachmentInfo>& attachment_info,
                 const drake::optional<ModelFile>& model_file,
+                const drake::optional<AttachmentInfo>& attachment_info,
+                const drake::math::Transform<double>& X_PM,
+                drake::multibody::joints::FloatingBaseType base_joint_type,
                 const std::vector<ModelTreeNode>& children)
       : name_(name),
-        attachment_info_(attachment_info),
         model_file_(model_file),
+        attachment_info_(attachment_info),
+        X_PM_(X_PM),
+        base_joint_type_(base_joint_type),
         children_(children) {}
 
   const std::string& name() const { return name_; }
+
+  drake::optional<ModelFile> model_file() const { return model_file_; }
 
   drake::optional<AttachmentInfo> attachment_info() const {
     return attachment_info_;
   }
 
-  std::vector<ModelTreeNode> children() const { return children_; }
+  const drake::math::Transform<double>& X_PM() { return X_PM_; }
 
-  drake::optional<ModelFile> model_file() const { return model_file_; }
+  drake::multibody::joints::FloatingBaseType base_joint_type() {
+    return base_joint_type_;
+  }
+
+  std::vector<ModelTreeNode> children() const { return children_; }
 
   bool operator==(const ModelTreeNode& other) const;
 
@@ -75,8 +84,10 @@ class ModelTreeNode {
 
  private:
   std::string name_;
-  drake::optional<AttachmentInfo> attachment_info_{};
   drake::optional<ModelFile> model_file_{};
+  drake::optional<AttachmentInfo> attachment_info_{};
+  drake::math::Transform<double> X_PM_{};
+  drake::multibody::joints::FloatingBaseType base_joint_type_{};
   std::vector<ModelTreeNode> children_{};
 };
 

@@ -12,6 +12,7 @@ using drake::nullopt;
 using drake::optional;
 using drake::math::RotationMatrix;
 using drake::math::Transform;
+using drake::multibody::joints::FloatingBaseType;
 
 namespace drake {
 namespace manipulation {
@@ -23,43 +24,45 @@ namespace {
 // nested.model_tree.
 ModelTree MakeModelTree() {
   return ModelTree(
-      "", nullopt, nullopt,
-      {ModelTreeNode("iiwa", nullopt,
-                     ModelFile(FindResourceOrThrow(
-                                   "drake/manipulation/models/iiwa_description/"
+      "", nullopt, nullopt, {} /*X_PM*/, FloatingBaseType::kFixed,
+      {ModelTreeNode(
+           "iiwa",
+           ModelFile(
+               FindResourceOrThrow("drake/manipulation/models/iiwa_description/"
                                    "urdf/iiwa14_spheres_collision.urdf"),
-                               ModelFileType::kUrdf),
-                     {}),
+               ModelFileType::kUrdf),
+           nullopt, {} /*X_PM*/, FloatingBaseType::kFixed, {} /*children*/),
        ModelTreeNode(
-           "gripper_with_camera",
-           AttachmentInfo(
-               "iiwa", "iiwa_frame_ee",
-               Transform<double>(RotationMatrix<double>::MakeSpaceXYZRotation(
-                                     {0.0, -0.39269908, 0.0}),
-                                 {0.0, 0.04, 0.0})),
-           nullopt,
+           "gripper_with_camera", nullopt,
+           AttachmentInfo("iiwa", "iiwa_frame_ee"),
+           Transform<double>(RotationMatrix<double>::MakeSpaceXYZRotation(
+                                 {0.0, -0.39269908, 0.0}),
+                             {0.0, 0.04, 0.0}),
+           FloatingBaseType::kFixed,
            {ModelTreeNode(
-                "wsg", nullopt,
+                "wsg",
                 ModelFile(FindResourceOrThrow(
                               "drake/manipulation/models/wsg_50_description/"
                               "sdf/schunk_wsg_50_ball_contact.sdf"),
                           ModelFileType::kSdf),
-                {}),
+                nullopt, {} /*X_PM*/, FloatingBaseType::kFixed,
+                {} /*children*/),
             ModelTreeNode(
-                "xtion_wsg_fixture", AttachmentInfo("wsg", "body_frame"),
+                "xtion_wsg_fixture",
                 ModelFile(FindResourceOrThrow(
                               "drake/manipulation/models/xtion_description/"
                               "urdf/xtion_wsg_fixture.urdf"),
                           ModelFileType::kUrdf),
-                {}),
+                AttachmentInfo("wsg", "body_frame"), {} /*X_PM*/,
+                FloatingBaseType::kFixed, {}),
             ModelTreeNode(
                 "xtion",
-                AttachmentInfo("xtion_wsg_fixture", "xtion_wsg_fixture"),
                 ModelFile(FindResourceOrThrow(
                               "drake/manipulation/models/xtion_description/"
                               "urdf/xtion.urdf"),
                           ModelFileType::kUrdf),
-                {})})});
+                AttachmentInfo("xtion_wsg_fixture", "xtion_wsg_fixture"),
+                {} /*X_PM*/, FloatingBaseType::kFixed, {})})});
 }
 
 GTEST_TEST(ProtobufConverterTests, ParseModelTreeFromFileOrThrowTest) {

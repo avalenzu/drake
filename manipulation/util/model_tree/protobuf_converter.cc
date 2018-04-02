@@ -9,11 +9,13 @@
 #include "drake/common/drake_optional.h"
 #include "drake/common/proto/protobuf.h"
 #include "drake/math/transform.h"
+#include "drake/multibody/joints/floating_base_types.h"
 
 using drake::nullopt;
 using drake::optional;
 using drake::math::RotationMatrix;
 using drake::math::Transform;
+using drake::multibody::joints::FloatingBaseType;
 using std::string;
 
 namespace drake {
@@ -68,16 +70,14 @@ proto::ModelTreeNode::ModelFileType GetModelFileType(
              : GuessFileType(proto_node.model_file_path());
 }
 
-proto::Pose GetX_PM(const proto::AttachmentInfo& proto_attachment_info) {
-  return proto_attachment_info.has_x_pm() ? proto_attachment_info.x_pm()
-                                          : proto::Pose();
+proto::Pose GetX_PM(const proto::ModelTreeNode& proto_node) {
+  return proto_node.has_x_pm() ? proto_node.x_pm() : proto::Pose();
 }
 
 AttachmentInfo ConvertAttachmentInfo(
     const proto::AttachmentInfo& proto_attachment_info) {
   return {proto_attachment_info.parent_model_instance_name(),
-          proto_attachment_info.parent_body_or_frame_name(),
-          ConvertPoseOrThrow(GetX_PM(proto_attachment_info))};
+          proto_attachment_info.parent_body_or_frame_name()};
 }
 
 optional<AttachmentInfo> GetAttachmentInfo(
@@ -98,6 +98,16 @@ ModelFileType ConvertModelFileType(
     return ModelFileType::kSdf;
   } else {
     return ModelFileType::kUrdf;
+  }
+}
+
+drake::multibody::joints::FloatingBaseType GetAndConvertBaseJointType(
+    const proto::ModelTreeNode& proto_node) {
+  switch (proto_node.base_joint_type()) {
+    case proto::ModelTreeNode_BaseJointType_kFixed:
+      return FloatingBaseType::kFixed;
+    case proto::ModelTreeNode_BaseJointType_kFloating:
+      return FloatingBaseType::kQuaternion;
   }
 }
 
@@ -142,12 +152,15 @@ ModelTree ProtobufConverter::ConvertModelTree(
   }
   if (corresponding_proto_node) {
     // This is a nested model tree.
-    return ModelTree(corresponding_proto_node->name(),
-                     GetAttachmentInfo(*corresponding_proto_node), nullopt,
+    return ModelTree(corresponding_proto_node->name(), nullopt,
+                     GetAttachmentInfo(*corresponding_proto_node),
+                     ConvertPoseOrThrow(GetX_PM(*corresponding_proto_node)),
+                     GetAndConvertBaseJointType(*corresponding_proto_node),
                      children);
   } else {
     // This is a top-level model tree.
-    return ModelTree("", nullopt, nullopt, children);
+    return ModelTree("", nullopt, nullopt, {}, FloatingBaseType::kFixed,
+                     children);
   }
 }
 
@@ -163,9 +176,10 @@ ModelTreeNode ProtobufConverter::ConvertModelTreeNode(
                             proto_node);
   } else {
     return ModelTreeNode(
-        proto_node.name(), GetAttachmentInfo(proto_node),
+        proto_node.name(),
         ModelFile(absolute_path, ConvertModelFileType(proto_model_file_type)),
-        {});
+        GetAttachmentInfo(proto_node), ConvertPoseOrThrow(GetX_PM(proto_node)),
+        GetAndConvertBaseJointType(proto_node), {});
   }
 }
 

@@ -6,15 +6,15 @@ model_tree_node: {
 
 model_tree_node: {
     name: "gripper_with_camera"
+    model_file_path: "drake/manipulation/util/model_tree/test/nested.model_tree"
     attachment_info: {
         parent_model_instance_name: "iiwa"
 	parent_body_or_frame_name: "iiwa_frame_ee"
-	X_PM: {
-	    xyz: [0.0, 0.04, 0.0]
-	    rpy: [0.0, -0.39269908, 0.0]
-	}
     }
-    model_file_path: "drake/manipulation/util/model_tree/test/nested.model_tree"
+    X_PM: {
+	xyz: [0.0, 0.04, 0.0]
+	rpy: [0.0, -0.39269908, 0.0]
+    }
     base_joint_type: kFixed
 }
 
