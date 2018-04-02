@@ -38,7 +38,7 @@ drake_cc_library(
 drake_cc_library(
     name = "protobuf_converter",
     srcs = [
-        "protobuf_converter.cc"
+        "protobuf_converter.cc",
     ],
     hdrs = [
         "protobuf_converter.h",
@@ -48,7 +48,7 @@ drake_cc_library(
         ":model_tree_proto",
         "//common:find_resource",
         "//common/proto:protobuf",
-        "@spruce"
+        "@spruce",
     ],
 )
 
@@ -58,9 +58,15 @@ drake_cc_googletest(
     name = "model_tree_node_test",
     deps = [
         ":model_tree_node",
+    ],
+)
+
+drake_cc_googletest(
+    name = "protobuf_converter_test",
+    deps = [
+        ":protobuf_converter",
         "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 
 add_lint_tests()
-

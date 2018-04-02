@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 
 #include "drake/common/find_resource.h"
@@ -14,7 +13,7 @@ namespace model_tree {
 
 class ProtobufConverter {
  public:
-  virtual ~ProtobufConverter(){};
+  virtual ~ProtobufConverter() {}
 
   ModelTree ParseModelTreeFromFileOrThrow(const std::string& filename) const;
 

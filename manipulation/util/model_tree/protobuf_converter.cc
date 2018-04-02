@@ -1,13 +1,16 @@
 #include "drake/manipulation/util/model_tree/protobuf_converter.h"
 
+#include <algorithm>
+#include <vector>
+
 #include <google/protobuf/text_format.h>
 #include <spruce.hh>
 
 #include "drake/common/drake_optional.h"
 #include "drake/common/proto/protobuf.h"
 
-using drake::optional;
 using drake::nullopt;
+using drake::optional;
 using std::string;
 
 namespace drake {

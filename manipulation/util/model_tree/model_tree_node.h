@@ -31,7 +31,7 @@ enum class ModelFileType { kUrdf, kSdf };
  */
 struct ModelFile {
   ModelFile(const std::string& absolute_path_in, ModelFileType type_in)
-      : absolute_path(absolute_path_in), type(type_in){};
+      : absolute_path(absolute_path_in), type(type_in) {}
   std::string absolute_path{};
   ModelFileType type{};
 };
@@ -80,6 +80,7 @@ class ModelTreeNode {
   bool operator!=(const ModelTreeNode& other) const {
     return !operator==(other);
   }
+
  private:
   std::string name_;
   drake::optional<AttachmentInfo> attachment_info_{};
