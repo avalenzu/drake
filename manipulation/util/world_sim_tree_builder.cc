@@ -55,9 +55,10 @@ WorldSimTreeBuilder<T>::~WorldSimTreeBuilder() {}
 
 template <typename T>
 void WorldSimTreeBuilder<T>::AddModelInstancesFromModelTreeNode(
-    const ModelTreeNode& node, parsers::ModelInstanceIdTable* id_table) {
-  if (node.has_model_file()) {
-    StoreModel(node.name(), *node.model_absolute_path());
+    const ModelTreeNode& node, bool do_compile,
+    parsers::ModelInstanceIdTable* id_table) {
+  if (node.model_file()) {
+    StoreModel(node.name(), node.model_file()->absolute_path);
     std::shared_ptr<RigidBodyFrame<T>> weld_to_frame{};
     std::string frame_name = node.name() + "_attachment_frame";
 
@@ -66,14 +67,12 @@ void WorldSimTreeBuilder<T>::AddModelInstancesFromModelTreeNode(
     RigidBody<double>* parent_body{};
 
     // If the node specifies an attachment point, we need to respect that.
-    if (node.has_attachment_info()) {
+    if (node.attachment_info()) {
       // Attach to existing model instance.
-      DRAKE_ASSERT(static_cast<bool>(node.parent_model_instance_name()));
-      DRAKE_ASSERT(static_cast<bool>(node.parent_body_or_frame_name()));
-      DRAKE_ASSERT(static_cast<bool>(node.attached_to_frame()));
-
       std::string parent_model_instance_name =
-          node.parent_model_instance_name().value();
+          node.attachment_info()->parent_model_instance_name;
+      std::string parent_body_or_frame_name =
+          node.attachment_info()->parent_body_or_frame_name;
       auto parent_model_id_itr = id_table->find(parent_model_instance_name);
       if (parent_model_id_itr == id_table->end()) {
         throw std::runtime_error("No model named " +
@@ -82,55 +81,63 @@ void WorldSimTreeBuilder<T>::AddModelInstancesFromModelTreeNode(
       }
 
       const int parent_model_id = parent_model_id_itr->second;
-      if (node.attached_to_frame().value()) {
+      if (node.attachment_info()->attached_to_frame) {
         std::shared_ptr<RigidBodyFrame<double>> parent_frame =
-            rigid_body_tree_->findFrame(
-                node.parent_body_or_frame_name().value(), parent_model_id);
+            rigid_body_tree_->findFrame(parent_body_or_frame_name,
+                                        parent_model_id);
         parent_body = parent_frame->get_mutable_rigid_body();
         X_BM = parent_frame->get_transform_to_body() *
                node.X_PM().GetAsIsometry3();
       } else {
-        parent_body = rigid_body_tree_->FindBody(
-            node.parent_body_or_frame_name().value(), "", parent_model_id);
+        parent_body = rigid_body_tree_->FindBody(parent_body_or_frame_name, "",
+                                                 parent_model_id);
       }
+      weld_to_frame = std::make_shared<RigidBodyFrame<double>>(
+          frame_name, parent_body, X_BM);
+    } else {
+      weld_to_frame =
+          std::make_shared<RigidBodyFrame<double>>("world", nullptr, X_BM);
     }
-    weld_to_frame =
-        std::make_shared<RigidBodyFrame<double>>(frame_name, parent_body, X_BM);
 
     parsers::ModelInstanceIdTable model_instance_id_table;
-    switch (node.model_file_type().value()) {
+    switch (node.model_file()->type) {
       case model_tree::ModelFileType::kUrdf: {
+        drake::log()->debug("node.base_joint_type() = {}",
+                            static_cast<int>(node.base_joint_type()));
         model_instance_id_table = parsers::urdf::AddModelInstanceFromUrdfFile(
-            node.model_absolute_path().value(), node.base_joint_type(),
-            weld_to_frame, false /*do_compile*/, rigid_body_tree_.get());
+            node.model_file()->absolute_path, node.base_joint_type(),
+            weld_to_frame, do_compile, rigid_body_tree_.get());
         parsers::AddModelInstancesToTable(
             {{node.name(), model_instance_id_table.begin()->second}}, id_table);
+        drake::log()->debug("Added model named {}.", node.name());
         break;
       }
       case model_tree::ModelFileType::kSdf: {
         model_instance_id_table = parsers::sdf::AddModelInstancesFromSdfFile(
-            node.model_absolute_path().value(), node.base_joint_type(),
-            weld_to_frame, false /*do_compile*/, rigid_body_tree_.get());
+            node.model_file()->absolute_path, node.base_joint_type(),
+            weld_to_frame, do_compile, rigid_body_tree_.get());
         for (const auto& model_entry : model_instance_id_table) {
           parsers::AddModelInstancesToTable(
               {{node.name() + "/" + model_entry.first, model_entry.second}},
               id_table);
+          drake::log()->debug("Added model named {}.",
+                              node.name() + "/" + model_entry.first);
         }
         break;
       }
     }
   }
   for (const auto& child : node.children()) {
-    AddModelInstancesFromModelTreeNode(child, id_table);
+    AddModelInstancesFromModelTreeNode(child, do_compile, id_table);
   }
 }
 
 template <typename T>
 parsers::ModelInstanceIdTable
 WorldSimTreeBuilder<T>::AddModelInstancesFromModelTree(
-    const ModelTree& model_tree) {
+    const ModelTree& model_tree, bool do_compile) {
   parsers::ModelInstanceIdTable id_table;
-  AddModelInstancesFromModelTreeNode(model_tree, &id_table);
+  AddModelInstancesFromModelTreeNode(model_tree, do_compile, &id_table);
   return id_table;
 }
 

@@ -61,26 +61,14 @@ class ModelTreeNode {
         X_PM_(X_PM),
         base_joint_type_(base_joint_type),
         children_(children) {
-    for (auto& child : children_) {
-      child.parent_ = this;
-    }
+    UpdateChildren();
   }
 
   std::string name() const;
 
-  bool has_model_file() const { return static_cast<bool>(model_file_); }
+  drake::optional<ModelFile> model_file() const { return model_file_; }
 
-  bool has_attachment_info() const { return static_cast<bool>(attachment_info_); }
-
-  drake::optional<std::string> model_absolute_path() const;
-
-  drake::optional<ModelFileType> model_file_type() const;
-
-  drake::optional<std::string> parent_model_instance_name() const;
-
-  drake::optional<std::string> parent_body_or_frame_name() const;
-
-  drake::optional<bool> attached_to_frame() const;
+  drake::optional<AttachmentInfo> attachment_info() const;
 
   const drake::math::Transform<double>& X_PM() const { return X_PM_; }
 
@@ -97,13 +85,17 @@ class ModelTreeNode {
   }
 
  private:
-  std::string name_;
+  std::string ParentNamePrefix() const;
+  void UpdateChildren();
+
+  std::string name_{};
+  std::string parent_name_{};
   drake::optional<ModelFile> model_file_{};
   drake::optional<AttachmentInfo> attachment_info_{};
+  drake::optional<AttachmentInfo> parent_attachment_info_{};
   drake::math::Transform<double> X_PM_{};
   drake::multibody::joints::FloatingBaseType base_joint_type_{};
   std::vector<ModelTreeNode> children_{};
-  const ModelTreeNode* parent_{};
 };
 
 typedef ModelTreeNode ModelTree;

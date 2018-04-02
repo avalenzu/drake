@@ -56,13 +56,9 @@ class ModelTreeNodeTest : public ::testing::Test {
 
 TEST_F(ModelTreeNodeTest, ConstructorTest) {
   EXPECT_EQ(model_.name(), kModelName);
-  ASSERT_TRUE(model_.has_model_file());
-  EXPECT_EQ(model_.model_absolute_path(), kModelPath);
-  EXPECT_EQ(model_.model_file_type(), kModelFileType);
-  EXPECT_EQ(*model_.parent_model_instance_name(),
-            kParentName);
-  EXPECT_EQ(model_.parent_body_or_frame_name(), kParentBodyName);
-  EXPECT_EQ(*model_.attached_to_frame(), false);
+  EXPECT_EQ(model_.model_file(), ModelFile(kModelPath, kModelFileType));
+  EXPECT_EQ(model_.attachment_info(),
+            AttachmentInfo(kParentName, kParentBodyName));
   EXPECT_TRUE(model_.X_PM().IsNearlyEqualTo(MakeX_PM(), 0.0));
   EXPECT_EQ(model_.base_joint_type(), kBaseJointType);
   EXPECT_EQ(model_.children(), MakeModelTreeNodes(5));

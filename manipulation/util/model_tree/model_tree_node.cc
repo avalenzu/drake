@@ -59,12 +59,12 @@ bool ModelTreeNode::operator==(const ModelTreeNode& other) const {
                      attachment_info_ == other.attachment_info_);
   DRAKE_SPDLOG_TRACE(drake::log(),
                      "X_PM.IsNearlyEqualTo(info_1.X_PM, 0.0): {}\n"
-                     "info_0.X_P:\n"
+                     "X_PM:\n"
                      "{}\n"
-                     "info_1.X_P:\n"
+                     "other.X_PM:\n"
                      "{}\n",
-                     info_0.X_PM.IsNearlyEqualTo(info_1.X_PM, 0.0),
-                     info_0.X_PM.GetAsMatrix4(), info_1.X_PM.GetAsMatrix4());
+                     X_PM().IsNearlyEqualTo(other.X_PM(), 0.0),
+                     X_PM().GetAsMatrix4(), other.X_PM().GetAsMatrix4());
   DRAKE_SPDLOG_TRACE(drake::log(),
                      "base_joint_type == other.base_joint_type_: {}",
                      base_joint_type_ == other.base_joint_type_);
@@ -75,48 +75,29 @@ bool ModelTreeNode::operator==(const ModelTreeNode& other) const {
          (children_ == other.children_);
 }
 
-std::string ModelTreeNode::name() const {
-  return parent_ ? parent_->name() + name_ : name_;
+std::string ModelTreeNode::ParentNamePrefix() const {
+  return parent_name_.empty() ? "" : parent_name_ + "/";
 }
 
-optional<std::string> ModelTreeNode::model_absolute_path() const {
-  return model_file_ ? optional<std::string>(model_file_->absolute_path)
-                     : nullopt;
-}
+std::string ModelTreeNode::name() const { return ParentNamePrefix() + name_; }
 
-optional<ModelFileType> ModelTreeNode::model_file_type() const {
-  return model_file_ ? optional<ModelFileType>(model_file_->type) : nullopt;
-}
-
-optional<std::string> ModelTreeNode::parent_model_instance_name() const {
+optional<AttachmentInfo> ModelTreeNode::attachment_info() const {
   if (attachment_info_) {
-    if (parent_) {
-      return parent_->name() + attachment_info_->parent_model_instance_name;
-    } else {
-      return attachment_info_->parent_model_instance_name;
-    }
+    return AttachmentInfo(
+        ParentNamePrefix() + attachment_info_->parent_model_instance_name,
+        attachment_info_->parent_body_or_frame_name,
+        attachment_info_->attached_to_frame);
   } else {
-    if (parent_) {
-      return parent_->parent_model_instance_name();
-    } else {
-      return nullopt;
-    }
+    return parent_attachment_info_;
   }
 }
 
-optional<std::string> ModelTreeNode::parent_body_or_frame_name() const {
-  if (attachment_info_) {
-    return attachment_info_->parent_body_or_frame_name;
-  } else if (parent_) {
-    return parent_->parent_body_or_frame_name();
-  } else {
-    return nullopt;
+void ModelTreeNode::UpdateChildren() {
+  for (ModelTreeNode& child : children_) {
+    child.parent_name_ = name();
+    child.parent_attachment_info_ = attachment_info();
+    child.UpdateChildren();
   }
-}
-
-optional<bool> ModelTreeNode::attached_to_frame() const {
-  return attachment_info_ ? optional<bool>(attachment_info_->attached_to_frame)
-                          : nullopt;
 }
 
 }  // namespace model_tree

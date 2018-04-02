@@ -33,6 +33,7 @@ drake_cc_library(
         "model_tree_node.h",
     ],
     deps = [
+        "//common:copyable_unique_ptr",
         "//common:essential",
         "//math:geometric_transform",
         "//multibody/joints",

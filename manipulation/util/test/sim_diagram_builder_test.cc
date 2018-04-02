@@ -266,7 +266,7 @@ GTEST_TEST(SimDiagramBuilderTest, TestAddingModelTree) {
   model_tree::ProtobufConverter protobuf_converter{};
   tree_builder->AddModelInstancesFromModelTree(
       protobuf_converter.ParseModelTreeFromFileOrThrow(
-          "drake/manipulation/util/test/two_iiwas_one_wsg.model_tree"));
+          "drake/manipulation/util/test/two_iiwas_with_wsgs.model_tree"));
 }
 
 }  // namespace

@@ -38,7 +38,7 @@ class WorldSimTreeBuilder {
 
   /// Adds the model instances described in @p model_tree.
   std::map<std::string, int> AddModelInstancesFromModelTree(
-      const model_tree::ModelTreeNode& model_tree);
+      const model_tree::ModelTreeNode& model_tree, bool do_compile = true);
 
   /// Adds a fixed model instance specified by its name, @p model_name, to the
   /// `RigidBodyTree` being built at the pose specified by position @p xyz and
@@ -160,7 +160,7 @@ class WorldSimTreeBuilder {
 
  private:
   void AddModelInstancesFromModelTreeNode(
-      const model_tree::ModelTreeNode& model_tree_node,
+      const model_tree::ModelTreeNode& model_tree_node, bool do_compile,
       std::map<std::string, int>* instance_id_map);
 
   std::unique_ptr<RigidBodyTree<T>> rigid_body_tree_{
