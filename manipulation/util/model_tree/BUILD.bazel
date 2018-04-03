@@ -6,8 +6,19 @@ load(
     "drake_cc_library",
 )
 load("//tools/lint:lint.bzl", "add_lint_tests")
+load(
+    "@drake//tools/skylark:drake_proto.bzl",
+    "drake_cc_proto_library",
+)
 
 package(default_visibility = ["//visibility:public"])
+
+drake_cc_proto_library(
+    name = "model_tree_proto",
+    srcs = [
+        "model_tree.proto",
+    ],
+)
 
 drake_cc_library(
     name = "model_tree_node",
@@ -25,6 +36,23 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "protobuf_converter",
+    srcs = [
+        "protobuf_converter.cc",
+    ],
+    hdrs = [
+        "protobuf_converter.h",
+    ],
+    deps = [
+        ":model_tree_node",
+        ":model_tree_proto",
+        "//common:find_resource",
+        "//common/proto:protobuf",
+        "@spruce",
+    ],
+)
+
 # === test/ ===
 
 drake_cc_googletest(
@@ -32,6 +60,20 @@ drake_cc_googletest(
     deps = [
         ":model_tree_node",
         "//common/test_utilities:expect_throws_message",
+    ],
+)
+
+drake_cc_googletest(
+    name = "protobuf_converter_test",
+    data = [
+        ":test",
+        "//manipulation/models/iiwa_description:models",
+        "//manipulation/models/wsg_50_description:models",
+        "//manipulation/models/xtion_description:models",
+    ],
+    deps = [
+        ":protobuf_converter",
+        "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 

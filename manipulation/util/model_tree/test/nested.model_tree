@@ -1,0 +1,38 @@
+model_tree_node: {
+    name: "wsg"
+    model_file_path: "drake/manipulation/models/wsg_50_description/sdf/schunk_wsg_50_ball_contact.sdf"
+    base_joint_type: kFixed
+}
+
+model_tree_node: {
+    name: "xtion_wsg_fixture"
+    model_file_path: "drake/manipulation/models/xtion_description/urdf/xtion_wsg_fixture.urdf"
+    predecessor_info: {
+        model_instance_name: "wsg"
+        body_or_frame_name: "body_frame"
+	is_frame: true
+    }
+    base_joint_type: kFixed
+}
+
+model_tree_node: {
+    name: "xtion"
+    model_file_path: "drake/manipulation/models/xtion_description/urdf/xtion.urdf"
+    predecessor_info: {
+        model_instance_name: "xtion_wsg_fixture"
+        body_or_frame_name: "xtion_wsg_fixture"
+	is_frame: true
+    }
+    base_joint_type: kFixed
+}
+
+model_tree_node: {
+    name: "floating_xtion"
+    model_file_path: "drake/manipulation/models/xtion_description/urdf/xtion.urdf"
+    model_file_type: kUrdf
+    predecessor_info: {
+        model_instance_name: "xtion_wsg_fixture"
+        body_or_frame_name: "base"
+    }
+    base_joint_type: kFloating
+}

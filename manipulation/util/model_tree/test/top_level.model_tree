@@ -1,0 +1,29 @@
+model_tree_node: {
+    name: "iiwa"
+    model_file_path: "drake/manipulation/models/iiwa_description/urdf/iiwa14_spheres_collision.urdf"
+    base_joint_type: kFixed
+}
+
+model_tree_node: {
+    name: "gripper_with_camera"
+    model_file_path: "drake/manipulation/util/model_tree/test/nested.model_tree"
+    predecessor_info: {
+        model_instance_name: "iiwa"
+	body_or_frame_name: "iiwa_frame_ee"
+	is_frame: true
+    }
+    X_PB: {
+    	translation: {
+	    x: 0.0
+	    y: 0.04
+	    z: 0.0
+	}
+	rotation_rpy: {
+	    roll: 0.0
+	    pitch: -0.39269908
+	    yaw: 0.0
+	}
+    }
+    base_joint_type: kFixed
+}
+

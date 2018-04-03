@@ -1,0 +1,64 @@
+syntax = "proto2";
+
+package drake.manipulation.util.model_tree.proto;
+
+message SpaceXYZRotation {
+  required double roll = 1;
+  required double pitch = 2;
+  required double yaw = 3;
+}
+
+message Vector3 {
+  required double x = 1;
+  required double y = 2;
+  required double z = 3;
+}
+
+message Transform {
+  // Orientation in SpaceXYZ Euler angles.
+  oneof rotation_oneof {
+    SpaceXYZRotation rotation_rpy = 1;
+  }
+  // Translation
+  oneof translation_oneof {
+    Vector3 translation = 2;
+  }
+}
+
+message PredecessorInfo {
+  required string model_instance_name = 1;
+  required string body_or_frame_name = 2;
+  oneof attached_to_frame_oneof {
+    bool is_frame = 3;
+  }
+}
+
+message ModelTreeNode {
+  required string name = 1;
+  required string model_file_path = 3;
+  enum ModelFileType {
+    kUrdf = 0;
+    kSdf = 1;
+    kModelTree = 2;
+  }
+  oneof model_file_type_oneof {
+    ModelFileType model_file_type = 4;
+  }
+  oneof predecessor_info_oneof {
+    PredecessorInfo predecessor_info = 2;
+  }
+  enum BaseJointType {
+    kFixed = 0;
+    kFloating = 1;
+  }
+  oneof X_PM_oneof {
+    Transform X_PB = 6;
+  }
+  oneof base_joint_type_oneof {
+    BaseJointType base_joint_type = 5;
+  }
+}
+
+message ModelTree {
+  repeated ModelTreeNode model_tree_node = 1;
+}
