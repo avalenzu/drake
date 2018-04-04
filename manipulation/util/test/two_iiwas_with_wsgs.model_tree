@@ -1,12 +1,33 @@
 model_tree_node: {
     name: "robot_0"
     model_file_path: "drake/manipulation/util/test/iiwa14_and_wsg_50.model_tree"
+    X_PB: {
+    	translation: {
+    	    x: 1.0
+	    y: 0.0
+	    z: 1.0
+	}
+	rotation_rpy: {
+	    roll: 0
+	    pitch: 0
+	    yaw: 0
+	}
+    }
 }
 
 model_tree_node: {
     name: "robot_1"
     model_file_path: "drake/manipulation/util/test/iiwa14_and_wsg_50.model_tree"
-    X_PM: {
-    	xyz: [1.0, 0.0, 0.0]
+    predecessor_info: {
+        model_instance_name: "robot_0/wsg"
+	body_or_frame_name: "body"
+    }
+    X_PB: {
+       rotation_rpy: {
+	   roll: -1.57
+           pitch: 0
+	   yaw:0
+       }
     }
 }
+
