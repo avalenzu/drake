@@ -35,19 +35,18 @@ class Model {
 
   const ModelFile& model_file() const { return model_file_; }
   const Model* parent() const;
-  const Model* next_sibling() const { return next_sibling_; }
-  const Model* first_child() const;
-  const BaseJoint* base_joint() const { return base_joint_; }
+  const Model* next_sibling() const { return next_sibling_.get(); }
+  const Model* first_child() const { return first_child_.get(); }
+  const BaseJoint* base_joint() const { return base_joint_.get(); }
 
-  void AddChild(Model* child, BaseJoint* base_joint);
-  Model* MutableLastChild();
+  void AddChild(std::unique_ptr<Model> child,
+                std::unique_ptr<BaseJoint> base_joint);
 
  private:
   ModelFile model_file_;
-  Model* parent_;
-  Model* next_sibling_;
-  BaseJoint* first_child_joint;
-  BaseJoint* base_joint_;
+  std::unique_ptr<Model> next_sibling_{};
+  std::unique_ptr<Model> first_child_{};
+  std::unique_ptr<BaseJoint> base_joint_{};
 };
 
 }  // namespace model_tree

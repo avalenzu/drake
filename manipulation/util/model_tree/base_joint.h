@@ -1,12 +1,10 @@
 #pragma once
-#pragma once
 
 #include <string>
 #include <vector>
 
 #include "drake/common/drake_copyable.h"
 #include "drake/common/drake_optional.h"
-#include "drake/manipulation/util/model_tree/model.h"
 #include "drake/math/transform.h"
 #include "drake/multibody/joints/floating_base_types.h"
 
@@ -14,6 +12,8 @@ namespace drake {
 namespace manipulation {
 namespace util {
 namespace model_tree {
+
+class Model;
 
 /** Describes how a model tree node is attached to the tree.
  */
@@ -30,25 +30,27 @@ class BaseJoint {
  public:
   BaseJoint(const BodyOrFrameName& parent_body_or_frame_name,
             const multibody::joints::FloatingBaseType& type,
-            const Transform<double>& X_PJ);
+            const drake::math::Transform<double>& X_PJ);
 
   const Model* parent_model() const { return parent_model_; }
   const Model* child_model() const { return child_model_; }
   const BodyOrFrameName& parent_body_or_frame_name() const {
     return parent_body_or_frame_name_;
   }
-  const multibody::joints::FloatingBaseType type() const { return type_; }
-  const Transform<double>& X_PJ() const { return X_PJ_; }
-  void set_parent_model(const Model* parent_model) {
+  multibody::joints::FloatingBaseType type() const { return type_; }
+  const drake::math::Transform<double>& X_PJ() const { return X_PJ_; }
+  void set_parent_model(Model* parent_model) {
     parent_model_ = parent_model;
   };
-  void set_child_model(const Model* child_model) { child_model_ = child_model; };
- private
-  const Model* parent_model_{};
-  const Model* child_model_{};
-  const BodyOrFrameName parent_body_or_frame_name_;
-  const multibody::joints::FloatingBaseType type_;
-  const Transform<double> X_PJ_;
+  void set_child_model(Model* child_model) {
+    child_model_ = child_model;
+  };
+ private:
+  Model* parent_model_{};
+  Model* child_model_{};
+  BodyOrFrameName parent_body_or_frame_name_;
+  multibody::joints::FloatingBaseType type_;
+  drake::math::Transform<double> X_PJ_;
 };
 
 }  // namespace model_tree

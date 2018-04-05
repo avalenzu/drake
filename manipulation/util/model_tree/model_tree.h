@@ -23,12 +23,12 @@ class ModelTree {
                     const std::string& child_model_name,
                     const BodyOrFrameName& parent_body_or_frame_name,
                     const multibody::joints::FloatingBaseType& type,
-                    const Transform<double>& X_PJ);
+                    const drake::math::Transform<double>& X_PJ);
   void AddSubTree(std::unique_ptr<ModelTree> sub_tree);
   const Model* first_root_model() const;
  private:
-  std::map<std::string, std::unique_ptr<Model>> models_;
-  std::vector<std::unique_ptr<Joint> base_joints_;
+  std::map<std::string, Model*> models_{};
+  std::unique_ptr<Model> first_root_model_{};
 };
 
 }  // namespace model_tree

@@ -13,6 +13,25 @@ load(
 
 package(default_visibility = ["//visibility:public"])
 
+drake_cc_library(
+    name = "model_tree",
+    srcs = [
+        "model.cc",
+        "model_tree.cc",
+    ],
+    hdrs = [
+        "base_joint.h",
+        "model.h",
+        "model_tree.h",
+    ],
+    deps = [
+        "//common:copyable_unique_ptr",
+        "//common:essential",
+        "//math:geometric_transform",
+        "//multibody/joints",
+    ],
+)
+
 drake_cc_proto_library(
     name = "model_tree_proto",
     srcs = [
