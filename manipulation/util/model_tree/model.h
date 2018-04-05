@@ -31,19 +31,26 @@ bool operator==(const ModelFile& file_0, const ModelFile& file_1);
 
 class Model {
  public:
-  Model(const std::string& name, const ModelFile& model_file);
+  Model(){};
+  Model(const std::string name, const ModelFile& model_file)
+      : name_(name), model_file_(model_file) {}
 
+  const std::string& name() const { return name_; }
   const ModelFile& model_file() const { return model_file_; }
-  const Model* parent() const;
-  const Model* next_sibling() const { return next_sibling_.get(); }
-  const Model* first_child() const { return first_child_.get(); }
   const BaseJoint* base_joint() const { return base_joint_.get(); }
+  const Model* next_model() const;
 
-  void AddChild(std::unique_ptr<Model> child,
-                std::unique_ptr<BaseJoint> base_joint);
+  void add_name_prefix(const std::string& name);
+  Model* mutable_next_model();
+
+  Model* AddChild(std::unique_ptr<Model> child,
+                  std::unique_ptr<BaseJoint> base_joint);
+
+  Model* AddChild(std::unique_ptr<Model> child);
 
  private:
-  ModelFile model_file_;
+  std::string name_{};
+  ModelFile model_file_{};
   std::unique_ptr<Model> next_sibling_{};
   std::unique_ptr<Model> first_child_{};
   std::unique_ptr<BaseJoint> base_joint_{};

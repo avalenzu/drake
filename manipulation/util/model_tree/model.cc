@@ -24,26 +24,74 @@ bool operator==(const ModelFile& file_0, const ModelFile& file_1) {
          (file_0.type == file_1.type);
 }
 
-void Model::AddChild(std::unique_ptr<Model> child,
-                     std::unique_ptr<BaseJoint> base_joint) {
+Model* Model::AddChild(std::unique_ptr<Model> child) {
+  DRAKE_ASSERT(child != nullptr)
+  if (first_child_) {
+    Model* last_child = first_child_.get();
+    while (last_child->next_sibling_) {
+      last_child = last_child->next_sibling_.get();
+    }
+    last_child->next_sibling_ = std::move(child);
+    return last_child->next_sibling_.get();
+  } else {
+    first_child_ = std::move(child);
+    return first_child_.get();
+  }
+}
+
+Model* Model::AddChild(std::unique_ptr<Model> child,
+                       std::unique_ptr<BaseJoint> base_joint) {
   DRAKE_ASSERT(child && base_joint)
   base_joint->set_parent_model(this);
   base_joint->set_child_model(child.get());
   child->base_joint_ = std::move(base_joint);
-  if (first_child_) {
-    Model* last_child = first_child_.get();
-    while (last_child->next_sibling()) {
-      last_child = last_child->next_sibling_.get();
-    }
-    last_child->next_sibling_ = std::move(child);
-  } else {
-    first_child_ = std::move(child);
-  }
+  return AddChild(std::move(child));
 }
 
 const Model* Model::parent() const {
   if (base_joint_) {
     return base_joint_->parent_model();
+  }
+  return nullptr;
+}
+
+Model* Model::mutable_parent() {
+  if (base_joint_) {
+    return base_joint_->mutable_parent_model();
+  }
+  return nullptr;
+}
+
+void Model::add_name_prefix(const std::string& prefix) {
+  Model* model = this;
+  while (model) {
+    model->name_ = prefix + model->name_;
+    model = model->mutable_next_model();
+  }
+}
+
+Model* Model::mutable_next_model() {
+  if (first_child_) {
+    return first_child_.get();
+  }
+  if (next_sibling_) {
+    return next_sibling_.get();
+  }
+  if (base_joint_) {
+    return base_joint_->mutable_parent_model();
+  }
+  return nullptr;
+}
+
+const Model* Model::next_model() const {
+  if (first_child_) {
+    return first_child_.get();
+  }
+  if (next_sibling_) {
+    return next_sibling_.get();
+  }
+  if (parent()) {
+    return parent()->next_model();
   }
   return nullptr;
 }

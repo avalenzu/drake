@@ -33,6 +33,7 @@ class BaseJoint {
             const drake::math::Transform<double>& X_PJ);
 
   const Model* parent_model() const { return parent_model_; }
+  Model* mutable_parent_model() { return parent_model_; }
   const Model* child_model() const { return child_model_; }
   const BodyOrFrameName& parent_body_or_frame_name() const {
     return parent_body_or_frame_name_;
