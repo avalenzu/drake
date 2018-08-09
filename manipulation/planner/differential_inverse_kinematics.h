@@ -231,6 +231,35 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const DifferentialInverseKinematicsParameters& parameters);
 
 /**
+ * Computes a generalized velocity v, s.t. J * v has the same direction as
+ * V, and the difference between |V| and |J * v| is minimized while all
+ * constraints in @p parameters are satisfied as well. If the problem is
+ * redundant, a secondary objective to minimize |q_current + v * dt - q_nominal|
+ * is added to the problem. It is possible that the solver is unable to find
+ * such a generalized velocity while not violating the constraints, in which
+ * case, status will be set to kStuck in the returned
+ * DifferentialInverseKinematicsResult.
+ * @param q_current The current generalized position.
+ * @param v_current The current generalized position.
+ * @param V Desired spatial velocity. It must have the same number of rows as
+ * @p J.
+ * @param J Geometric Jacobian. It must have the same number of rows as @p V.
+ * J * v need to represent the same spatial velocity as @p V.
+ * @param parameters Collection of various problem specific constraints and
+ * constants.
+ * @return If the solver successfully finds a solution, joint_velocities will
+ * be set to v, otherwise it will be nullopt.
+ */
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
+    const Eigen::Ref<const VectorX<double>>& q_current,
+    const Eigen::Ref<const VectorX<double>>& v_current,
+    const Eigen::Ref<const VectorX<double>>& V,
+    const Eigen::Ref<const MatrixX<double>>& J,
+    const std::vector<std::vector<std::shared_ptr<solvers::LinearConstraint>>>&
+        linear_velocity_constraints,
+    const DifferentialInverseKinematicsParameters& parameters);
+
+/**
  * A wrapper over
  * DoDifferentialInverseKinematics(q_current, v_current, V, J, params)
  * that tracks frame E's spatial velocity.

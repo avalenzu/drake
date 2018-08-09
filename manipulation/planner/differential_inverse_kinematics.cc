@@ -2,6 +2,9 @@
 
 #include <memory>
 #include <string>
+#include <stdexcept>
+
+#include <fmt/format.h>
 
 #include "drake/solvers/osqp_solver.h"
 
@@ -84,6 +87,53 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const Eigen::Ref<const VectorX<double>>& V,
     const Eigen::Ref<const MatrixX<double>>& J,
     const DifferentialInverseKinematicsParameters& parameters) {
+
+  const int num_cart_constraints = V.size();
+  const int num_velocities = parameters.get_num_velocities();
+  std::vector<std::vector<std::shared_ptr<solvers::LinearConstraint>>>
+      linear_velocity_constraints;
+
+  // Add constrained the unconstrained dof's velocity to be small, which is
+  // used to fulfil the regularization cost.
+  if (num_cart_constraints > 0 &&
+      parameters.get_unconstrained_degrees_of_freedom_velocity_limit()) {
+    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
+    const Vector1<double> uncon_v{
+        parameters.get_unconstrained_degrees_of_freedom_velocity_limit()
+            .value()};
+    linear_velocity_constraints.push_back({});
+    for (int i = num_cart_constraints; i < num_velocities; i++) {
+      linear_velocity_constraints.back().push_back(
+        std::make_shared<solvers::LinearConstraint>(
+            svd.matrixV().col(i).transpose(), -uncon_v, uncon_v));
+    }
+
+    VectorX<double> V_dir = V.normalized();
+
+    // Constrain the end effector motion to be in the direction of V,
+    // and penalize magnitude difference from V.
+    MatrixX<double> A(num_cart_constraints, num_velocities + 1);
+    A.leftCols(num_velocities) = J;
+    A.rightCols(1) = -V_dir;
+    linear_velocity_constraints.back().push_back(
+        std::make_shared<solvers::LinearConstraint>(
+            A, VectorX<double>::Zero(num_cart_constraints),
+            VectorX<double>::Zero(num_cart_constraints)));
+  }
+  return DoDifferentialInverseKinematics(q_current, v_current, V, J,
+                                         linear_velocity_constraints,
+                                         parameters);
+}
+
+DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
+    const Eigen::Ref<const VectorX<double>>& q_current,
+    const Eigen::Ref<const VectorX<double>>& v_current,
+    const Eigen::Ref<const VectorX<double>>& V,
+    const Eigen::Ref<const MatrixX<double>>& J,
+    const std::vector<std::vector<std::shared_ptr<solvers::LinearConstraint>>>&
+        linear_velocity_constraints,
+    const DifferentialInverseKinematicsParameters& parameters) {
+  unused(linear_velocity_constraints);
   const int num_positions = parameters.get_num_positions();
   const int num_velocities = parameters.get_num_velocities();
   const int num_cart_constraints = V.size();
@@ -104,34 +154,30 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   const solvers::QuadraticCost* cart_cost = nullptr;
 
   if (num_cart_constraints > 0) {
-    VectorX<double> V_dir = V.normalized();
-    double V_mag = V.norm();
-
-    // Constrain the end effector motion to be in the direction of V,
-    // and penalize magnitude difference from V.
-    MatrixX<double> A(num_cart_constraints, num_velocities + 1);
-    A.leftCols(num_velocities) = J;
-    A.rightCols(1) = -V_dir;
-    prog.AddLinearEqualityConstraint(
-        A, VectorX<double>::Zero(num_cart_constraints), {v_next, alpha});
     const double kCartesianTrackingWeight = 100;
+    double V_mag = V.norm();
     cart_cost =
         prog.AddQuadraticErrorCost(Vector1<double>(kCartesianTrackingWeight),
                                    Vector1<double>(V_mag), alpha)
             .evaluator()
             .get();
+  }
 
-    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-
-    // Add constrained the unconstrained dof's velocity to be small, which is
-    // used to fulfil the regularization cost.
-    if (parameters.get_unconstrained_degrees_of_freedom_velocity_limit()) {
-      const double uncon_v =
-          parameters.get_unconstrained_degrees_of_freedom_velocity_limit()
-              .value();
-      for (int i = num_cart_constraints; i < num_velocities; i++) {
-        prog.AddLinearConstraint(svd.matrixV().col(i).transpose(), -uncon_v,
-                                 uncon_v, v_next);
+  if (!linear_velocity_constraints.empty()) {
+    // Not supporting hierarchical constraints yet.
+    DRAKE_THROW_UNLESS(linear_velocity_constraints.size() == 1);
+    for (const auto& constraint : linear_velocity_constraints.front()) {
+      if (constraint->num_vars() == num_velocities) {
+        prog.AddConstraint(
+            solvers::Binding<solvers::LinearConstraint>(constraint, v_next));
+      } else if (constraint->num_vars() == num_velocities + 1) {
+        prog.AddConstraint(solvers::Binding<solvers::LinearConstraint>(
+            constraint, {v_next, alpha}));
+      } else {
+        throw std::invalid_argument(fmt::format(
+            "Constraint has an invalid number of variables ({}). Constraints "
+            "for this problem must have {} or {} variables",
+            constraint->num_vars(), num_velocities, num_velocities + 1));
       }
     }
   }
