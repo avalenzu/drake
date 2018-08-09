@@ -107,18 +107,6 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
         std::make_shared<solvers::LinearConstraint>(
             svd.matrixV().col(i).transpose(), -uncon_v, uncon_v));
     }
-
-    VectorX<double> V_dir = V.normalized();
-
-    // Constrain the end effector motion to be in the direction of V,
-    // and penalize magnitude difference from V.
-    MatrixX<double> A(num_cart_constraints, num_velocities + 1);
-    A.leftCols(num_velocities) = J;
-    A.rightCols(1) = -V_dir;
-    linear_velocity_constraints.back().push_back(
-        std::make_shared<solvers::LinearConstraint>(
-            A, VectorX<double>::Zero(num_cart_constraints),
-            VectorX<double>::Zero(num_cart_constraints)));
   }
   return DoDifferentialInverseKinematics(q_current, v_current, V, J,
                                          linear_velocity_constraints,
@@ -154,8 +142,17 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
   const solvers::QuadraticCost* cart_cost = nullptr;
 
   if (num_cart_constraints > 0) {
-    const double kCartesianTrackingWeight = 100;
+    VectorX<double> V_dir = V.normalized();
     double V_mag = V.norm();
+
+    // Constrain the end effector motion to be in the direction of V,
+    // and penalize magnitude difference from V.
+    MatrixX<double> A(num_cart_constraints, num_velocities + 1);
+    A.leftCols(num_velocities) = J;
+    A.rightCols(1) = -V_dir;
+    prog.AddLinearEqualityConstraint(
+        A, VectorX<double>::Zero(num_cart_constraints), {v_next, alpha});
+    const double kCartesianTrackingWeight = 100;
     cart_cost =
         prog.AddQuadraticErrorCost(Vector1<double>(kCartesianTrackingWeight),
                                    Vector1<double>(V_mag), alpha)
