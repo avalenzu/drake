@@ -88,26 +88,8 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
     const Eigen::Ref<const MatrixX<double>>& J,
     const DifferentialInverseKinematicsParameters& parameters) {
 
-  const int num_cart_constraints = V.size();
-  const int num_velocities = parameters.get_num_velocities();
   std::vector<std::vector<std::shared_ptr<solvers::LinearConstraint>>>
-      linear_velocity_constraints;
-
-  // Add constrained the unconstrained dof's velocity to be small, which is
-  // used to fulfil the regularization cost.
-  if (num_cart_constraints > 0 &&
-      parameters.get_unconstrained_degrees_of_freedom_velocity_limit()) {
-    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
-    const Vector1<double> uncon_v{
-        parameters.get_unconstrained_degrees_of_freedom_velocity_limit()
-            .value()};
-    linear_velocity_constraints.push_back({});
-    for (int i = num_cart_constraints; i < num_velocities; i++) {
-      linear_velocity_constraints.back().push_back(
-        std::make_shared<solvers::LinearConstraint>(
-            svd.matrixV().col(i).transpose(), -uncon_v, uncon_v));
-    }
-  }
+      linear_velocity_constraints{};
   return DoDifferentialInverseKinematics(q_current, v_current, V, J,
                                          linear_velocity_constraints,
                                          parameters);
@@ -158,6 +140,20 @@ DifferentialInverseKinematicsResult DoDifferentialInverseKinematics(
                                    Vector1<double>(V_mag), alpha)
             .evaluator()
             .get();
+
+    Eigen::JacobiSVD<MatrixX<double>> svd(J, Eigen::ComputeFullV);
+
+    // Add constrained the unconstrained dof's velocity to be small, which is
+    // used to fulfil the regularization cost.
+    if (parameters.get_unconstrained_degrees_of_freedom_velocity_limit()) {
+      const double uncon_v =
+          parameters.get_unconstrained_degrees_of_freedom_velocity_limit()
+              .value();
+      for (int i = num_cart_constraints; i < num_velocities; i++) {
+        prog.AddLinearConstraint(svd.matrixV().col(i).transpose(), -uncon_v,
+                                 uncon_v, v_next);
+      }
+    }
   }
 
   if (!linear_velocity_constraints.empty()) {
