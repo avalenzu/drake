@@ -53,7 +53,7 @@ class OrientationConstraint : public solvers::Constraint {
    * @pre angle_bound >= 0.
    * @throws std::invalid_argument if angle_bound < 0.
    */
-  OrientationConstraint(const multibody_plant::MultibodyPlant<double>& plant,
+  OrientationConstraint(const multibody_plant::MultibodyPlant<double>* const plant,
                         const Frame<double>& frameAbar,
                         const math::RotationMatrix<double>& R_AbarA,
                         const Frame<double>& frameBbar,
