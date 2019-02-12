@@ -389,7 +389,9 @@ PYBIND11_MODULE(plant, m) {
             overload_cast_explicit<ModelInstanceIndex, const string&>(
                 &Class::GetModelInstanceByName),
             py::arg("name"), py_reference_internal,
-            doc.MultibodyPlant.GetModelInstanceByName.doc);
+            doc.MultibodyPlant.GetModelInstanceByName.doc)
+        .def("GetBodiesWeldedTo", &Class::GetBodiesWeldedTo, py::arg("body"),
+            doc.MultibodyPlant.GetBodiesWeldedTo.doc);
     // Geometry.
     cls  // BR
         .def("RegisterAsSourceForSceneGraph",
@@ -410,7 +412,10 @@ PYBIND11_MODULE(plant, m) {
             py_reference_internal, doc.MultibodyPlant.GetBodyFromFrameId.doc)
         .def("GetBodyFrameIdIfExists", &Class::GetBodyFrameIdIfExists,
             py::arg("body_index"), py_reference_internal,
-            doc.MultibodyPlant.GetBodyFrameIdIfExists.doc);
+            doc.MultibodyPlant.GetBodyFrameIdIfExists.doc)
+        .def("CollectRegisteredGeometries", &Class::CollectRegisteredGeometries,
+            py::arg("bodies"),
+            doc.MultibodyPlant.CollectRegisteredGeometries.doc);
     // Port accessors.
     cls  // BR
         .def("get_actuation_input_port",

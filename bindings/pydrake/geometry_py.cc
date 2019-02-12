@@ -59,6 +59,12 @@ PYBIND11_MODULE(geometry, m) {
       .def("GetFrameId", &SceneGraphInspector<T>::GetFrameId,
           py::arg("geometry_id"), doc.SceneGraphInspector.GetFrameId.doc);
 
+  py::class_<GeometrySet>(m, "GeometrySet", doc.GeometrySet.doc)
+      .def(py::init<>(), doc.GeometrySet.ctor.doc)
+      .def("Add",
+          [](GeometrySet* self, const GeometrySet& other) { self->Add(other); },
+          py::arg("other"));
+
   py::class_<SceneGraph<T>, LeafSystem<T>>(m, "SceneGraph", doc.SceneGraph.doc)
       .def(py::init<>(), doc.SceneGraph.ctor.doc)
       .def("get_source_pose_port", &SceneGraph<T>::get_source_pose_port,
@@ -68,6 +74,10 @@ PYBIND11_MODULE(geometry, m) {
           doc.SceneGraph.get_pose_bundle_output_port.doc)
       .def("get_query_output_port", &SceneGraph<T>::get_query_output_port,
           py_reference_internal, doc.SceneGraph.get_query_output_port.doc)
+      .def("ExcludeCollisionsWithin",
+          py::overload_cast<const GeometrySet&>(
+              &SceneGraph<T>::ExcludeCollisionsWithin),
+          py::arg("set"), doc.SceneGraph.ExcludeCollisionsWithin.doc_1args)
       .def("RegisterSource",
           py::overload_cast<const std::string&>(  // BR
               &SceneGraph<T>::RegisterSource),
