@@ -576,7 +576,10 @@ PYBIND11_MODULE(plant, m) {
               self->SetDefaultState(context, state);
             },
             py::arg("context"), py::arg("state"),
-            doc.MultibodyPlant.SetDefaultState.doc);
+            doc.MultibodyPlant.SetDefaultState.doc)
+        .def("SetRandomState", &Class::SetRandomState, py::arg("context"),
+            py::arg("state"), py::arg("generator"),
+            doc.MultibodyPlant.SetRandomState.doc);
   }
 
   // PointPairContactInfo
