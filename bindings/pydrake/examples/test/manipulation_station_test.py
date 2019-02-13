@@ -103,3 +103,10 @@ class TestManipulationStation(unittest.TestCase):
         # Don't actually call Connect here, since it would block.
         station.get_controller_plant()
         self.assertEqual(len(station.get_camera_names()), 2)
+
+    def test_get_bodies_welded_to(self):
+        station = ManipulationStation()
+        station.SetupDefaultStation()
+        station.Finalize()
+        plant = station.get_multibody_plant()
+        anchored_bodies = plant.GetBodiesWeldedTo(plant.world_body())
