@@ -390,7 +390,8 @@ PYBIND11_MODULE(plant, m) {
                 &Class::GetModelInstanceByName),
             py::arg("name"), py_reference_internal,
             doc.MultibodyPlant.GetModelInstanceByName.doc)
-        .def("GetBodiesWeldedTo", &Class::GetBodiesWeldedTo, py::arg("body"),
+        .def("GetBodiesWeldedTo", &Class::GetBodiesWeldedTo,
+             py::keep_alive<1, 0>(), py::arg("body"),
             doc.MultibodyPlant.GetBodiesWeldedTo.doc);
     // Geometry.
     cls  // BR
