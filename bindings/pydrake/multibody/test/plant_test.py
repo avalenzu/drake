@@ -37,6 +37,7 @@ from pydrake.multibody.benchmarks.acrobot import (
 from pydrake.common.eigen_geometry import Isometry3
 from pydrake.geometry import (
     GeometryId,
+    GeometrySet,
     PenetrationAsPointPair,
     SignedDistancePair,
     SceneGraph,
@@ -826,6 +827,29 @@ class TestPlant(unittest.TestCase):
         self.assertSetEqual(
             bodies,
             {plant.GetBodyByName("body1"), plant.GetBodyByName("body2")})
+
+    def test_scene_graph_exclusions(self):
+        builder = DiagramBuilder()
+        plant, scene_graph = AddMultibodyPlantSceneGraph(builder)
+        parser = Parser(plant=plant, scene_graph=scene_graph)
+        parser.AddModelFromFile(
+            FindResourceOrThrow(
+                "drake/bindings/pydrake/multibody/test/two_bodies.sdf"))
+        plant.Finalize(scene_graph)
+        body_indices = plant.GetBodyIndices(plant.GetModelInstanceByName("two_bodies"))
+        self.assertEqual(len(body_indices), 2)
+        all_geometries = plant.CollectRegisteredGeometries(
+            [plant.get_body(index) for index in body_indices])
+        scene_graph.ExcludeCollisionsWithin(all_geometries)
+        diagram = builder.Build()
+        # The model `two_bodies` has two (implicitly) floating bodies that are
+        # placed in the same position. The default state would be for these two
+        # bodies to be coincident, and thus collide.
+        context = diagram.CreateDefaultContext()
+        sg_context = diagram.GetMutableSubsystemContext(scene_graph, context)
+        query_object = scene_graph.get_query_output_port().Eval(sg_context)
+        point_pairs = query_object.ComputePointPairPenetration()
+        self.assertEqual(len(point_pairs), 0)
 
     def test_deprecated_tree_api(self):
         plant = MultibodyPlant()
