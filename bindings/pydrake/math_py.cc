@@ -175,6 +175,8 @@ PYBIND11_MODULE(math, m) {
           doc.RotationMatrix.operator_mul.doc_1args_other)
       .def("inverse", &RotationMatrix<T>::inverse,
           doc.RotationMatrix.inverse.doc)
+      .def("ToAngleAxis", &RotationMatrix<T>::ToAngleAxis,
+          doc.RotationMatrix.ToAngleAxis.doc)
       .def("ToQuaternion",
           overload_cast_explicit<Eigen::Quaternion<T>>(
               &RotationMatrix<T>::ToQuaternion),
