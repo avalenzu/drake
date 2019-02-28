@@ -462,11 +462,11 @@ double ConfigurationSpaceCollisionFreeRegion::FindLargestBoxThroughBinarySearch(
     if (result.get_solution_result() ==
         solvers::SolutionResult::kSolutionFound) {
       // rho is feasible.
-      std::cout << "rho = " << rho << " is feasible.\n";
+      drake::log()->info("rho = {:<8g} is feasible.", rho);
       rho_lower = rho;
     } else {
       // rho is infeasible.
-      std::cout << "rho = " << rho << " is infeasible.\n";
+      drake::log()->info("rho = {:<8g} is infeasible.", rho);
       rho_upper = rho;
     }
   }
