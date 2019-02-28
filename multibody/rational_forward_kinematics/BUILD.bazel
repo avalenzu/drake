@@ -101,6 +101,7 @@ drake_cc_library(
         "//systems/analysis:simulator",
         "//attic/manipulation/dev:remote_tree_viewer_wrapper",
 	"@gtest//:without_main",
+        "//systems/primitives",
     ],
 )
 

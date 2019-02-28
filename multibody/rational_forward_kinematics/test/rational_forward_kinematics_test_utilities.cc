@@ -1,6 +1,7 @@
 #include "drake/multibody/rational_forward_kinematics/test/rational_forward_kinematics_test_utilities.h"
 
 #include "drake/common/find_resource.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/geometry/geometry_visualization.h"
 #include "drake/multibody/benchmarks/kuka_iiwa_robot/make_kuka_iiwa_model.h"
 #include "drake/multibody/parsing/parser.h"
@@ -8,6 +9,10 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/vector_system.h"
 #include "drake/systems/rendering/multibody_position_to_geometry_pose.h"
+
+using drake::systems::Context;
+using drake::systems::TrajectorySource;
+using drake::trajectories::PiecewisePolynomial;
 
 namespace drake {
 namespace multibody {
@@ -119,8 +124,10 @@ MultibodyPlantVisualizer::MultibodyPlantVisualizer(
     std::unique_ptr<geometry::SceneGraph<double>> scene_graph) {
   systems::DiagramBuilder<double> builder;
   auto scene_graph_ptr = builder.AddSystem(std::move(scene_graph));
-  posture_source_ =
-      builder.AddSystem<internal::MultibodyPlantPostureSource>(plant);
+  posture_source_ = builder.AddSystem<TrajectorySource<double>>(
+      PiecewisePolynomial<double>::ZeroOrderHold(
+          {0., 1.}, {VectorX<double>::Zero(plant.num_positions()),
+                     VectorX<double>::Zero(plant.num_positions())}));
   auto to_pose = builder.AddSystem<
       systems::rendering::MultibodyPositionToGeometryPose<double>>(plant);
   builder.Connect(posture_source_->get_output_port(),
@@ -135,10 +142,19 @@ MultibodyPlantVisualizer::MultibodyPlantVisualizer(
 
 void MultibodyPlantVisualizer::VisualizePosture(
     const Eigen::Ref<const Eigen::VectorXd>& q) {
-  posture_source_->SetPosture(q);
+  VisualizeTrajectory(
+      PiecewisePolynomial<double>::ZeroOrderHold({0., 1e-3}, {q, q}));
+}
+
+void MultibodyPlantVisualizer::VisualizeTrajectory(
+    const trajectories::Trajectory<double>& trajectory) const {
   systems::Simulator<double> simulator(*diagram_);
-  simulator.set_publish_every_time_step(false);
-  simulator.StepTo(0.1);
+  simulator.set_target_realtime_rate(1);
+  Context<double>& context = simulator.get_mutable_context();
+  posture_source_->SetSourceTrajectoryInContext(&context, trajectory);
+  context.set_time(trajectory.start_time());
+  simulator.Initialize();
+  simulator.StepTo(trajectory.end_time());
 }
 
 void VisualizeBodyPoint(manipulation::dev::RemoteTreeViewerWrapper* viewer,

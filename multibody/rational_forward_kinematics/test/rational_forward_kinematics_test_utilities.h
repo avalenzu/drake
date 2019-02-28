@@ -7,6 +7,7 @@
 #include "drake/manipulation/dev/remote_tree_viewer_wrapper.h"
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/rational_forward_kinematics/configuration_space_collision_free_region.h"
+#include "drake/systems/primitives/trajectory_source.h"
 
 namespace drake {
 namespace multibody {
@@ -51,9 +52,11 @@ class MultibodyPlantVisualizer {
 
   void VisualizePosture(const Eigen::Ref<const Eigen::VectorXd>& q);
 
+  void VisualizeTrajectory(const trajectories::Trajectory<double>& trajectory) const;
+
  private:
   std::unique_ptr<systems::Diagram<double>> diagram_;
-  internal::MultibodyPlantPostureSource* posture_source_;
+  systems::TrajectorySource<double>* posture_source_;
 };
 
 void VisualizeBodyPoint(manipulation::dev::RemoteTreeViewerWrapper* viewer,
