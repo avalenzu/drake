@@ -39,6 +39,9 @@ class TrajectorySource final : public SingleOutputVectorSource<T> {
                             int output_derivative_order = 0,
                             bool zero_derivatives_beyond_limits = true);
 
+  void SetSourceTrajectoryInContext(
+      Context<T>* context, const trajectories::Trajectory<T>& trajectory) const;
+
   ~TrajectorySource() final = default;
 
  private:
@@ -51,9 +54,9 @@ class TrajectorySource final : public SingleOutputVectorSource<T> {
       const Context<T>& context,
       Eigen::VectorBlock<VectorX<T>>* output) const final;
 
-  const std::unique_ptr<trajectories::Trajectory<T>> trajectory_;
   const bool clamp_derivatives_;
-  std::vector<std::unique_ptr<trajectories::Trajectory<T>>> derivatives_;
+  int trajectory_index_;
+  std::vector<int> derivative_indices_;
 };
 
 }  // namespace systems
