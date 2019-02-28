@@ -1,6 +1,9 @@
 #include <memory>
+#include <random>
 
 #include "drake/common/find_resource.h"
+#include "drake/common/text_logging.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/manipulation/dev/remote_tree_viewer_wrapper.h"
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/rational_forward_kinematics/configuration_space_collision_free_region.h"
@@ -8,6 +11,45 @@
 
 namespace drake {
 namespace multibody {
+
+class ConfigurationSpaceBox {
+ public:
+  ConfigurationSpaceBox(Eigen::VectorXd q_min, Eigen::VectorXd q_max)
+      : num_positions_(q_min.size()),
+        q_min_(q_min), q_max_(q_max) {
+    DRAKE_ASSERT(q_max_.size() == num_positions_);
+    DRAKE_ASSERT(((q_max_ - q_min_).array() >= 0).all());
+  }
+
+  ConfigurationSpaceBox(Eigen::VectorXd q_mid, double rho)
+      : ConfigurationSpaceBox(
+            q_mid - Eigen::VectorXd::Constant(q_mid.size(), rho),
+            q_mid + Eigen::VectorXd::Constant(q_mid.size(), rho)) {}
+
+  const Eigen::VectorXd& lower_bounds() const {
+    return q_min_;
+  }
+
+  const Eigen::VectorXd& upper_bounds() const {
+    return q_max_;
+  }
+
+  template <typename Generator>
+  Eigen::VectorXd Sample(Generator* generator) {
+    DRAKE_DEMAND(generator);
+    std::uniform_real_distribution<double> distribution{};
+    Eigen::VectorXd sample{q_min_};
+    for (int j = 0; j < num_positions_; ++j) {
+      sample(j) += (q_max_(j) - q_min_(j)) * distribution(*generator);
+    }
+    return sample;
+  }
+
+ private:
+  const int num_positions_{};
+  Eigen::VectorXd q_min_;
+  Eigen::VectorXd q_max_;
+};
 
 int DoMain() {
   // weld the schunk gripper to iiwa link 7.
@@ -190,11 +232,33 @@ int DoMain() {
   ConfigurationSpaceCollisionFreeRegion dut(*plant, link_polytopes, obstacles,
                                             SeparatingPlaneOrder::kAffine);
 
-  double rho = dut.FindLargestBoxThroughBinarySearch(
-      q, {}, Eigen::VectorXd::Constant(7, -1), Eigen::VectorXd::Constant(7, 1),
-      0, 1, 0.01);
-  std::cout << "rho = " << rho
-            << ", corresponding to angle (deg): " << rho / M_PI * 180.0 << "\n";
+  std::mt19937_64 generator{1234};
+  std::vector<ConfigurationSpaceBox> boxes{};
+  const int num_boxes{3};
+  for (int i = 0; i < num_boxes; ++i) {
+    double rho = dut.FindLargestBoxThroughBinarySearch(
+        q, {}, Eigen::VectorXd::Constant(7, -1), Eigen::VectorXd::Constant(7, 1),
+        0, 1.0, 0.1);
+    drake::log()->info("rho = {}, corresponding to angle (deg): {}", rho, rho / M_PI * 180.0);
+    boxes.emplace_back(q, rho);
+    q = boxes.back().Sample(&generator);
+  }
+
+  int num_random_configurations = 10;
+  std::vector<Eigen::MatrixXd> configurations{q};
+  std::vector<double> times{0};
+  double dt = 1;
+  for (int i = 0; i < num_random_configurations; ++i) {
+    configurations.push_back(boxes.back().Sample<std::mt19937_64>(&generator));
+    times.push_back(times.back() + dt);
+  }
+  configurations.push_back(q);
+  times.push_back(times.back() + dt);
+
+  while (true) {
+    visualizer.VisualizeTrajectory(
+        trajectories::PiecewisePolynomial<double>::Pchip(times, configurations, true));
+  }
 
   return 0;
 }
