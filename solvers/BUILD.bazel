@@ -443,6 +443,18 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "bspline_curve_optimization_utilities",
+    srcs = ["bspline_curve_optimization_utilities.cc"],
+    hdrs = ["bspline_curve_optimization_utilities.h"],
+    deps = [
+        ":mathematical_program",
+        ":mathematical_program_result",
+        "//common:essential",
+        "//math:bspline_curve",
+    ],
+)
+
+drake_cc_library(
     name = "rotation_constraint_visualization",
     testonly = 1,
     srcs = [
