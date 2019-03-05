@@ -15,5 +15,21 @@ math::BsplineCurve<symbolic::Expression> AddCurveThroughRegions(
 math::BsplineCurve<double> GetSolutionCurve(
     const MathematicalProgramResult& result,
     const math::BsplineCurve<symbolic::Expression>& symbolic_curve);
+
+VectorX<symbolic::Expression> AddPointInRegions(
+    const std::vector<symbolic::Formula>& regions,
+    const VectorXDecisionVariable& position_variables,
+    const symbolic::Variable& indicator_variable,
+    MathematicalProgram* program);
+
+VectorX<double> GetSolutionPoint(
+    const MathematicalProgramResult& result,
+    const VectorX<symbolic::Expression>& symbolic_curve);
+
+VectorX<double> ClosestPointInRegions(
+    const std::vector<symbolic::Formula>& regions,
+    const VectorX<double>& target_point,
+    const VectorXDecisionVariable& position_variables,
+    const symbolic::Variable& indicator_variable);
 }  // namespace solvers
 }  // namespace drake

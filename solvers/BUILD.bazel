@@ -449,6 +449,7 @@ drake_cc_library(
     deps = [
         ":mathematical_program",
         ":mathematical_program_result",
+        ":solve",
         "//common:essential",
         "//math:bspline_curve",
     ],

@@ -2,6 +2,8 @@
 
 #include <fmt/format.h>
 
+#include "drake/solvers/solve.h"
+
 using drake::math::BsplineBasis;
 using drake::math::BsplineCurve;
 using drake::symbolic::Environment;
@@ -91,13 +93,47 @@ BsplineCurve<double> GetSolutionCurve(
     const BsplineCurve<Expression>& symbolic_curve) {
   std::vector<MatrixX<double>> x_sol{};
   for (const auto& x_k : symbolic_curve.control_points()) {
-    Environment env{};
-    for (const auto variable : symbolic::GetDistinctVariables(x_k)) {
-      env.insert(variable, result.GetSolution(variable));
-    }
-    x_sol.push_back(symbolic::Evaluate(x_k, env));
+    x_sol.push_back(GetSolutionPoint(result, x_k));
   }
   return {symbolic_curve.basis(), x_sol};
+}
+
+VectorX<Expression> AddPointInRegions(
+    const std::vector<Formula>& regions,
+    const VectorXDecisionVariable& position_variables,
+    const Variable& indicator_variable,
+    MathematicalProgram* program) {
+  BsplineBasis<double> point_basis{1, 1, math::KnotVectorType::kClampedUniform};
+  return solvers::AddCurveThroughRegions(regions, position_variables,
+                                         indicator_variable, point_basis,
+                                         program)
+      .InitialValue();
+}
+
+VectorX<double> GetSolutionPoint(
+    const MathematicalProgramResult& result,
+    const VectorX<symbolic::Expression>& symbolic_point) {
+  Environment env{};
+  for (const auto variable : symbolic::GetDistinctVariables(symbolic_point)) {
+    env.insert(variable, result.GetSolution(variable));
+  }
+  return symbolic::Evaluate(symbolic_point, env);
+}
+
+VectorX<double> ClosestPointInRegions(
+    const std::vector<symbolic::Formula>& regions,
+    const VectorX<double>& target_point,
+    const VectorXDecisionVariable& position_variables,
+    const symbolic::Variable& indicator_variable) {
+  MathematicalProgram nearest_point_program;
+  VectorX<Expression> nearest_point = solvers::AddPointInRegions(
+      regions, position_variables, indicator_variable, &nearest_point_program);
+  DRAKE_DEMAND(position_variables.size() == nearest_point.size());
+  nearest_point_program.AddQuadraticCost(
+      (target_point - nearest_point).squaredNorm());
+  MathematicalProgramResult nearest_point_result =
+      Solve(nearest_point_program);
+  return GetSolutionPoint(nearest_point_result, nearest_point);
 }
 }  // namespace solvers
 }  // namespace drake
