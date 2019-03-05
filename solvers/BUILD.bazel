@@ -1477,11 +1477,9 @@ drake_cc_googletest(
     testonly = 1,
     srcs = ["test/bspline_micp_test.cc"],
     deps = [
-        ":mathematical_program",
+        ":bspline_curve_optimization_utilities",
         ":solve",
-        "//common:essential",
         "//common/proto:call_python",
-        "//math:bspline_curve",
         "@gflags"
     ],
 )
