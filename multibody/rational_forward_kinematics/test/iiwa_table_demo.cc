@@ -1,17 +1,39 @@
+#include <functional>
 #include <memory>
 #include <random>
 
+#include <gflags/gflags.h>
+
 #include "drake/common/find_resource.h"
+#include "drake/common/symbolic.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/trajectories/piecewise_polynomial.h"
 #include "drake/manipulation/dev/remote_tree_viewer_wrapper.h"
+#include "drake/math/bspline_basis.h"
+#include "drake/math/bspline_curve.h"
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/rational_forward_kinematics/configuration_space_collision_free_region.h"
 #include "drake/multibody/rational_forward_kinematics/test/rational_forward_kinematics_test_utilities.h"
+#include "drake/solvers/bspline_curve_optimization_utilities.h"
+#include "drake/solvers/solve.h"
+
+using drake::math::BsplineBasis;
+using drake::math::BsplineCurve;
+using drake::solvers::MathematicalProgram;
+using drake::solvers::MathematicalProgramResult;
+using drake::solvers::VectorXDecisionVariable;
+using drake::symbolic::Expression;
+using drake::symbolic::Formula;
+using drake::symbolic::Variable;
+
+DEFINE_int32(num_boxes, 3, "Number of C-space regions.");
+DEFINE_int32(order, 4, "Spline order.");
+DEFINE_int32(num_control_points, 16, "Number of spline control points.");
+DEFINE_bool(clamped, false, "If true, use clamped knot vector.");
 
 namespace drake {
 namespace multibody {
-
+namespace {
 class ConfigurationSpaceBox {
  public:
   ConfigurationSpaceBox(Eigen::VectorXd q_min, Eigen::VectorXd q_max)
@@ -34,6 +56,10 @@ class ConfigurationSpaceBox {
     return q_max_;
   }
 
+  const Eigen::VectorXd q_mid() const {
+    return 0.5 * (lower_bounds() + upper_bounds());
+  }
+
   template <typename Generator>
   Eigen::VectorXd Sample(Generator* generator) {
     DRAKE_DEMAND(generator);
@@ -45,11 +71,30 @@ class ConfigurationSpaceBox {
     return sample;
   }
 
+  Formula ToFormula(const VectorXDecisionVariable& x,
+                    const Variable& indicator) const {
+    const int n = x.size();
+    // clang-format off
+    const auto A =
+        (MatrixX<double>(2 * n, n) <<
+          MatrixX<double>::Identity(n, n),
+         -MatrixX<double>::Identity(n, n))
+        .finished();
+    const auto b =
+        (MatrixX<double>(2 * n, 1) <<
+          upper_bounds(),
+         -lower_bounds())
+        .finished();
+    // clang-format on
+    return {A * x <= indicator * b};
+  }
+
  private:
   const int num_positions_{};
   Eigen::VectorXd q_min_;
   Eigen::VectorXd q_max_;
 };
+}  // namespace
 
 int DoMain() {
   // weld the schunk gripper to iiwa link 7.
@@ -234,30 +279,52 @@ int DoMain() {
 
   std::mt19937_64 generator{1234};
   std::vector<ConfigurationSpaceBox> boxes{};
-  const int num_boxes{3};
+  const int num_boxes{FLAGS_num_boxes};
   for (int i = 0; i < num_boxes; ++i) {
     double rho = dut.FindLargestBoxThroughBinarySearch(
-        q, {}, Eigen::VectorXd::Constant(7, -1), Eigen::VectorXd::Constant(7, 1),
-        0, 1.0, 0.1);
-    drake::log()->info("rho = {}, corresponding to angle (deg): {}", rho, rho / M_PI * 180.0);
+        q, {}, Eigen::VectorXd::Constant(7, -1),
+        Eigen::VectorXd::Constant(7, 1), 0, 1.0, 0.1);
+    drake::log()->info("rho = {}, corresponding to angle (deg): {}", rho,
+                       rho / M_PI * 180.0);
     boxes.emplace_back(q, rho);
     q = boxes.back().Sample(&generator);
   }
 
-  int num_random_configurations = 10;
-  std::vector<Eigen::MatrixXd> configurations{q};
-  std::vector<double> times{0};
-  double dt = 1;
-  for (int i = 0; i < num_random_configurations; ++i) {
-    configurations.push_back(boxes.back().Sample<std::mt19937_64>(&generator));
-    times.push_back(times.back() + dt);
+  VectorXDecisionVariable q_placeholder(q.size());
+  for (int i = 0; i < q.size(); ++i) {
+    q_placeholder(i) = Variable(fmt::format("q_placeholder_{}", i));
   }
-  configurations.push_back(q);
-  times.push_back(times.back() + dt);
+  Variable indicator_placeholder("b");
+  std::vector<Formula> regions;
+  std::transform(boxes.begin(), boxes.end(), std::back_inserter(regions),
+                 [&q_placeholder,
+                  &indicator_placeholder](const ConfigurationSpaceBox& box) {
+                   return box.ToFormula(q_placeholder, indicator_placeholder);
+                 });
+
+  MathematicalProgram program;
+  BsplineBasis<double> basis{FLAGS_order, FLAGS_num_control_points,
+        FLAGS_clamped
+        ? math::KnotVectorType::kClampedUniform
+        : math::KnotVectorType::kUniform};
+  BsplineCurve<Expression> q_curve_symbolic = solvers::AddCurveThroughRegions(
+      regions, q_placeholder, indicator_placeholder, basis, &program);
+  program.AddLinearEqualityConstraint(q_curve_symbolic.InitialValue() ==
+                                      boxes.front().q_mid());
+  program.AddLinearEqualityConstraint(q_curve_symbolic.FinalValue() ==
+                                      boxes.back().q_mid());
+  program.AddLinearEqualityConstraint(
+      q_curve_symbolic.Derivative().InitialValue() ==
+      Eigen::VectorXd::Zero(q.size()));
+  program.AddLinearEqualityConstraint(
+      q_curve_symbolic.Derivative().FinalValue() ==
+      Eigen::VectorXd::Zero(q.size()));
+
+  MathematicalProgramResult result = solvers::Solve(program);
 
   while (true) {
     visualizer.VisualizeTrajectory(
-        trajectories::PiecewisePolynomial<double>::Pchip(times, configurations, true));
+        solvers::GetSolutionCurve(result, q_curve_symbolic));
   }
 
   return 0;
@@ -266,4 +333,7 @@ int DoMain() {
 }  // namespace multibody
 }  // namespace drake
 
-int main() { return drake::multibody::DoMain(); }
+int main(int argc, char* argv[]) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  return drake::multibody::DoMain();
+}
