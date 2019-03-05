@@ -1,6 +1,8 @@
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <random>
+#include <thread>
 
 #include <gflags/gflags.h>
 
@@ -14,6 +16,7 @@
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/rational_forward_kinematics/configuration_space_collision_free_region.h"
 #include "drake/multibody/rational_forward_kinematics/test/rational_forward_kinematics_test_utilities.h"
+#include "drake/solvers/gurobi_solver.h"
 #include "drake/solvers/bspline_curve_optimization_utilities.h"
 #include "drake/solvers/solve.h"
 
@@ -385,8 +388,12 @@ int DoMain() {
     program.AddQuadraticCost((control_point.transpose() * control_point)(0, 0));
   }
 
+  solvers::GurobiSolver micp_solver;
+  while (!micp_solver.AcquireLicense()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
   drake::log()->info("Calling Solve ...");
-  MathematicalProgramResult result = solvers::Solve(program);
+  MathematicalProgramResult result = micp_solver.Solve(program, {}, {});
   drake::log()->info("Done.");
 
   while (true) {
