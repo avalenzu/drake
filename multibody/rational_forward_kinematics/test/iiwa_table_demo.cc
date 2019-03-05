@@ -32,6 +32,9 @@ DEFINE_int32(num_control_points, 16, "Number of spline control points.");
 DEFINE_int32(penalized_derivative_order, 1,
              "Attempt to minimize this order of derivative.");
 DEFINE_bool(clamped, false, "If true, use clamped knot vector.");
+DEFINE_double(goal_sampling_probability, 0.05,
+              "Fraction of the time that we sample the goal.");
+DEFINE_double(binary_search_tolerance, 0.1, "");
 
 namespace drake {
 namespace multibody {
@@ -116,9 +119,13 @@ int DoMain() {
   AddIiwaWithSchunk(X_7S, plant_collision.get());
 
   MultibodyPlantVisualizer visualizer(*plant, std::move(scene_graph));
-  Eigen::Matrix<double, 7, 1> q =
-      (Eigen::Matrix<double, 7, 1>() << 60, 45, 0, -90, 0, 0, 0).finished() *
+  Eigen::Matrix<double, 7, 1> q_start =
+      (Eigen::Matrix<double, 7, 1>() << 60, 0, 0, -90, 0, 0, 0).finished() *
       M_PI / 180.;
+  Eigen::Matrix<double, 7, 1> q_goal =
+      (Eigen::Matrix<double, 7, 1>() << -60, 45, 0, -90, 0, 0, 0).finished() *
+      M_PI / 180.;
+  Eigen::Matrix<double, 7, 1> q = q_start;
   // This is only for visualizing a sampled configuration in the verified
   // collision free box in the configuration space.
   // double delta = 0.271484;
@@ -128,8 +135,6 @@ int DoMain() {
   // q(3) -= delta;
   // q(4) -= delta;
   // q(5) += delta;
-
-  visualizer.VisualizePosture(q);
 
   // Now add the link points to represent collision.
   auto context = plant->CreateDefaultContext();
@@ -275,23 +280,74 @@ int DoMain() {
 
   std::mt19937_64 generator{1234};
   std::vector<ConfigurationSpaceBox> boxes{};
+  ConfigurationSpaceBox full_configuration_space{
+      plant_collision->GetPositionLowerLimits(),
+      plant_collision->GetPositionUpperLimits()};
+  double goal_sampling_probability = FLAGS_goal_sampling_probability;
+  auto sampling_function = [&q_goal, &goal_sampling_probability,
+                            &full_configuration_space,
+                            &generator]() -> Eigen::VectorXd {
+    std::uniform_real_distribution<double> uniform_zero_to_one{0.0, 1.0};
+    if (uniform_zero_to_one(generator) < goal_sampling_probability) {
+      return q_goal;
+    } else {
+      return full_configuration_space.Sample(&generator);
+    }
+  };
   const int num_boxes{FLAGS_num_boxes};
-  for (int i = 0; i < num_boxes; ++i) {
-    double rho = dut.FindLargestBoxThroughBinarySearch(
-        q, {}, Eigen::VectorXd::Constant(7, -1),
-        Eigen::VectorXd::Constant(7, 1), 0, 1.0, 0.1);
-    drake::log()->info("rho = {}, corresponding to angle (deg): {}", rho,
-                       rho / M_PI * 180.0);
-    boxes.emplace_back(q, rho);
-    q = boxes.back().Sample(&generator);
-  }
-
+  std::vector<Formula> regions;
   VectorXDecisionVariable q_placeholder(q.size());
   for (int i = 0; i < q.size(); ++i) {
     q_placeholder(i) = Variable(fmt::format("q_placeholder_{}", i));
   }
   Variable indicator_placeholder("b");
-  std::vector<Formula> regions;
+  while (static_cast<int>(boxes.size()) < num_boxes) {
+    visualizer.VisualizePosture(q);
+    double rho = dut.FindLargestBoxThroughBinarySearch(
+        q, {}, Eigen::VectorXd::Constant(7, -1),
+        Eigen::VectorXd::Constant(7, 1), 0, 1.0, FLAGS_binary_search_tolerance);
+    drake::log()->info("q_mid = {}", q.transpose());
+    drake::log()->info("rho = {}, corresponding to angle (deg): {}\n", rho,
+                       rho / M_PI * 180.0);
+    if (rho > 0) {
+      plant->SetPositions(context.get(), q);
+      VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7],
+                         p_7V.rowwise().mean(), 0.1 * rho, {0, 1, 1, 1},
+                         "gripper_mean" + std::to_string(boxes.size()));
+      boxes.emplace_back(q, rho);
+      regions.push_back(
+          boxes.back().ToFormula(q_placeholder, indicator_placeholder));
+      if (solvers::ClosestPointInRegions({regions.back()}, q_goal,
+                                         q_placeholder, indicator_placeholder)
+              .isApprox(q_goal)) {
+        // In this case, the goal is contained in the existing regions. We're
+        // done!
+        break;
+      }
+    }
+
+    bool found_new_q = false;
+    while (!found_new_q) {
+      Eigen::VectorXd q_sample = sampling_function();
+      drake::log()->info("q_sample = {}", q_sample.transpose());
+
+      Eigen::VectorXd q_nearest = solvers::ClosestPointInRegions(
+          regions, q_sample, q_placeholder, indicator_placeholder);
+      // If sample point is outside the existing regions, then q_nearest is the
+      // new q.
+      found_new_q = (q_sample - q_nearest).squaredNorm() >
+                    std::numeric_limits<double>::epsilon();
+      drake::log()->info("q_nearest = {}", q_nearest.transpose());
+      if (found_new_q) {
+        q = q_nearest;
+      } else if (q_sample.isApprox(q_goal)) {
+        // In this case, we sampled the goal, and it was contained in the
+        // existing regions. We're done!
+        break;
+      }
+    }
+  }
+
   std::transform(boxes.begin(), boxes.end(), std::back_inserter(regions),
                  [&q_placeholder,
                   &indicator_placeholder](const ConfigurationSpaceBox& box) {
@@ -307,12 +363,14 @@ int DoMain() {
         : math::KnotVectorType::kUniform};
   BsplineCurve<Expression> q_curve_symbolic = solvers::AddCurveThroughRegions(
       regions, q_placeholder, indicator_placeholder, basis, &program);
-  // Curve should start at the mid-point of the first region.
+  // Curve should start at q_start.
   program.AddLinearEqualityConstraint(q_curve_symbolic.InitialValue() ==
-                                      boxes.front().q_mid());
-  // Curve should start at the mid-point of the first region.
-  program.AddLinearEqualityConstraint(q_curve_symbolic.FinalValue() ==
-                                      boxes.back().q_mid());
+                                      q_start);
+  // Curve should end at the closest point to q_goal.
+  program.AddLinearEqualityConstraint(
+      q_curve_symbolic.FinalValue() ==
+      solvers::ClosestPointInRegions(regions, q_goal, q_placeholder,
+                                     indicator_placeholder));
   // Curve should start and end with zero velocity.
   program.AddLinearEqualityConstraint(
       q_curve_symbolic.Derivative().InitialValue() ==
@@ -327,7 +385,9 @@ int DoMain() {
     program.AddQuadraticCost((control_point.transpose() * control_point)(0, 0));
   }
 
+  drake::log()->info("Calling Solve ...");
   MathematicalProgramResult result = solvers::Solve(program);
+  drake::log()->info("Done.");
 
   while (true) {
     visualizer.VisualizeTrajectory(
