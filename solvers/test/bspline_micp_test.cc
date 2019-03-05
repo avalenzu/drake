@@ -148,6 +148,21 @@ BsplineCurve<Expression> AddCurveThroughRegions(
 
   return {basis, x};
 }
+
+BsplineCurve<double> GetSolutionCurve(
+    const MathematicalProgramResult& result,
+    const BsplineCurve<Expression>& symbolic_curve) {
+  std::vector<MatrixX<double>> x_sol{};
+  for (const auto& x_k : symbolic_curve.control_points()) {
+    Environment env{};
+    for (const auto variable : symbolic::GetDistinctVariables(x_k)) {
+      env.insert(variable, result.GetSolution(variable));
+    }
+    x_sol.push_back(symbolic::Evaluate(x_k, env));
+  }
+  return {symbolic_curve.basis(), x_sol};
+}
+
 }  // namespace
 
 GTEST_TEST(BsplineMicpTests, ThreeRegionTest) {
@@ -214,17 +229,8 @@ GTEST_TEST(BsplineMicpTests, ThreeRegionTest) {
   drake::log()->info("Done: {}", result.is_success());
   ASSERT_TRUE(result.is_success());
 
-  std::vector<MatrixX<double>> x_sol{};
-  for (const auto& x_k : x_curve_symbolic.control_points()) {
-    Environment env{};
-    for (const auto variable : symbolic::GetDistinctVariables(x_k)) {
-      env.insert(variable, result.GetSolution(variable));
-    }
-    x_sol.push_back(symbolic::Evaluate(x_k, env));
-    drake::log()->info("{}", x_sol.back().transpose());
-  }
-
-  const BsplineCurve<double> x_curve_sol(x_curve_symbolic.basis(), x_sol);
+  const BsplineCurve<double> x_curve_sol =
+      GetSolutionCurve(result, x_curve_symbolic);
   constexpr int num_plotting_points = 100;
   const auto t = VectorX<double>::LinSpaced(num_plotting_points, t0, tf);
   MatrixX<double> x_plotting(n, num_plotting_points);
