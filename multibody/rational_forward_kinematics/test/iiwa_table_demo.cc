@@ -114,8 +114,9 @@ int DoMain() {
   AddIiwaWithSchunk(X_7S, plant_collision.get());
 
   MultibodyPlantVisualizer visualizer(*plant, std::move(scene_graph));
-  Eigen::Matrix<double, 7, 1> q;
-  q << 0.4, 0.4, 0.4, -0.4, 0.4, 0.4, 0.4;
+  Eigen::Matrix<double, 7, 1> q =
+      (Eigen::Matrix<double, 7, 1>() << 60, 45, 0, -90, 0, 0, 0).finished() *
+      M_PI / 180.;
   // This is only for visualizing a sampled configuration in the verified
   // collision free box in the configuration space.
   // double delta = 0.271484;
