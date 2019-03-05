@@ -305,6 +305,8 @@ int DoMain() {
                    return box.ToFormula(q_placeholder, indicator_placeholder);
                  });
 
+  // Create a mathematical program for optimizing a B-spline curve through the
+  // regions.
   MathematicalProgram program;
   BsplineBasis<double> basis{FLAGS_order, FLAGS_num_control_points,
         FLAGS_clamped
@@ -312,10 +314,13 @@ int DoMain() {
         : math::KnotVectorType::kUniform};
   BsplineCurve<Expression> q_curve_symbolic = solvers::AddCurveThroughRegions(
       regions, q_placeholder, indicator_placeholder, basis, &program);
+  // Curve should start at the mid-point of the first region.
   program.AddLinearEqualityConstraint(q_curve_symbolic.InitialValue() ==
                                       boxes.front().q_mid());
+  // Curve should start at the mid-point of the first region.
   program.AddLinearEqualityConstraint(q_curve_symbolic.FinalValue() ==
                                       boxes.back().q_mid());
+  // Curve should start and end with zero velocity.
   program.AddLinearEqualityConstraint(
       q_curve_symbolic.Derivative().InitialValue() ==
       Eigen::VectorXd::Zero(q.size()));
