@@ -267,14 +267,7 @@ int DoMain() {
   add_box_to_obstacle(plant_collision.get(), scene_graph_collision.get(), X_WT,
                       table_size, "table");
 
-  // Add a box on the table.
-  Eigen::Isometry3d X_WBox1 = Eigen::Isometry3d::Identity();
-  X_WBox1.translation() << 0.5, 0, 0.57;
-  Eigen::Vector3d box1_size(0.15, 0.2, 0.14);
-  viewer.PublishGeometry(DrakeShapes::Box(box1_size), X_WBox1, {0, 0, 1, 1},
-                         {"box1"});
-  add_box_to_obstacle(plant_collision.get(), scene_graph_collision.get(),
-                      X_WBox1, box1_size, "box1");
+
   plant_collision->Finalize(scene_graph_collision.get());
 
   ConfigurationSpaceCollisionFreeRegion dut(*plant, link_polytopes, obstacles,
