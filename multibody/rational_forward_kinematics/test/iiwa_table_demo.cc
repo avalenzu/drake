@@ -29,6 +29,8 @@ using drake::symbolic::Variable;
 DEFINE_int32(num_boxes, 3, "Number of C-space regions.");
 DEFINE_int32(order, 4, "Spline order.");
 DEFINE_int32(num_control_points, 16, "Number of spline control points.");
+DEFINE_int32(penalized_derivative_order, 1,
+             "Attempt to minimize this order of derivative.");
 DEFINE_bool(clamped, false, "If true, use clamped knot vector.");
 
 namespace drake {
@@ -320,6 +322,12 @@ int DoMain() {
   program.AddLinearEqualityConstraint(
       q_curve_symbolic.Derivative().FinalValue() ==
       Eigen::VectorXd::Zero(q.size()));
+  BsplineCurve<Expression> penalized_derivative_curve_symbolic =
+      q_curve_symbolic.Derivative(FLAGS_penalized_derivative_order);
+  for (const auto& control_point :
+       penalized_derivative_curve_symbolic.control_points()) {
+    program.AddQuadraticCost((control_point.transpose() * control_point)(0, 0));
+  }
 
   MathematicalProgramResult result = solvers::Solve(program);
 
