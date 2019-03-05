@@ -50,6 +50,8 @@ class BsplineCurve final : public drake::trajectories::Trajectory<T> {
 
   drake::MatrixX<T> InitialValue() const;
 
+  drake::MatrixX<T> FinalValue() const;
+
   const std::vector<double>& knots() const { return basis_.knots(); }
 
   int order() const { return basis_.order(); }

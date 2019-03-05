@@ -95,6 +95,11 @@ MatrixX<T> BsplineCurve<T>::InitialValue() const {
 }
 
 template <typename T>
+MatrixX<T> BsplineCurve<T>::FinalValue() const {
+  return value(end_time());
+}
+
+template <typename T>
 void BsplineCurve<T>::InsertKnot(
     const std::vector<double>& additional_knots) {
   auto knots = this->knots();
