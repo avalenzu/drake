@@ -86,11 +86,7 @@ std::unique_ptr<Trajectory<T>> BsplineCurve<T>::Clone() const {
 template <typename T>
 std::unique_ptr<Trajectory<T>> BsplineCurve<T>::MakeDerivative(
     int derivative_order) const {
-  if (derivative_order == 0) {
-    return Clone();
-  } else {
-    return Derivative().MakeDerivative(derivative_order - 1);
-  }
+  return Derivative(derivative_order).Clone();
 }
 
 template <typename T>
@@ -126,20 +122,26 @@ void BsplineCurve<T>::InsertKnot(
 }
 
 template <typename T>
-BsplineCurve<T> BsplineCurve<T>::Derivative() const {
-  std::vector<MatrixX<T>> derivative_control_points;
-  std::vector<double> derivative_knots;
-  const int num_derivative_knots = knots().size() - 1;
-  for (int i = 1; i < num_derivative_knots; ++i) {
-    derivative_knots.push_back(knots()[i]);
+BsplineCurve<T> BsplineCurve<T>::Derivative(int derivative_order) const {
+  if (derivative_order == 0) {
+    return *this;
+  } else if (derivative_order > 1) {
+    return Derivative(1).Derivative(derivative_order - 1);
+  } else {
+    std::vector<MatrixX<T>> derivative_control_points;
+    std::vector<double> derivative_knots;
+    const int num_derivative_knots = knots().size() - 1;
+    for (int i = 1; i < num_derivative_knots; ++i) {
+      derivative_knots.push_back(knots()[i]);
+    }
+    for (int i = 0; i < num_control_points() - 1; ++i) {
+      derivative_control_points.push_back(
+          degree() / (knots()[i + order()] - knots()[i + 1]) *
+          (control_points()[i + 1] - control_points()[i]));
+    }
+    return BsplineCurve(BsplineBasis<double>(order() - 1, derivative_knots),
+                        derivative_control_points);
   }
-  for (int i = 0; i < num_control_points() - 1; ++i) {
-    derivative_control_points.push_back(
-        degree() / (knots()[i + order()] - knots()[i + 1]) *
-        (control_points()[i + 1] - control_points()[i]));
-  }
-  return BsplineCurve(BsplineBasis<double>(order() - 1, derivative_knots),
-                      derivative_control_points);
 }
 
 template <typename T>

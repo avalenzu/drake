@@ -60,7 +60,7 @@ class BsplineCurve final : public drake::trajectories::Trajectory<T> {
 
   void InsertKnot(const std::vector<double>& time);
 
-  BsplineCurve<T> Derivative() const;
+  BsplineCurve<T> Derivative(int derivative_order = 1) const;
 
   bool operator==(const BsplineCurve<T>& other) const;
 
