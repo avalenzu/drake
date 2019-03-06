@@ -17,6 +17,7 @@
 #include "drake/geometry/geometry_roles.h"
 #include "drake/geometry/query_results/contact_surface.h"
 #include "drake/geometry/render/render_label.h"
+#include "drake/math/autodiff.h"
 #include "drake/math/orthonormal_basis.h"
 #include "drake/math/random_rotation.h"
 #include "drake/math/rotation_matrix.h"
@@ -1095,7 +1096,8 @@ void MultibodyPlant<T>::EstimatePointContactParameters(
   penalty_method_contact_parameters_.time_scale = time_scale;
 }
 
-// Specialize this function so that double is fully supported.
+// Specialize this function so that *only* double and AutoDiff are supported; we
+// cannot compute penetrations for Expression currently.
 template <>
 std::vector<PenetrationAsPointPair<double>>
 MultibodyPlant<double>::CalcPointPairPenetrations(
@@ -1107,29 +1109,57 @@ MultibodyPlant<double>::CalcPointPairPenetrations(
   return std::vector<PenetrationAsPointPair<double>>();
 }
 
-// Specialize this function so that AutoDiffXd is (partially) supported. This
-// AutoDiffXd specialization will throw if there are any collisions.
-// TODO(SeanCurtis-TRI): Move this logic into SceneGraph per #11454.
 template <>
 std::vector<PenetrationAsPointPair<AutoDiffXd>>
 MultibodyPlant<AutoDiffXd>::CalcPointPairPenetrations(
     const systems::Context<AutoDiffXd>& context) const {
   if (num_collision_geometries() > 0) {
-    const auto& query_object = EvalGeometryQueryInput(context);
-    auto results = query_object.ComputePointPairPenetration();
-    if (results.size() > 0) {
+    if (!geometry_query_port_.is_valid()) {
       throw std::logic_error(
-          "CalcPointPairPenetration(): Some of the bodies in the model are in "
-          "contact for the state stored in the given context. Currently a "
-          "MultibodyPlant model cannot be auto-differentiated if contacts "
-          "are detected. Notice however that auto-differentiation is allowed "
-          "if there are no contacts for the given state. That is, you can "
-          "invoke penetration queries on a MultibodyPlant<AutoDiffXd> as long "
-          "as there are no unfiltered geometries in contact. "
-          "Refer to Github issues #11454 and #11455 for details.");
+          "This MultibodyPlant registered geometry for contact handling. "
+          "However its query input port (get_geometry_query_input_port()) "
+          "is not connected.");
     }
+    const auto& query_object = get_geometry_query_input_port().
+        Eval<geometry::QueryObject<AutoDiffXd>>(context);
+    std::vector <PenetrationAsPointPair<double>> point_pairs_double =
+        query_object.ComputePointPairPenetration();
+    std::vector<PenetrationAsPointPair<AutoDiffXd>> point_pairs{};
+    for (const auto& point_pair_double : point_pairs_double) {
+      point_pairs.emplace_back();
+      RigidTransform<AutoDiffXd> X_WA = this->CalcRelativeTransform(
+          context, world_frame(),
+          get_body(geometry_id_to_body_index_.at(point_pair_double.id_A))
+              .body_frame());
+      RigidTransform<AutoDiffXd> X_WB = this->CalcRelativeTransform(
+          context, world_frame(),
+          get_body(geometry_id_to_body_index_.at(point_pair_double.id_B))
+          .body_frame());
+      RigidTransform<double> X_AW(
+          math::DiscardGradient(X_WA.GetAsIsometry3()).inverse());
+      RigidTransform<double> X_BW(
+          math::DiscardGradient(X_WB.GetAsIsometry3()).inverse());
+      Vector3<AutoDiffXd> p_ACa =
+          math::initializeAutoDiff(X_AW * point_pair_double.p_WCa);
+      Vector3<AutoDiffXd> p_BCb =
+          math::initializeAutoDiff(X_BW * point_pair_double.p_WCb);
+      math::resizeDerivativesToMatchScalar(p_ACa, X_WA.translation().x());
+      math::resizeDerivativesToMatchScalar(p_BCb, X_WB.translation().x());
+      point_pairs.back().id_A = point_pair_double.id_A;
+      point_pairs.back().id_B = point_pair_double.id_B;
+      point_pairs.back().p_WCa = X_WA * p_ACa;
+      point_pairs.back().p_WCb = X_WB * p_BCb;
+      point_pairs.back().nhat_BA_W =
+          math::initializeAutoDiff(point_pair_double.nhat_BA_W);
+      // Maybe leaving this with zero derivatives works?
+      math::resizeDerivativesToMatchScalar(point_pairs.back().nhat_BA_W,
+                                           X_WB.translation().x());
+      point_pairs.back().depth =
+          (point_pairs.back().p_WCb - point_pairs.back().p_WCa).norm();
+    }
+    return point_pairs;
   }
-  return {};
+  return std::vector<PenetrationAsPointPair<AutoDiffXd>>();
 }
 
 template<typename T>
