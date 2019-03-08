@@ -135,5 +135,21 @@ VectorX<double> ClosestPointInRegions(
       Solve(nearest_point_program);
   return GetSolutionPoint(nearest_point_result, nearest_point);
 }
+
+std::pair<VectorX<double>, VectorX<double>> ClosestPointsInSetsOfRegions(
+    const std::pair<const std::vector<symbolic::Formula>,
+    const std::vector<symbolic::Formula>>& regions,
+    const VectorXDecisionVariable& position_variables,
+    const symbolic::Variable& indicator_variable) {
+  MathematicalProgram program;
+  VectorX<Expression> q_A = solvers::AddPointInRegions(
+      regions.first, position_variables, indicator_variable, &program);
+  VectorX<Expression> q_B = solvers::AddPointInRegions(
+      regions.second, position_variables, indicator_variable, &program);
+  program.AddQuadraticCost((q_A - q_B).squaredNorm());
+  MathematicalProgramResult result = Solve(program, {}, {});
+  DRAKE_DEMAND(result.is_success());
+  return {GetSolutionPoint(result, q_A), GetSolutionPoint(result, q_B)};
+}
 }  // namespace solvers
 }  // namespace drake

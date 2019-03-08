@@ -31,5 +31,11 @@ VectorX<double> ClosestPointInRegions(
     const VectorX<double>& target_point,
     const VectorXDecisionVariable& position_variables,
     const symbolic::Variable& indicator_variable);
+
+std::pair<VectorX<double>, VectorX<double>> ClosestPointsInSetsOfRegions(
+    const std::pair<const std::vector<symbolic::Formula>,
+                    const std::vector<symbolic::Formula>>& regions,
+    const VectorXDecisionVariable& position_variables,
+    const symbolic::Variable& indicator_variable);
 }  // namespace solvers
 }  // namespace drake
