@@ -160,10 +160,10 @@ int DoMain() {
   p_SV.col(6) << -0.065, 0.105, -0.02;
   p_SV.col(7) << 0.065, 0.105, -0.02;
   Eigen::Matrix<double, 3, 8> p_7V = X_7S * p_SV;
-  for (int i = 0; i < p_7V.cols(); ++i) {
-    VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7], p_7V.col(i),
-                       0.01, {1, 0, 0, 1}, "gripper_point" + std::to_string(i));
-  }
+  // for (int i = 0; i < p_7V.cols(); ++i) {
+  //   VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7], p_7V.col(i),
+  //                      0.01, {1, 0, 0, 1}, "gripper_point" + std::to_string(i));
+  // }
   std::vector<std::shared_ptr<const ConvexPolytope>> link_polytopes;
 
   auto add_link_collision_polytope = [&link_polytopes](
@@ -207,10 +207,10 @@ int DoMain() {
   p_6V.col(11) << 0.03, 0.12, -0.03;
   p_6V.col(12) << -0.03, 0.12, 0.03;
   p_6V.col(13) << -0.03, 0.12, -0.03;
-  for (int i = 0; i < p_6V.cols(); ++i) {
-    VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[6], p_6V.col(i),
-                       0.01, {1, 0, 0, 1}, "link6_pt" + std::to_string(i));
-  }
+  // for (int i = 0; i < p_6V.cols(); ++i) {
+  //   VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[6], p_6V.col(i),
+  //                      0.01, {1, 0, 0, 1}, "link6_pt" + std::to_string(i));
+  // }
   add_link_collision_polytope(plant_collision.get(),
                               scene_graph_collision.get(), iiwa_link[6], p_6V,
                               "link6_pt");
@@ -226,10 +226,10 @@ int DoMain() {
   p_5V1.col(7) << -0.05, -0.05, 0.07;
   p_5V1.col(8) << 0.04, 0.08, 0.15;
   p_5V1.col(9) << -0.04, 0.08, 0.15;
-  for (int i = 0; i < p_5V1.cols(); ++i) {
-    VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[5], p_5V1.col(i),
-                       0.01, {1, 0, 0, 1}, "link5_V1_pt" + std::to_string(i));
-  }
+  // for (int i = 0; i < p_5V1.cols(); ++i) {
+  //   VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[5], p_5V1.col(i),
+  //                      0.01, {1, 0, 0, 1}, "link5_V1_pt" + std::to_string(i));
+  // }
   add_link_collision_polytope(plant_collision.get(),
                               scene_graph_collision.get(), iiwa_link[5], p_5V1,
                               "link5_V1_pt");
@@ -243,10 +243,10 @@ int DoMain() {
   p_4V.col(5) << -0.06, 0.12, 0;
   p_4V.col(6) << 0.05, 0.12, 0.09;
   p_4V.col(7) << -0.05, 0.12, 0.09;
-  for (int i = 0; i < p_4V.cols(); ++i) {
-    VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[4], p_4V.col(i),
-                       0.01, {1, 0, 0, 1}, "link4_pt" + std::to_string(i));
-  }
+  // for (int i = 0; i < p_4V.cols(); ++i) {
+  //   VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[4], p_4V.col(i),
+  //                      0.01, {1, 0, 0, 1}, "link4_pt" + std::to_string(i));
+  // }
   add_link_collision_polytope(plant_collision.get(),
                               scene_graph_collision.get(), iiwa_link[4], p_4V,
                               "link4_pt");
@@ -287,26 +287,90 @@ int DoMain() {
       plant_collision->GetPositionLowerLimits(),
       plant_collision->GetPositionUpperLimits()};
   double goal_sampling_probability = FLAGS_goal_sampling_probability;
-  auto sampling_function = [&q_goal, &goal_sampling_probability,
-                            &full_configuration_space,
-                            &generator]() -> Eigen::VectorXd {
-    std::uniform_real_distribution<double> uniform_zero_to_one{0.0, 1.0};
-    if (uniform_zero_to_one(generator) < goal_sampling_probability) {
-      return q_goal;
-    } else {
-      return full_configuration_space.Sample(&generator);
-    }
-  };
   const int num_boxes{FLAGS_num_boxes};
-  std::vector<Formula> regions;
+  std::vector<Formula> all_regions;
+  std::vector<Formula> start_regions;
+  std::vector<Formula> goal_regions;
   VectorXDecisionVariable q_placeholder(q.size());
   for (int i = 0; i < q.size(); ++i) {
     q_placeholder(i) = Variable(fmt::format("q_placeholder_{}", i));
   }
   Variable indicator_placeholder("b");
-  while (static_cast<int>(boxes.size()) < num_boxes) {
+
+  // Add region around q_start;
+  visualizer.VisualizePosture(q_start);
+  double rho = dut.FindLargestBoxThroughBinarySearch(
+      q_start, {}, Eigen::VectorXd::Constant(7, -1),
+      Eigen::VectorXd::Constant(7, 1), 0, 1.0, FLAGS_binary_search_tolerance);
+  drake::log()->info("q_mid = {}", q.transpose());
+  drake::log()->info("rho = {}, corresponding to angle (deg): {}\n", rho,
+                     rho / M_PI * 180.0);
+  DRAKE_DEMAND(rho > 0);
+  plant->SetPositions(context.get(), q);
+  VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7],
+                     p_7V.rowwise().mean(), 0.1 * rho, {0, 1, 1, 1},
+                     "gripper_mean" + std::to_string(all_regions.size()));
+  start_regions.push_back(ConfigurationSpaceBox(q_start, rho).ToFormula(
+      q_placeholder, indicator_placeholder));
+  all_regions.push_back(start_regions.back());
+
+  // Add region around q_goal;
+  visualizer.VisualizePosture(q_goal);
+  rho = dut.FindLargestBoxThroughBinarySearch(
+      q_goal, {}, Eigen::VectorXd::Constant(7, -1),
+      Eigen::VectorXd::Constant(7, 1), 0, 1.0, FLAGS_binary_search_tolerance);
+  drake::log()->info("q_mid = {}", q.transpose());
+  drake::log()->info("rho = {}, corresponding to angle (deg): {}\n", rho,
+                     rho / M_PI * 180.0);
+  DRAKE_DEMAND(rho > 0);
+  plant->SetPositions(context.get(), q_goal);
+  VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7],
+                     p_7V.rowwise().mean(), 0.1 * rho, {1, 0, 1, 1},
+                     "gripper_mean" + std::to_string(all_regions.size()));
+  goal_regions.push_back(ConfigurationSpaceBox(q_goal, rho).ToFormula(
+      q_placeholder, indicator_placeholder));
+  all_regions.push_back(goal_regions.back());
+
+  std::uniform_real_distribution<double> uniform_zero_to_one{0.0, 1.0};
+  bool add_to_goal_regions = false;
+  while (static_cast<int>(all_regions.size()) < num_boxes) {
+    std::vector<Formula>& regions =
+        add_to_goal_regions ? goal_regions : start_regions;
+    std::vector<Formula>& other_regions =
+        add_to_goal_regions ? start_regions : goal_regions;
+
+    if (uniform_zero_to_one(generator) < goal_sampling_probability) {
+      // Sample from the other regions.
+      VectorX<double> q_A, q_B;
+      std::tie(q_A, q_B) = solvers::ClosestPointsInSetsOfRegions(
+          {regions, other_regions}, q_placeholder, indicator_placeholder);
+      if (q_A.isApprox(q_B, std::numeric_limits<double>::epsilon())) {
+        break;
+      } else {
+        q = q_A;
+      }
+    } else {
+      Eigen::VectorXd q_sample = full_configuration_space.Sample(&generator);
+      drake::log()->info("q_sample = {}", q_sample.transpose());
+
+      drake::log()->info("Add to goal regions: {}", add_to_goal_regions);
+      drake::log()->info("regions.size: {}", regions.size());
+      drake::log()->info("other_regions.size: {}", other_regions.size());
+      Eigen::VectorXd q_nearest = solvers::ClosestPointInRegions(
+          regions, q_sample, q_placeholder, indicator_placeholder);
+      drake::log()->info("q_nearest = {}", q_nearest.transpose());
+      // If sample point is outside the existing regions, then q_nearest is the
+      // new q.
+      if ((q_sample - q_nearest).squaredNorm() >
+          std::numeric_limits<double>::epsilon()) {
+        q = q_nearest;
+      } else {
+        // Discard samples already covered by existing regions.
+        continue;
+      }
+    }
     visualizer.VisualizePosture(q);
-    double rho = dut.FindLargestBoxThroughBinarySearch(
+    rho = dut.FindLargestBoxThroughBinarySearch(
         q, {}, Eigen::VectorXd::Constant(7, -1),
         Eigen::VectorXd::Constant(7, 1), 0, 1.0, FLAGS_binary_search_tolerance);
     drake::log()->info("q_mid = {}", q.transpose());
@@ -315,47 +379,28 @@ int DoMain() {
     if (rho > 0) {
       plant->SetPositions(context.get(), q);
       VisualizeBodyPoint(&viewer, *plant, *context, iiwa_link[7],
-                         p_7V.rowwise().mean(), 0.1 * rho, {0, 1, 1, 1},
-                         "gripper_mean" + std::to_string(boxes.size()));
-      boxes.emplace_back(q, rho);
-      regions.push_back(
-          boxes.back().ToFormula(q_placeholder, indicator_placeholder));
-      if (solvers::ClosestPointInRegions({regions.back()}, q_goal,
-                                         q_placeholder, indicator_placeholder)
-              .isApprox(q_goal)) {
-        // In this case, the goal is contained in the existing regions. We're
-        // done!
+                         p_7V.rowwise().mean(), 0.1 * rho,
+                         add_to_goal_regions ? Eigen::Vector4d{1, 0, 1, 1}
+                                             : Eigen::Vector4d{0, 1, 1, 1},
+                         "gripper_mean" + std::to_string(all_regions.size()));
+      regions.push_back(ConfigurationSpaceBox(q, rho).ToFormula(
+          q_placeholder, indicator_placeholder));
+      all_regions.push_back(regions.back());
+      // Check if goal_regions and start_regions overlap.
+      VectorX<double> q_A, q_B;
+      std::tie(q_A, q_B) = solvers::ClosestPointsInSetsOfRegions(
+          {regions, other_regions}, q_placeholder, indicator_placeholder);
+      drake::log()->info("q_A = {}", q_A.transpose());
+      drake::log()->info("q_B = {}", q_B.transpose());
+      if (q_A.isApprox(q_B)) {
+        drake::log()->info("q_A.isApprox(q_B)");
+        // We're done!
         break;
       }
-    }
-
-    bool found_new_q = false;
-    while (!found_new_q) {
-      Eigen::VectorXd q_sample = sampling_function();
-      drake::log()->info("q_sample = {}", q_sample.transpose());
-
-      Eigen::VectorXd q_nearest = solvers::ClosestPointInRegions(
-          regions, q_sample, q_placeholder, indicator_placeholder);
-      // If sample point is outside the existing regions, then q_nearest is the
-      // new q.
-      found_new_q = (q_sample - q_nearest).squaredNorm() >
-                    std::numeric_limits<double>::epsilon();
-      drake::log()->info("q_nearest = {}", q_nearest.transpose());
-      if (found_new_q) {
-        q = q_nearest;
-      } else if (q_sample.isApprox(q_goal)) {
-        // In this case, we sampled the goal, and it was contained in the
-        // existing regions. We're done!
-        break;
-      }
+      // Add to the other set of regions next time.
+      add_to_goal_regions = !add_to_goal_regions;
     }
   }
-
-  std::transform(boxes.begin(), boxes.end(), std::back_inserter(regions),
-                 [&q_placeholder,
-                  &indicator_placeholder](const ConfigurationSpaceBox& box) {
-                   return box.ToFormula(q_placeholder, indicator_placeholder);
-                 });
 
   // Create a mathematical program for optimizing a B-spline curve through the
   // regions.
@@ -365,15 +410,21 @@ int DoMain() {
         ? math::KnotVectorType::kClampedUniform
         : math::KnotVectorType::kUniform};
   BsplineCurve<Expression> q_curve_symbolic = solvers::AddCurveThroughRegions(
-      regions, q_placeholder, indicator_placeholder, basis, &program);
+      all_regions, q_placeholder, indicator_placeholder, basis, &program);
   // Curve should start at q_start.
   program.AddLinearEqualityConstraint(q_curve_symbolic.InitialValue() ==
                                       q_start);
-  // Curve should end at the closest point to q_goal.
-  program.AddLinearEqualityConstraint(
-      q_curve_symbolic.FinalValue() ==
-      solvers::ClosestPointInRegions(regions, q_goal, q_placeholder,
-                                     indicator_placeholder));
+  // Curve should end at q_goal or the closest point to goal_regions in
+  // start_regions.
+  VectorX<double> q_A, q_B;
+  std::tie(q_A, q_B) = solvers::ClosestPointsInSetsOfRegions(
+      {start_regions, goal_regions}, q_placeholder, indicator_placeholder);
+  if (q_A.isApprox(q_B)) {
+    program.AddLinearEqualityConstraint(
+        q_curve_symbolic.FinalValue() == q_goal);
+  } else {
+    program.AddLinearEqualityConstraint(q_curve_symbolic.FinalValue() == q_A);
+  }
   // Curve should start and end with zero velocity.
   program.AddLinearEqualityConstraint(
       q_curve_symbolic.Derivative().InitialValue() ==
@@ -394,7 +445,7 @@ int DoMain() {
   }
   drake::log()->info("Calling Solve ...");
   MathematicalProgramResult result = micp_solver.Solve(program, {}, {});
-  drake::log()->info("Done.");
+  drake::log()->info("Done. Success: {}", result.is_success());
 
   while (true) {
     visualizer.VisualizeTrajectory(
