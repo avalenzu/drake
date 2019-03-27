@@ -17,7 +17,8 @@ GTEST_TEST(BSplineBasisTests, ConstructorTest) {
   const std::vector<double> expected_knots{
       0, 0, 0, 0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1, 1, 1};
   // Check the order and num_control_points constructor.
-  BsplineBasis<double> bspline_basis_0{expected_order, expected_num_control_points};
+  BsplineBasis<double> bspline_basis_0{expected_order,
+                                       expected_num_control_points};
   EXPECT_EQ(bspline_basis_0.order(), expected_order);
   EXPECT_EQ(bspline_basis_0.num_control_points(), expected_num_control_points);
   EXPECT_EQ(bspline_basis_0.knots(), expected_knots);
@@ -34,7 +35,8 @@ GTEST_TEST(BSplineBasisTests, ConstructorTest) {
 GTEST_TEST(BSplineBasisTests, ComputeActiveControlPointIndicesTest) {
   const int expected_order = 5;
   const int expected_num_control_points = 14;
-  BsplineBasis<double> bspline_basis_0{expected_order, expected_num_control_points};
+  BsplineBasis<double> bspline_basis_0{expected_order,
+                                       expected_num_control_points};
 
   const std::array<double, 2> plan_interval_0{0.9, 1.0};
   const std::vector<int> expected_active_control_point_indices_0{9, 10, 11, 12,
