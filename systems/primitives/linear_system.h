@@ -141,10 +141,10 @@ class TimeVaryingLinearSystem : public TimeVaryingAffineSystem<T> {
  private:
   // N.B. A linear system is simply a restricted form of an affine system with
   // the affine terms set to zero.  The following adds this restriction.
-  VectorX<T> f0(const T&) const final {
+  VectorX<T> f0(const Context<T>&) const final {
     return VectorX<T>::Zero(this->num_states());
   }
-  VectorX<T> y0(const T&) const final {
+  VectorX<T> y0(const Context<T>&) const final {
     return VectorX<T>::Zero(this->num_outputs());
   }
 };

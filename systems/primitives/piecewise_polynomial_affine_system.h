@@ -56,23 +56,23 @@ class PiecewisePolynomialAffineSystem final
   /// @name Implementations of PiecewisePolynomialAffineSystem<T>'s pure virtual
   /// methods.
   /// @{
-  MatrixX<T> A(const T& t) const final {
-    return data_.A.value(ExtractDoubleOrThrow(t));
+  MatrixX<T> A(const Context<T>& context) const final {
+    return data_.A.value(ExtractDoubleOrThrow(context.get_time()));
   }
-  MatrixX<T> B(const T& t) const final {
-    return data_.B.value(ExtractDoubleOrThrow(t));
+  MatrixX<T> B(const Context<T>& context) const final {
+    return data_.B.value(ExtractDoubleOrThrow(context.get_time()));
   }
-  VectorX<T> f0(const T& t) const final {
-    return data_.f0.value(ExtractDoubleOrThrow(t));
+  VectorX<T> f0(const Context<T>& context) const final {
+    return data_.f0.value(ExtractDoubleOrThrow(context.get_time()));
   }
-  MatrixX<T> C(const T& t) const final {
-    return data_.C.value(ExtractDoubleOrThrow(t));
+  MatrixX<T> C(const Context<T>& context) const final {
+    return data_.C.value(ExtractDoubleOrThrow(context.get_time()));
   }
-  MatrixX<T> D(const T& t) const final {
-    return data_.D.value(ExtractDoubleOrThrow(t));
+  MatrixX<T> D(const Context<T>& context) const final {
+    return data_.D.value(ExtractDoubleOrThrow(context.get_time()));
   }
-  VectorX<T> y0(const T& t) const final {
-    return data_.y0.value(ExtractDoubleOrThrow(t));
+  VectorX<T> y0(const Context<T>& context) const final {
+    return data_.y0.value(ExtractDoubleOrThrow(context.get_time()));
   }
   /// @}
 

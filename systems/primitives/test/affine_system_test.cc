@@ -47,12 +47,13 @@ TEST_F(AffineSystemTest, Construction) {
 
   // Test TimeVaryingAffineSystem accessor methods.
   const double t = 3.5;
-  EXPECT_TRUE(CompareMatrices(dut_->A(t), A_));
-  EXPECT_TRUE(CompareMatrices(dut_->B(t), B_));
-  EXPECT_TRUE(CompareMatrices(dut_->f0(t), f0_));
-  EXPECT_TRUE(CompareMatrices(dut_->C(t), C_));
-  EXPECT_TRUE(CompareMatrices(dut_->D(t), D_));
-  EXPECT_TRUE(CompareMatrices(dut_->y0(t), y0_));
+  context_->SetTime(t);
+  EXPECT_TRUE(CompareMatrices(dut_->A(*context_), A_));
+  EXPECT_TRUE(CompareMatrices(dut_->B(*context_), B_));
+  EXPECT_TRUE(CompareMatrices(dut_->f0(*context_), f0_));
+  EXPECT_TRUE(CompareMatrices(dut_->C(*context_), C_));
+  EXPECT_TRUE(CompareMatrices(dut_->D(*context_), D_));
+  EXPECT_TRUE(CompareMatrices(dut_->y0(*context_), y0_));
 }
 
 // Tests that the derivatives are correctly computed.
@@ -194,12 +195,13 @@ GTEST_TEST(DiscreteAffineSystemTest, DiscreteTime) {
 
   // Test TimeVaryingAffineSystem accessor methods.
   const double t = 3.0;
-  EXPECT_TRUE(CompareMatrices(system.A(t), A));
-  EXPECT_TRUE(CompareMatrices(system.B(t), B));
-  EXPECT_TRUE(CompareMatrices(system.f0(t), f0));
-  EXPECT_TRUE(CompareMatrices(system.C(t), C));
-  EXPECT_TRUE(CompareMatrices(system.D(t), D));
-  EXPECT_TRUE(CompareMatrices(system.y0(t), y0));
+  context->SetTime(t);
+  EXPECT_TRUE(CompareMatrices(system.A(*context), A));
+  EXPECT_TRUE(CompareMatrices(system.B(*context), B));
+  EXPECT_TRUE(CompareMatrices(system.f0(*context), f0));
+  EXPECT_TRUE(CompareMatrices(system.C(*context), C));
+  EXPECT_TRUE(CompareMatrices(system.D(*context), D));
+  EXPECT_TRUE(CompareMatrices(system.y0(*context), y0));
 
   // Compare the calculated output against the expected output.
   EXPECT_TRUE(CompareMatrices(system.get_output_port().Eval(*context),
@@ -220,24 +222,25 @@ class SimpleTimeVaryingAffineSystem : public TimeVaryingAffineSystem<double> {
             kNumStates, kNumInputs, kNumOutputs, time_period) {}
   ~SimpleTimeVaryingAffineSystem() override {}
 
-  Eigen::MatrixXd A(const double& t) const override {
+  Eigen::MatrixXd A(const Context<double>& context) const override {
     Eigen::Matrix<double, kNumOutputs, kNumStates> mat;
+    const double& t = context.get_time();
     mat << std::cos(t), -std::sin(t), std::sin(t), std::cos(t);
     return mat;
   }
-  Eigen::MatrixXd B(const double& t) const override {
+  Eigen::MatrixXd B(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, kNumInputs>::Ones();
   }
-  Eigen::VectorXd f0(const double& t) const override {
+  Eigen::VectorXd f0(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, 1>::Zero();
   }
-  Eigen::MatrixXd C(const double& t) const override {
+  Eigen::MatrixXd C(const Context<double>& context) const override {
     return Eigen::Matrix2d::Identity();
   }
-  Eigen::MatrixXd D(const double& t) const override {
+  Eigen::MatrixXd D(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, kNumInputs>::Ones();
   }
-  Eigen::VectorXd y0(const double& t) const override {
+  Eigen::VectorXd y0(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, 1>::Ones();
   }
 };
@@ -254,10 +257,10 @@ GTEST_TEST(SimpleTimeVaryingAffineSystemTest, EvalTest) {
 
   auto derivs = sys.AllocateTimeDerivatives();
   sys.CalcTimeDerivatives(*context, derivs.get());
-  EXPECT_TRUE(CompareMatrices(sys.A(t) * x + 42.0 * sys.B(t),
+  EXPECT_TRUE(CompareMatrices(sys.A(*context) * x + 42.0 * sys.B(*context),
                               derivs->CopyToVector()));
 
-  EXPECT_TRUE(CompareMatrices(x + sys.y0(t) + 42.0 * sys.D(t),
+  EXPECT_TRUE(CompareMatrices(x + sys.y0(*context) + 42.0 * sys.D(*context),
                               sys.get_output_port().Eval(*context)));
 }
 
@@ -273,10 +276,10 @@ GTEST_TEST(SimpleTimeVaryingAffineSystemTest, DiscreteEvalTest) {
 
   auto updates = sys.AllocateDiscreteVariables();
   sys.CalcDiscreteVariableUpdates(*context, updates.get());
-  EXPECT_TRUE(CompareMatrices(sys.A(t) * x + 42.0 * sys.B(t),
+  EXPECT_TRUE(CompareMatrices(sys.A(*context) * x + 42.0 * sys.B(*context),
                               updates->get_vector().CopyToVector()));
 
-  EXPECT_TRUE(CompareMatrices(x + sys.y0(t) + 42.0 * sys.D(t),
+  EXPECT_TRUE(CompareMatrices(x + sys.y0(*context) + 42.0 * sys.D(*context),
                               sys.get_output_port().Eval(*context)));
 }
 
@@ -287,8 +290,9 @@ class IllegalTimeVaryingAffineSystem : public SimpleTimeVaryingAffineSystem {
   IllegalTimeVaryingAffineSystem() : SimpleTimeVaryingAffineSystem(0.0) {}
   ~IllegalTimeVaryingAffineSystem() override {}
 
-  Eigen::MatrixXd A(const double& t) const override {
+  Eigen::MatrixXd A(const Context<double>& context) const override {
     Eigen::Matrix<double, 3, 2> mat;
+    const double& t = context.get_time();
     mat << std::cos(t), -std::sin(t), std::sin(t), std::cos(t), 0, 1;
     return mat;
   }

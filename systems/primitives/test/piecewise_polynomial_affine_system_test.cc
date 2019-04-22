@@ -61,12 +61,12 @@ class PiecewisePolynomialAffineSystemTest
 
 TEST_P(PiecewisePolynomialAffineSystemTest, Constructor) {
   EXPECT_EQ(1, context_->num_input_ports());
-  EXPECT_EQ(dut_->A(0.), ltv_data_.A.value(0.));
-  EXPECT_EQ(dut_->B(0.), ltv_data_.B.value(0.));
-  EXPECT_EQ(dut_->C(0.), ltv_data_.C.value(0.));
-  EXPECT_EQ(dut_->D(0.), ltv_data_.D.value(0.));
-  EXPECT_EQ(dut_->f0(0.), ltv_data_.f0.value(0.));
-  EXPECT_EQ(dut_->y0(0.), ltv_data_.y0.value(0.));
+  EXPECT_EQ(dut_->A(*context_), ltv_data_.A.value(0.));
+  EXPECT_EQ(dut_->B(*context_), ltv_data_.B.value(0.));
+  EXPECT_EQ(dut_->C(*context_), ltv_data_.C.value(0.));
+  EXPECT_EQ(dut_->D(*context_), ltv_data_.D.value(0.));
+  EXPECT_EQ(dut_->f0(*context_), ltv_data_.f0.value(0.));
+  EXPECT_EQ(dut_->y0(*context_), ltv_data_.y0.value(0.));
   EXPECT_EQ(dut_->time_period(), time_period_);
   EXPECT_EQ(1, dut_->num_output_ports());
   EXPECT_EQ(1, dut_->num_input_ports());
@@ -74,18 +74,19 @@ TEST_P(PiecewisePolynomialAffineSystemTest, Constructor) {
 
 TEST_P(PiecewisePolynomialAffineSystemTest, KnotPointConsistency) {
   for (int i{0}; i < static_cast<int>(mat_data_.times.size()); ++i) {
+    context_->SetTime(mat_data_.times[i]);
     EXPECT_TRUE(
-        CompareMatrices(dut_->A(mat_data_.times[i]), mat_data_.Avec[i]));
+        CompareMatrices(dut_->A(*context_), mat_data_.Avec[i]));
     EXPECT_TRUE(
-        CompareMatrices(dut_->B(mat_data_.times[i]), mat_data_.Bvec[i]));
+        CompareMatrices(dut_->B(*context_), mat_data_.Bvec[i]));
     EXPECT_TRUE(
-        CompareMatrices(dut_->C(mat_data_.times[i]), mat_data_.Cvec[i]));
+        CompareMatrices(dut_->C(*context_), mat_data_.Cvec[i]));
     EXPECT_TRUE(
-        CompareMatrices(dut_->D(mat_data_.times[i]), mat_data_.Dvec[i]));
+        CompareMatrices(dut_->D(*context_), mat_data_.Dvec[i]));
     EXPECT_TRUE(
-        CompareMatrices(dut_->f0(mat_data_.times[i]), mat_data_.f0vec[i]));
+        CompareMatrices(dut_->f0(*context_), mat_data_.f0vec[i]));
     EXPECT_TRUE(
-        CompareMatrices(dut_->y0(mat_data_.times[i]), mat_data_.y0vec[i]));
+        CompareMatrices(dut_->y0(*context_), mat_data_.y0vec[i]));
   }
 }
 
@@ -156,10 +157,11 @@ TEST_P(PiecewisePolynomialAffineSystemTest, Output) {
 // Tests that conversion to different scalar types is possible.
 TEST_P(PiecewisePolynomialAffineSystemTest, ScalarTypeConversion) {
   EXPECT_TRUE(is_autodiffxd_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.A(0.), ltv_data_.A.value(0.));
-    EXPECT_EQ(converted.B(0.), ltv_data_.B.value(0.));
-    EXPECT_EQ(converted.C(0.), ltv_data_.C.value(0.));
-    EXPECT_EQ(converted.D(0.), ltv_data_.D.value(0.));
+    auto context = converted.CreateDefaultContext();
+    EXPECT_EQ(converted.A(*context), ltv_data_.A.value(0.));
+    EXPECT_EQ(converted.B(*context), ltv_data_.B.value(0.));
+    EXPECT_EQ(converted.C(*context), ltv_data_.C.value(0.));
+    EXPECT_EQ(converted.D(*context), ltv_data_.D.value(0.));
     EXPECT_EQ(converted.time_period(), time_period_);
   }));
   EXPECT_FALSE(is_symbolic_convertible(*dut_));

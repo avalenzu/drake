@@ -54,12 +54,12 @@ class TimeVaryingAffineSystem : public LeafSystem<T> {
   /// be sized to match the `num_states`, `num_inputs`, and `num_outputs`
   /// specified in the constructor.
   /// @{
-  virtual MatrixX<T> A(const T& t) const = 0;
-  virtual MatrixX<T> B(const T& t) const = 0;
-  virtual VectorX<T> f0(const T& t) const = 0;
-  virtual MatrixX<T> C(const T& t) const = 0;
-  virtual MatrixX<T> D(const T& t) const = 0;
-  virtual VectorX<T> y0(const T& t) const = 0;
+  virtual MatrixX<T> A(const Context<T>& context) const = 0;
+  virtual MatrixX<T> B(const Context<T>& context) const = 0;
+  virtual VectorX<T> f0(const Context<T>& context) const = 0;
+  virtual MatrixX<T> C(const Context<T>& context) const = 0;
+  virtual MatrixX<T> D(const Context<T>& context) const = 0;
+  virtual VectorX<T> y0(const Context<T>& context) const = 0;
   /// @}
 
   double time_period() const { return time_period_; }
@@ -202,12 +202,12 @@ class AffineSystem : public TimeVaryingAffineSystem<T> {
   /// @name Implementations of TimeVaryingAffineSystem<T>'s pure virtual
   /// methods.
   /// @{
-  MatrixX<T> A(const T&) const final { return MatrixX<T>(A_); }
-  MatrixX<T> B(const T&) const final { return MatrixX<T>(B_); }
-  VectorX<T> f0(const T&) const final { return VectorX<T>(f0_); }
-  MatrixX<T> C(const T&) const final { return MatrixX<T>(C_); }
-  MatrixX<T> D(const T&) const final { return MatrixX<T>(D_); }
-  VectorX<T> y0(const T&) const final { return VectorX<T>(y0_); }
+  MatrixX<T> A(const Context<T>&) const final { return MatrixX<T>(A_); }
+  MatrixX<T> B(const Context<T>&) const final { return MatrixX<T>(B_); }
+  VectorX<T> f0(const Context<T>&) const final { return VectorX<T>(f0_); }
+  MatrixX<T> C(const Context<T>&) const final { return MatrixX<T>(C_); }
+  MatrixX<T> D(const Context<T>&) const final { return MatrixX<T>(D_); }
+  VectorX<T> y0(const Context<T>&) const final { return VectorX<T>(y0_); }
   /// @}
 
  protected:

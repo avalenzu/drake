@@ -156,20 +156,21 @@ class SimpleTimeVaryingLinearSystem final
 
   ~SimpleTimeVaryingLinearSystem() override {}
 
-  Eigen::MatrixXd A(const double& t) const override {
+  Eigen::MatrixXd A(const Context<double>& context) const override {
     using std::cos;
     using std::sin;
     Eigen::Matrix<double, kNumOutputs, kNumStates> mat;
+    const double t = context.get_time();
     mat << cos(t), -sin(t), sin(t), cos(t);
     return mat;
   }
-  Eigen::MatrixXd B(const double& t) const override {
+  Eigen::MatrixXd B(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, kNumInputs>::Ones();
   }
-  Eigen::MatrixXd C(const double& t) const override {
+  Eigen::MatrixXd C(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumStates, kNumStates>::Identity();
   }
-  Eigen::MatrixXd D(const double& t) const override {
+  Eigen::MatrixXd D(const Context<double>& context) const override {
     return Eigen::Matrix<double, kNumOutputs, kNumInputs>::Ones();
   }
 };
@@ -179,10 +180,13 @@ GTEST_TEST(SimpleTimeVaryingLinearSystemTest, ConstructorTest) {
 
   EXPECT_EQ(sys.num_output_ports(), 1);
   EXPECT_EQ(sys.num_input_ports(), 1);
-  EXPECT_TRUE(CompareMatrices(sys.A(0.), Eigen::Matrix2d::Identity()));
-  EXPECT_TRUE(CompareMatrices(sys.B(0.), Eigen::Matrix<double, 2, 1>::Ones()));
-  EXPECT_TRUE(CompareMatrices(sys.C(0.), Eigen::Matrix2d::Identity()));
-  EXPECT_TRUE(CompareMatrices(sys.D(0.), Eigen::Matrix<double, 2, 1>::Ones()));
+  auto context = sys.CreateDefaultContext();
+  EXPECT_TRUE(CompareMatrices(sys.A(*context), Eigen::Matrix2d::Identity()));
+  EXPECT_TRUE(
+      CompareMatrices(sys.B(*context), Eigen::Matrix<double, 2, 1>::Ones()));
+  EXPECT_TRUE(CompareMatrices(sys.C(*context), Eigen::Matrix2d::Identity()));
+  EXPECT_TRUE(
+      CompareMatrices(sys.D(*context), Eigen::Matrix<double, 2, 1>::Ones()));
 }
 
 class TestLinearizeFromAffine : public ::testing::Test {

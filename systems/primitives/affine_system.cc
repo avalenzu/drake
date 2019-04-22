@@ -63,13 +63,12 @@ const OutputPort<T>& TimeVaryingAffineSystem<T>::get_output_port()
 template <typename T>
 void TimeVaryingAffineSystem<T>::CalcOutputY(
     const Context<T>& context, BasicVector<T>* output_vector) const {
-  const T t = context.get_time();
 
-  VectorX<T> y = y0(t);
+  VectorX<T> y = y0(context);
   DRAKE_DEMAND(y.rows() == num_outputs_);
 
   if (num_states_ > 0) {
-    const MatrixX<T> Ct = C(t);
+    const MatrixX<T> Ct = C(context);
     DRAKE_DEMAND(Ct.rows() == num_outputs_ && Ct.cols() == num_states_);
     const VectorX<T>& x = (this->time_period() == 0.)
         ? dynamic_cast<const BasicVector<T>&>(
@@ -80,7 +79,7 @@ void TimeVaryingAffineSystem<T>::CalcOutputY(
 
   if (num_inputs_ > 0) {
     const auto& u = get_input_port().Eval(context);
-    const MatrixX<T> Dt = D(t);
+    const MatrixX<T> Dt = D(context);
     DRAKE_DEMAND(Dt.rows() == num_outputs_ && Dt.cols() == num_inputs_);
     y += Dt * u;
   }
@@ -93,22 +92,20 @@ void TimeVaryingAffineSystem<T>::DoCalcTimeDerivatives(
     const Context<T>& context, ContinuousState<T>* derivatives) const {
   if (num_states_ == 0) return;
 
-  const T t = context.get_time();
-
-  VectorX<T> xdot = f0(t);
+  VectorX<T> xdot = f0(context);
   DRAKE_DEMAND(xdot.rows() == num_states_);
 
   const auto& x =
       dynamic_cast<const BasicVector<T>&>(context.get_continuous_state_vector())
           .get_value();
-  const MatrixX<T> At = A(t);
+  const MatrixX<T> At = A(context);
   DRAKE_DEMAND(At.rows() == num_states_ && At.cols() == num_states_);
   xdot += At * x;
 
   if (num_inputs_ > 0) {
     const auto& u = get_input_port().Eval(context);
 
-    const MatrixX<T> Bt = B(t);
+    const MatrixX<T> Bt = B(context);
     DRAKE_DEMAND(Bt.rows() == num_states_ && Bt.cols() == num_inputs_);
     xdot += Bt * u;
   }
@@ -122,24 +119,22 @@ void TimeVaryingAffineSystem<T>::DoCalcDiscreteVariableUpdates(
     drake::systems::DiscreteValues<T>* updates) const {
   if (num_states_ == 0 || time_period_ == 0.0) return;
 
-  const T t = context.get_time();
-
   // TODO(russt): consider demanding that t is a multiple of time_period_.
   // But this could be non-trivial for non-double T.
 
-  VectorX<T> xn = f0(t);
+  VectorX<T> xn = f0(context);
   DRAKE_DEMAND(xn.rows() == num_states_);
 
   const auto& x = context.get_discrete_state(0).get_value();
 
-  const MatrixX<T> At = A(t);
+  const MatrixX<T> At = A(context);
   DRAKE_DEMAND(At.rows() == num_states_ && At.cols() == num_states_);
   xn += At * x;
 
   if (num_inputs_ > 0) {
     const auto& u = get_input_port().Eval(context);
 
-    const MatrixX<T> Bt = B(t);
+    const MatrixX<T> Bt = B(context);
     DRAKE_DEMAND(Bt.rows() == num_states_ && Bt.cols() == num_inputs_);
     xn += Bt * u;
   }
