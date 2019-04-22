@@ -38,8 +38,11 @@ GTEST_TEST(TestKalman, DoubleIntegrator) {
   EXPECT_TRUE(CompareMatrices(SteadyStateKalmanFilter(A, C, W, V), L, tol));
 
   // Test LinearSystem version of the Kalman filter.
-  auto linear_filter = SteadyStateKalmanFilter(
-      std::make_unique<LinearSystem<double>>(A, B, C, D), W, V);
+  auto linear_system = std::make_unique<LinearSystem<double>>(A, B, C, D);
+  std::unique_ptr<Context<double>> linear_system_context =
+      linear_system->CreateDefaultContext();
+  auto linear_filter = SteadyStateKalmanFilter(std::move(linear_system),
+                                               *linear_system_context, W, V);
 
   EXPECT_TRUE(CompareMatrices(linear_filter->L(), L, tol));
 

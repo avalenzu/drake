@@ -70,17 +70,22 @@ LinearQuadraticRegulatorResult DiscreteTimeLinearQuadraticRegulator(
 
 std::unique_ptr<systems::LinearSystem<double>> LinearQuadraticRegulator(
     const LinearSystem<double>& system,
+    const Context<double>& context,
     const Eigen::Ref<const Eigen::MatrixXd>& Q,
     const Eigen::Ref<const Eigen::MatrixXd>& R,
     const Eigen::Ref<const Eigen::MatrixXd>& N) {
   // DiscreteTimeLinearQuadraticRegulator does not support N yet.
   DRAKE_DEMAND(system.time_period() == 0.0 || N.rows() == 0);
 
-  const int num_states = system.B().rows(), num_inputs = system.B().cols();
+  const int num_states = system.B(context).rows(),
+            num_inputs = system.B(context).cols();
 
-  LinearQuadraticRegulatorResult lqr_result = (system.time_period() == 0.0) ?
-    LinearQuadraticRegulator(system.A(), system.B(), Q, R, N) :
-    DiscreteTimeLinearQuadraticRegulator(system.A(), system.B(), Q, R);
+  LinearQuadraticRegulatorResult lqr_result =
+      (system.time_period() == 0.0)
+          ? LinearQuadraticRegulator(system.A(context), system.B(context), Q, R,
+                                     N)
+          : DiscreteTimeLinearQuadraticRegulator(system.A(context),
+                                                 system.B(context), Q, R);
 
   // Return the controller: u = -Kx.
   return std::make_unique<systems::LinearSystem<double>>(
@@ -118,10 +123,10 @@ std::unique_ptr<systems::AffineSystem<double>> LinearQuadraticRegulator(
 
   LinearQuadraticRegulatorResult lqr_result =
       (linear_system->time_period() == 0.0)
-          ? LinearQuadraticRegulator(linear_system->A(), linear_system->B(), Q,
-                                     R, N)
-          : DiscreteTimeLinearQuadraticRegulator(linear_system->A(),
-                                                 linear_system->B(), Q, R);
+          ? LinearQuadraticRegulator(linear_system->default_A(),
+                                     linear_system->default_B(), Q, R, N)
+          : DiscreteTimeLinearQuadraticRegulator(
+                linear_system->default_A(), linear_system->default_B(), Q, R);
 
   const Eigen::VectorXd& x0 =
       (linear_system->time_period() == 0.0)

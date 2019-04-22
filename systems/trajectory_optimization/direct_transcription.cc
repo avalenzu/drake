@@ -175,12 +175,13 @@ DirectTranscription::DirectTranscription(
   // systems, you must use a different constructor that specifies the timesteps.
   ValidateSystem(*system, context);
 
+  std::unique_ptr<Context<double>> local_context = context.Clone();
   for (int i = 0; i < N() - 1; i++) {
-    const double t = system->time_period() * i;
+    local_context->SetTime(system->time_period() * i);
     AddLinearEqualityConstraint(
         state(i+1).cast<symbolic::Expression>() ==
-        system->A(t) * state(i).cast<symbolic::Expression>() +
-        system->B(t) * input(i).cast<symbolic::Expression>());
+        system->A(*local_context) * state(i).cast<symbolic::Expression>() +
+        system->B(*local_context) * input(i).cast<symbolic::Expression>());
   }
   ConstrainEqualInputAtFinalTwoTimesteps();
 }

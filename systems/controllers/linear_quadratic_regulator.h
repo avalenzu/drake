@@ -91,6 +91,7 @@ LinearQuadraticRegulatorResult DiscreteTimeLinearQuadraticRegulator(
 ///
 std::unique_ptr<LinearSystem<double>> LinearQuadraticRegulator(
     const LinearSystem<double>& system,
+    const Context<double>& context,
     const Eigen::Ref<const Eigen::MatrixXd>& Q,
     const Eigen::Ref<const Eigen::MatrixXd>& R,
     const Eigen::Ref<const Eigen::MatrixXd>& N =

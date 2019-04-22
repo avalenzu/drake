@@ -204,8 +204,9 @@ GTEST_TEST(DirectTranscriptionTest, DiscreteTimeSymbolicConstraintTest) {
         dynamic_constraints[i].evaluator()->lower_bound();
     const Vector1d dynamic_constraint_expected =
         prog.GetInitialGuess(prog.state(i + 1)) -
-        system->A() * prog.GetInitialGuess(prog.state(i)) -
-        system->B() * prog.GetInitialGuess(prog.input(i)) - system->f0();
+        system->A(*context) * prog.GetInitialGuess(prog.state(i)) -
+        system->B(*context) * prog.GetInitialGuess(prog.input(i)) -
+        system->f0(*context);
 
     // Check that the system's state equation still holds with equality,
     // regardless of the specific encoding MathematicalProgram chooses.
@@ -249,9 +250,9 @@ GTEST_TEST(DirectTranscriptionTest, ContinuousTimeSymbolicConstraintTest) {
     const Vector1d dynamic_constraint_expected =
         prog.GetInitialGuess(prog.state(i + 1)) -
         prog.GetInitialGuess(prog.state(i)) -
-        kTimeStep * system->A() * prog.GetInitialGuess(prog.state(i)) -
-        kTimeStep * system->B() * prog.GetInitialGuess(prog.input(i)) -
-        kTimeStep * system->f0();
+        kTimeStep * system->A(*context) * prog.GetInitialGuess(prog.state(i)) -
+        kTimeStep * system->B(*context) * prog.GetInitialGuess(prog.input(i)) -
+        kTimeStep * system->f0(*context);
 
     // Check that the system's state equation still holds with equality,
     // regardless of the specific encoding MathematicalProgram chooses.

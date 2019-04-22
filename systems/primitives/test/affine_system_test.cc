@@ -36,12 +36,12 @@ class AffineSystemTest : public AffineLinearSystemTest {
 TEST_F(AffineSystemTest, Construction) {
   EXPECT_EQ(1, context_->num_input_ports());
   EXPECT_EQ("test_affine_system", dut_->get_name());
-  EXPECT_EQ(dut_->A(), A_);
-  EXPECT_EQ(dut_->B(), B_);
-  EXPECT_EQ(dut_->C(), C_);
-  EXPECT_EQ(dut_->D(), D_);
-  EXPECT_EQ(dut_->f0(), f0_);
-  EXPECT_EQ(dut_->y0(), y0_);
+  EXPECT_EQ(dut_->default_A(), A_);
+  EXPECT_EQ(dut_->default_B(), B_);
+  EXPECT_EQ(dut_->default_C(), C_);
+  EXPECT_EQ(dut_->default_D(), D_);
+  EXPECT_EQ(dut_->default_f0(), f0_);
+  EXPECT_EQ(dut_->default_y0(), y0_);
   EXPECT_EQ(dut_->num_output_ports(), 1);
   EXPECT_EQ(dut_->num_input_ports(), 1);
 
@@ -101,20 +101,20 @@ TEST_F(AffineSystemTest, Output) {
 // Tests converting to different scalar types.
 TEST_F(AffineSystemTest, ConvertScalarType) {
   EXPECT_TRUE(is_autodiffxd_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.A(), A_);
-    EXPECT_EQ(converted.B(), B_);
-    EXPECT_EQ(converted.f0(), f0_);
-    EXPECT_EQ(converted.C(), C_);
-    EXPECT_EQ(converted.D(), D_);
-    EXPECT_EQ(converted.y0(), y0_);
+    EXPECT_EQ(converted.default_A(), A_);
+    EXPECT_EQ(converted.default_B(), B_);
+    EXPECT_EQ(converted.default_f0(), f0_);
+    EXPECT_EQ(converted.default_C(), C_);
+    EXPECT_EQ(converted.default_D(), D_);
+    EXPECT_EQ(converted.default_y0(), y0_);
   }));
   EXPECT_TRUE(is_symbolic_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.A(), A_);
-    EXPECT_EQ(converted.B(), B_);
-    EXPECT_EQ(converted.f0(), f0_);
-    EXPECT_EQ(converted.C(), C_);
-    EXPECT_EQ(converted.D(), D_);
-    EXPECT_EQ(converted.y0(), y0_);
+    EXPECT_EQ(converted.default_A(), A_);
+    EXPECT_EQ(converted.default_B(), B_);
+    EXPECT_EQ(converted.default_f0(), f0_);
+    EXPECT_EQ(converted.default_C(), C_);
+    EXPECT_EQ(converted.default_D(), D_);
+    EXPECT_EQ(converted.default_y0(), y0_);
   }));
 }
 
@@ -358,12 +358,12 @@ TEST_F(AffineSystemSymbolicTest, MakeAffineSystem) {
   // system correctly.
   const auto dut = AffineSystem<double>::MakeAffineSystem(
       A_ * x_ + B_ * u_ + f0_, C_ * x_ + D_ * u_ + y0_, x_, u_, 10.0);
-  EXPECT_EQ(dut->A(), A_);
-  EXPECT_EQ(dut->B(), B_);
-  EXPECT_EQ(dut->C(), C_);
-  EXPECT_EQ(dut->D(), D_);
-  EXPECT_EQ(dut->f0(), f0_);
-  EXPECT_EQ(dut->y0(), y0_);
+  EXPECT_EQ(dut->default_A(), A_);
+  EXPECT_EQ(dut->default_B(), B_);
+  EXPECT_EQ(dut->default_C(), C_);
+  EXPECT_EQ(dut->default_D(), D_);
+  EXPECT_EQ(dut->default_f0(), f0_);
+  EXPECT_EQ(dut->default_y0(), y0_);
   EXPECT_EQ(dut->time_period(), 10.0);
 }
 

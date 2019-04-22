@@ -26,7 +26,7 @@ MatrixGain<T>::MatrixGain(const Eigen::MatrixXd& D)
 template <typename T>
 template <typename U>
 MatrixGain<T>::MatrixGain(const MatrixGain<U>& other)
-    : MatrixGain<T>(other.D()) {}
+    : MatrixGain<T>(other.default_D()) {}
 
 }  // namespace systems
 }  // namespace drake

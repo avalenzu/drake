@@ -84,12 +84,12 @@ class LinearSystemTest : public AffineLinearSystemTest {
 TEST_F(LinearSystemTest, Construction) {
   EXPECT_EQ(1, context_->num_input_ports());
   EXPECT_EQ("test_linear_system", dut_->get_name());
-  EXPECT_EQ(dut_->A(), A_);
-  EXPECT_EQ(dut_->B(), B_);
-  EXPECT_EQ(dut_->f0(), f0_);
-  EXPECT_EQ(dut_->C(), C_);
-  EXPECT_EQ(dut_->D(), D_);
-  EXPECT_EQ(dut_->y0(), y0_);
+  EXPECT_EQ(dut_->default_A(), A_);
+  EXPECT_EQ(dut_->default_B(), B_);
+  EXPECT_EQ(dut_->default_f0(), f0_);
+  EXPECT_EQ(dut_->default_C(), C_);
+  EXPECT_EQ(dut_->default_D(), D_);
+  EXPECT_EQ(dut_->default_y0(), y0_);
   EXPECT_EQ(1, dut_->num_output_ports());
   EXPECT_EQ(1, dut_->num_input_ports());
 }
@@ -127,16 +127,16 @@ TEST_F(LinearSystemTest, Output) {
 // Tests converting to different scalar types.
 TEST_F(LinearSystemTest, ConvertScalarType) {
   EXPECT_TRUE(is_autodiffxd_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.A(), A_);
-    EXPECT_EQ(converted.B(), B_);
-    EXPECT_EQ(converted.C(), C_);
-    EXPECT_EQ(converted.D(), D_);
+    EXPECT_EQ(converted.default_A(), A_);
+    EXPECT_EQ(converted.default_B(), B_);
+    EXPECT_EQ(converted.default_C(), C_);
+    EXPECT_EQ(converted.default_D(), D_);
   }));
   EXPECT_TRUE(is_symbolic_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.A(), A_);
-    EXPECT_EQ(converted.B(), B_);
-    EXPECT_EQ(converted.C(), C_);
-    EXPECT_EQ(converted.D(), D_);
+    EXPECT_EQ(converted.default_A(), A_);
+    EXPECT_EQ(converted.default_B(), B_);
+    EXPECT_EQ(converted.default_C(), C_);
+    EXPECT_EQ(converted.default_D(), D_);
   }));
 }
 
@@ -241,20 +241,20 @@ TEST_F(TestLinearizeFromAffine, ContinuousAtEquilibrium) {
   auto linearized_system = Linearize(*continuous_system_, *context);
 
   double tol = 1e-10;
-  EXPECT_TRUE(CompareMatrices(A_, linearized_system->A(), tol,
+  EXPECT_TRUE(CompareMatrices(A_, linearized_system->default_A(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(B_, linearized_system->B(), tol,
+  EXPECT_TRUE(CompareMatrices(B_, linearized_system->default_B(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(C_, linearized_system->C(), tol,
+  EXPECT_TRUE(CompareMatrices(C_, linearized_system->default_C(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(D_, linearized_system->D(), tol,
+  EXPECT_TRUE(CompareMatrices(D_, linearized_system->default_D(), tol,
                               MatrixCompareType::absolute));
 
   std::unique_ptr<AffineSystem<double>> affine_system =
       FirstOrderTaylorApproximation(*continuous_system_, *context);
-  EXPECT_TRUE(CompareMatrices(f0_, affine_system->f0(), tol,
+  EXPECT_TRUE(CompareMatrices(f0_, affine_system->default_f0(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(y0_, affine_system->y0(), tol,
+  EXPECT_TRUE(CompareMatrices(y0_, affine_system->default_y0(), tol,
                               MatrixCompareType::absolute));
 }
 
@@ -274,17 +274,17 @@ TEST_F(TestLinearizeFromAffine, ContinuousAtNonEquilibrium) {
 
   double tol = 1e-10;
   // We recover the original affine system.
-  EXPECT_TRUE(CompareMatrices(A_, affine_system->A(), tol,
+  EXPECT_TRUE(CompareMatrices(A_, affine_system->default_A(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(B_, affine_system->B(), tol,
+  EXPECT_TRUE(CompareMatrices(B_, affine_system->default_B(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(C_, affine_system->C(), tol,
+  EXPECT_TRUE(CompareMatrices(C_, affine_system->default_C(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(D_, affine_system->D(), tol,
+  EXPECT_TRUE(CompareMatrices(D_, affine_system->default_D(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(f0_, affine_system->f0(), tol,
+  EXPECT_TRUE(CompareMatrices(f0_, affine_system->default_f0(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(y0_, affine_system->y0(), tol,
+  EXPECT_TRUE(CompareMatrices(y0_, affine_system->default_y0(), tol,
                               MatrixCompareType::absolute));
 }
 
@@ -300,21 +300,21 @@ TEST_F(TestLinearizeFromAffine, DiscreteAtEquilibrium) {
   auto linearized_system = Linearize(*discrete_system_, *context);
 
   double tol = 1e-10;
-  EXPECT_TRUE(CompareMatrices(A_, linearized_system->A(), tol,
+  EXPECT_TRUE(CompareMatrices(A_, linearized_system->default_A(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(B_, linearized_system->B(), tol,
+  EXPECT_TRUE(CompareMatrices(B_, linearized_system->default_B(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(C_, linearized_system->C(), tol,
+  EXPECT_TRUE(CompareMatrices(C_, linearized_system->default_C(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(D_, linearized_system->D(), tol,
+  EXPECT_TRUE(CompareMatrices(D_, linearized_system->default_D(), tol,
                               MatrixCompareType::absolute));
   EXPECT_EQ(time_period_, linearized_system->time_period());
 
   std::unique_ptr<AffineSystem<double>> affine_system =
       FirstOrderTaylorApproximation(*discrete_system_, *context);
-  EXPECT_TRUE(CompareMatrices(f0_, affine_system->f0(), tol,
+  EXPECT_TRUE(CompareMatrices(f0_, affine_system->default_f0(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(y0_, affine_system->y0(), tol,
+  EXPECT_TRUE(CompareMatrices(y0_, affine_system->default_y0(), tol,
                               MatrixCompareType::absolute));
 }
 
@@ -336,17 +336,17 @@ TEST_F(TestLinearizeFromAffine, DiscreteAtNonEquilibrium) {
 
   double tol = 1e-10;
   // We recover the original affine system.
-  EXPECT_TRUE(CompareMatrices(A_, affine_system->A(), tol,
+  EXPECT_TRUE(CompareMatrices(A_, affine_system->default_A(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(B_, affine_system->B(), tol,
+  EXPECT_TRUE(CompareMatrices(B_, affine_system->default_B(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(C_, affine_system->C(), tol,
+  EXPECT_TRUE(CompareMatrices(C_, affine_system->default_C(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(D_, affine_system->D(), tol,
+  EXPECT_TRUE(CompareMatrices(D_, affine_system->default_D(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(f0_, affine_system->f0(), tol,
+  EXPECT_TRUE(CompareMatrices(f0_, affine_system->default_f0(), tol,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(y0_, affine_system->y0(), tol,
+  EXPECT_TRUE(CompareMatrices(y0_, affine_system->default_y0(), tol,
                               MatrixCompareType::absolute));
   EXPECT_EQ(time_period_, affine_system->time_period());
 }
@@ -454,14 +454,14 @@ GTEST_TEST(TestLinearize, Controllability) {
   B << 0, 1;
   LinearSystem<double> sys1(A, B, C, D);
 
-  EXPECT_TRUE(IsControllable(sys1));
+  EXPECT_TRUE(IsControllable(sys1, *sys1.CreateDefaultContext()));
 
   // Uncontrollable system: x1dot = u, x2dot = u.
   A << 0, 0, 0, 0;
   B << 1, 1;
   LinearSystem<double> sys2(A, B, C, D);
 
-  EXPECT_FALSE(IsControllable(sys2));
+  EXPECT_FALSE(IsControllable(sys2, *sys2.CreateDefaultContext()));
 }
 
 // Test a few simple systems that are known to be observable (or not).
@@ -479,15 +479,15 @@ GTEST_TEST(TestLinearize, Observability) {
   // Observable: y = x.
   C << 1, 0, 0, 1;
   LinearSystem<double> sys1(A, B, C, D);
-  EXPECT_TRUE(IsObservable(sys1));
+  EXPECT_TRUE(IsObservable(sys1, *sys1.CreateDefaultContext()));
 
   // Unobservable: y = x2;
   LinearSystem<double> sys2(A, B, C.bottomRows(1), D.bottomRows(1));
-  EXPECT_FALSE(IsObservable(sys2));
+  EXPECT_FALSE(IsObservable(sys2, *sys2.CreateDefaultContext()));
 
   // Observable: y = x1;
   LinearSystem<double> sys3(A, B, C.topRows(1), D.topRows(1));
-  EXPECT_TRUE(IsObservable(sys3));
+  EXPECT_TRUE(IsObservable(sys3, *sys3.CreateDefaultContext()));
 }
 
 class LinearSystemSymbolicTest : public ::testing::Test {
@@ -531,10 +531,10 @@ TEST_F(LinearSystemSymbolicTest, MakeLinearSystem) {
   // system correctly.
   const auto dut = LinearSystem<double>::MakeLinearSystem(
       A_ * x_ + B_ * u_, C_ * x_ + D_ * u_, x_, u_, 10.0);
-  EXPECT_EQ(dut->A(), A_);
-  EXPECT_EQ(dut->B(), B_);
-  EXPECT_EQ(dut->C(), C_);
-  EXPECT_EQ(dut->D(), D_);
+  EXPECT_EQ(dut->default_A(), A_);
+  EXPECT_EQ(dut->default_B(), B_);
+  EXPECT_EQ(dut->default_C(), C_);
+  EXPECT_EQ(dut->default_D(), D_);
   EXPECT_EQ(dut->time_period(), 10.0);
 }
 
@@ -627,10 +627,10 @@ TEST_F(LinearSystemTest, LinearizeSystemWithParameters) {
   Eigen::Vector2d D = Eigen::Vector2d::Zero();
 
   const double tol = 1e-6;
-  EXPECT_TRUE(CompareMatrices(linearized_pendulum->A(), A, tol));
-  EXPECT_TRUE(CompareMatrices(linearized_pendulum->B(), B, tol));
-  EXPECT_TRUE(CompareMatrices(linearized_pendulum->C(), C, tol));
-  EXPECT_TRUE(CompareMatrices(linearized_pendulum->D(), D, tol));
+  EXPECT_TRUE(CompareMatrices(linearized_pendulum->default_A(), A, tol));
+  EXPECT_TRUE(CompareMatrices(linearized_pendulum->default_B(), B, tol));
+  EXPECT_TRUE(CompareMatrices(linearized_pendulum->default_C(), C, tol));
+  EXPECT_TRUE(CompareMatrices(linearized_pendulum->default_D(), D, tol));
 }
 
 GTEST_TEST(LinearizeTest, NoState) {
@@ -650,12 +650,12 @@ GTEST_TEST(LinearizeTest, NoState) {
   context->FixInputPort(0, Eigen::Vector2d{7, 8});
 
   const auto taylor_sys = FirstOrderTaylorApproximation(sys, *context);
-  EXPECT_TRUE(CompareMatrices(taylor_sys->A(), A, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys->B(), B, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys->f0(), f0, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys->C(), C, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys->D(), D, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys->y0(), y0, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_A(), A, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_B(), B, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_f0(), f0, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_C(), C, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_D(), D, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys->default_y0(), y0, tol));
 
   // Check that I get back the original system (discrete time).
   const AffineSystem<double> sys2(A, B, f0, C, D, y0, 0.1);
@@ -663,12 +663,12 @@ GTEST_TEST(LinearizeTest, NoState) {
   context2->FixInputPort(0, Eigen::Vector2d{7, 8});
 
   const auto taylor_sys2 = FirstOrderTaylorApproximation(sys2, *context2);
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->A(), A, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->B(), B, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->f0(), f0, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->C(), C, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->D(), D, tol));
-  EXPECT_TRUE(CompareMatrices(taylor_sys2->y0(), y0, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_A(), A, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_B(), B, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_f0(), f0, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_C(), C, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_D(), D, tol));
+  EXPECT_TRUE(CompareMatrices(taylor_sys2->default_y0(), y0, tol));
 }
 
 // Simple linear system with multiple vector inputs and outputs.
@@ -774,28 +774,28 @@ void TestMimo(bool is_discrete) {
 
   // First-input, first output.
   auto sys00 = Linearize(sys, *context, 0, 0);
-  EXPECT_TRUE(CompareMatrices(sys00->A(), sys.A_, tol));
-  EXPECT_TRUE(CompareMatrices(sys00->B(), sys.B0_, tol));
-  EXPECT_TRUE(CompareMatrices(sys00->C(), sys.C0_, tol));
-  EXPECT_TRUE(CompareMatrices(sys00->D(), sys.D00_, tol));
+  EXPECT_TRUE(CompareMatrices(sys00->default_A(), sys.A_, tol));
+  EXPECT_TRUE(CompareMatrices(sys00->default_B(), sys.B0_, tol));
+  EXPECT_TRUE(CompareMatrices(sys00->default_C(), sys.C0_, tol));
+  EXPECT_TRUE(CompareMatrices(sys00->default_D(), sys.D00_, tol));
 
   auto sys01 = Linearize(sys, *context, 0, 1);
-  EXPECT_TRUE(CompareMatrices(sys01->A(), sys.A_, tol));
-  EXPECT_TRUE(CompareMatrices(sys01->B(), sys.B0_, tol));
-  EXPECT_TRUE(CompareMatrices(sys01->C(), sys.C1_, tol));
-  EXPECT_TRUE(CompareMatrices(sys01->D(), sys.D10_, tol));
+  EXPECT_TRUE(CompareMatrices(sys01->default_A(), sys.A_, tol));
+  EXPECT_TRUE(CompareMatrices(sys01->default_B(), sys.B0_, tol));
+  EXPECT_TRUE(CompareMatrices(sys01->default_C(), sys.C1_, tol));
+  EXPECT_TRUE(CompareMatrices(sys01->default_D(), sys.D10_, tol));
 
   auto sys10 = Linearize(sys, *context, 1, 0);
-  EXPECT_TRUE(CompareMatrices(sys10->A(), sys.A_, tol));
-  EXPECT_TRUE(CompareMatrices(sys10->B(), sys.B1_, tol));
-  EXPECT_TRUE(CompareMatrices(sys10->C(), sys.C0_, tol));
-  EXPECT_TRUE(CompareMatrices(sys10->D(), sys.D01_, tol));
+  EXPECT_TRUE(CompareMatrices(sys10->default_A(), sys.A_, tol));
+  EXPECT_TRUE(CompareMatrices(sys10->default_B(), sys.B1_, tol));
+  EXPECT_TRUE(CompareMatrices(sys10->default_C(), sys.C0_, tol));
+  EXPECT_TRUE(CompareMatrices(sys10->default_D(), sys.D01_, tol));
 
   auto sys11 = Linearize(sys, *context, 1, 1);
-  EXPECT_TRUE(CompareMatrices(sys11->A(), sys.A_, tol));
-  EXPECT_TRUE(CompareMatrices(sys11->B(), sys.B1_, tol));
-  EXPECT_TRUE(CompareMatrices(sys11->C(), sys.C1_, tol));
-  EXPECT_TRUE(CompareMatrices(sys11->D(), sys.D11_, tol));
+  EXPECT_TRUE(CompareMatrices(sys11->default_A(), sys.A_, tol));
+  EXPECT_TRUE(CompareMatrices(sys11->default_B(), sys.B1_, tol));
+  EXPECT_TRUE(CompareMatrices(sys11->default_C(), sys.C1_, tol));
+  EXPECT_TRUE(CompareMatrices(sys11->default_D(), sys.D11_, tol));
 }
 
 GTEST_TEST(LinearizeTest, TestInputOutputPorts) {

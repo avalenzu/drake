@@ -189,8 +189,9 @@ AffineSystem<T>::AffineSystem(SystemScalarConverter converter,
 template <typename T>
 template <typename U>
 AffineSystem<T>::AffineSystem(const AffineSystem<U>& other)
-    : AffineSystem(other.A(), other.B(), other.f0(), other.C(), other.D(),
-                   other.y0(), other.time_period()) {}
+    : AffineSystem(other.default_A(), other.default_B(), other.default_f0(),
+                   other.default_C(), other.default_D(), other.default_y0(),
+                   other.time_period()) {}
 
 template <typename T>
 unique_ptr<AffineSystem<T>> AffineSystem<T>::MakeAffineSystem(

@@ -61,8 +61,8 @@ class TestMpcWithDoubleIntegrator : public ::testing::Test {
 TEST_F(TestMpcWithDoubleIntegrator, TestAgainstInfiniteHorizonSolution) {
   const double kTolerance = 1e-5;
 
-  const Eigen::Matrix2d A = system_->A();
-  const Eigen::Matrix<double, 2, 1> B = system_->B();
+  const Eigen::Matrix2d A = system_->default_A();
+  const Eigen::Matrix<double, 2, 1> B = system_->default_B();
 
   // Analytical solution to the LQR problem.
   const Eigen::Matrix2d S = DiscreteAlgebraicRiccatiEquation(A, B, Q_, R_);

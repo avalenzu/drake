@@ -191,12 +191,12 @@ class AffineSystem : public TimeVaryingAffineSystem<T> {
 
   /// @name Helper getter methods.
   /// @{
-  const Eigen::MatrixXd& A() const { return A_; }
-  const Eigen::MatrixXd& B() const { return B_; }
-  const Eigen::VectorXd& f0() const { return f0_; }
-  const Eigen::MatrixXd& C() const { return C_; }
-  const Eigen::MatrixXd& D() const { return D_; }
-  const Eigen::VectorXd& y0() const { return y0_; }
+  const Eigen::MatrixXd& default_A() const { return A_; }
+  const Eigen::MatrixXd& default_B() const { return B_; }
+  const Eigen::VectorXd& default_f0() const { return f0_; }
+  const Eigen::MatrixXd& default_C() const { return C_; }
+  const Eigen::MatrixXd& default_D() const { return D_; }
+  const Eigen::VectorXd& default_y0() const { return y0_; }
   /// @}
 
   /// @name Implementations of TimeVaryingAffineSystem<T>'s pure virtual

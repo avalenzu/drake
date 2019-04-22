@@ -94,14 +94,17 @@ GTEST_TEST(DirectCollocationTest, TestCollocationConstraint) {
   // Set up the cubic spline that should represent the state trajectory at any
   // given segment.
   const Eigen::Vector2d x0(6, 7), x1(8, 9), u0(10, 11), u1(12, 13);
-  const Eigen::Vector2d xdot0 = system->A() * x0 + system->B() * u0;
-  const Eigen::Vector2d xdot1 = system->A() * x1 + system->B() * u1;
+  const Eigen::Vector2d xdot0 =
+      system->A(*context) * x0 + system->B(*context) * u0;
+  const Eigen::Vector2d xdot1 =
+      system->A(*context) * x1 + system->B(*context) * u1;
   const auto segment = PiecewisePolynomial<double>::Cubic(
       {0.0, kTimeStep}, {x0, x1}, xdot0, xdot1);
   const auto derivative = segment.derivative();
-  const Eigen::Vector2d defect = derivative.value(kTimeStep / 2.0) -
-                                 system->A() * segment.value(kTimeStep / 2.0) -
-                                 system->B() * (u0 + u1) / 2.0;
+  const Eigen::Vector2d defect =
+      derivative.value(kTimeStep / 2.0) -
+      system->A(*context) * segment.value(kTimeStep / 2.0) -
+      system->B(*context) * (u0 + u1) / 2.0;
 
   for (int i = 0; i < (kNumSampleTimes - 1); i++) {
     const auto& binding = collocation_constraints[i];
@@ -151,10 +154,10 @@ GTEST_TEST(DirectCollocationTest, TestReconstruction) {
     EXPECT_TRUE(CompareMatrices(result.GetSolution(prog.state(i)),
                                 state_spline.value(time), 1e-6));
 
-    EXPECT_TRUE(
-        CompareMatrices(system->A() * result.GetSolution(prog.state(i)) +
-                            system->B() * result.GetSolution(prog.input(i)),
-                        derivative_spline.value(time), 1e-6));
+    EXPECT_TRUE(CompareMatrices(
+        system->A(*context) * result.GetSolution(prog.state(i)) +
+            system->B(*context) * result.GetSolution(prog.input(i)),
+        derivative_spline.value(time), 1e-6));
 
     if (i < (kNumSampleTimes - 1)) {
       time += result.GetSolution(prog.timestep(i).coeff(0));
@@ -172,8 +175,8 @@ GTEST_TEST(DirectCollocationTest, TestReconstruction) {
     const auto& binding = collocation_constraints[i];
     Eigen::Vector2d defect =
         derivative_spline.value(collocation_time) -
-        system->A() * state_spline.value(collocation_time) -
-        system->B() * input_spline.value(collocation_time);
+        system->A(*context) * state_spline.value(collocation_time) -
+        system->B(*context) * input_spline.value(collocation_time);
     EXPECT_TRUE(CompareMatrices(
         defect, prog.EvalBinding(binding, result.get_x_val()), 1e-6));
     time += timestep;

@@ -55,21 +55,23 @@ void TestLQRLinearSystemAgainstKnownSolution(
     const Eigen::Ref<const Eigen::MatrixXd>& N =
         Eigen::Matrix<double, 0, 0>::Zero()) {
   std::unique_ptr<LinearSystem<double>> linear_lqr =
-      LinearQuadraticRegulator(sys, Q, R, N);
+      LinearQuadraticRegulator(sys, *sys.CreateDefaultContext(), Q, R, N);
+  std::unique_ptr<Context<double>> linear_lqr_context =
+      linear_lqr->CreateDefaultContext();
 
-  int n = sys.A().rows();
-  int m = sys.B().cols();
-  EXPECT_TRUE(CompareMatrices(linear_lqr->A(),
+  int n = sys.default_A().rows();
+  int m = sys.default_B().cols();
+  EXPECT_TRUE(CompareMatrices(linear_lqr->A(*linear_lqr_context),
                               Eigen::Matrix<double, 0, 0>::Zero(), tolerance,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(linear_lqr->B(),
+  EXPECT_TRUE(CompareMatrices(linear_lqr->B(*linear_lqr_context),
                               Eigen::MatrixXd::Zero(0, n), tolerance,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(linear_lqr->C(),
+  EXPECT_TRUE(CompareMatrices(linear_lqr->C(*linear_lqr_context),
                               Eigen::MatrixXd::Zero(m, 0), tolerance,
                               MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(linear_lqr->D(), -K_known, tolerance,
-                              MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(linear_lqr->D(*linear_lqr_context), -K_known,
+                              tolerance, MatrixCompareType::absolute));
   EXPECT_EQ(linear_lqr->time_period(), sys.time_period());
 }
 
@@ -81,8 +83,8 @@ void TestLQRAffineSystemAgainstKnownSolution(
     const Eigen::Ref<const Eigen::MatrixXd>& R,
     const Eigen::Ref<const Eigen::MatrixXd>& N =
         Eigen::Matrix<double, 0, 0>::Zero()) {
-  int n = sys.A().rows();
-  int m = sys.B().cols();
+  int n = sys.default_A().rows();
+  int m = sys.default_B().cols();
 
   auto context = sys.CreateDefaultContext();
   Eigen::VectorXd x0 = Eigen::VectorXd::Zero(n);
@@ -96,18 +98,21 @@ void TestLQRAffineSystemAgainstKnownSolution(
   }
   std::unique_ptr<AffineSystem<double>> lqr =
       LinearQuadraticRegulator(sys, *context, Q, R, N);
+  std::unique_ptr<Context<double>> lqr_context = lqr->CreateDefaultContext();
 
-  EXPECT_TRUE(CompareMatrices(lqr->A(), Eigen::Matrix<double, 0, 0>::Zero(),
+  EXPECT_TRUE(CompareMatrices(lqr->A(*lqr_context),
+                              Eigen::Matrix<double, 0, 0>::Zero(), tolerance,
+                              MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(lqr->B(*lqr_context), Eigen::MatrixXd::Zero(0, n),
                               tolerance, MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(lqr->B(), Eigen::MatrixXd::Zero(0, n),
+  EXPECT_TRUE(CompareMatrices(lqr->f0(*lqr_context),
+                              Eigen::Matrix<double, 0, 1>::Zero(), tolerance,
+                              MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(lqr->C(*lqr_context), Eigen::MatrixXd::Zero(m, 0),
                               tolerance, MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(lqr->f0(), Eigen::Matrix<double, 0, 1>::Zero(),
-                              tolerance, MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(lqr->C(), Eigen::MatrixXd::Zero(m, 0),
-                              tolerance, MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(lqr->D(), -K_known,
-                              tolerance, MatrixCompareType::absolute));
-  EXPECT_TRUE(CompareMatrices(lqr->y0(), u0 + K_known * x0,
+  EXPECT_TRUE(CompareMatrices(lqr->D(*lqr_context), -K_known, tolerance,
+                              MatrixCompareType::absolute));
+  EXPECT_TRUE(CompareMatrices(lqr->y0(*lqr_context), u0 + K_known * x0,
                               tolerance, MatrixCompareType::absolute));
   EXPECT_EQ(lqr->time_period(), sys.time_period());
 }

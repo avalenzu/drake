@@ -24,10 +24,11 @@ Eigen::MatrixXd SteadyStateKalmanFilter(
 
 std::unique_ptr<LuenbergerObserver<double>> SteadyStateKalmanFilter(
     std::unique_ptr<LinearSystem<double>> system,
+    const Context<double>& context,
     const Eigen::Ref<const Eigen::MatrixXd>& W,
     const Eigen::Ref<const Eigen::MatrixXd>& V) {
   const Eigen::MatrixXd L =
-      SteadyStateKalmanFilter(system->A(), system->C(), W, V);
+      SteadyStateKalmanFilter(system->A(context), system->C(context), W, V);
 
   return std::make_unique<LuenbergerObserver<double>>(
       std::move(system), system->CreateDefaultContext(), L);
@@ -48,8 +49,8 @@ std::unique_ptr<LuenbergerObserver<double>> SteadyStateKalmanFilter(
 
   auto linear_system = Linearize(*system, *context);
 
-  const Eigen::MatrixXd L =
-      SteadyStateKalmanFilter(linear_system->A(), linear_system->C(), W, V);
+  const Eigen::MatrixXd L = SteadyStateKalmanFilter(
+      linear_system->default_A(), linear_system->default_C(), W, V);
 
   return std::make_unique<LuenbergerObserver<double>>(std::move(system),
                                                       std::move(context), L);

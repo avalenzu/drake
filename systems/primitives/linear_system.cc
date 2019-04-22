@@ -35,8 +35,8 @@ LinearSystem<T>::LinearSystem(const Eigen::Ref<const Eigen::MatrixXd>& A,
 template <typename T>
 template <typename U>
 LinearSystem<T>::LinearSystem(const LinearSystem<U>& other)
-    : LinearSystem<T>(other.A(), other.B(), other.C(), other.D(),
-                      other.time_period()) {}
+    : LinearSystem<T>(other.default_A(), other.default_B(), other.default_C(),
+                      other.default_D(), other.time_period()) {}
 
 template <typename T>
 LinearSystem<T>::LinearSystem(SystemScalarConverter converter,
@@ -253,9 +253,9 @@ std::unique_ptr<LinearSystem<double>> Linearize(
           system, context, std::move(input_port_index),
           std::move(output_port_index), equilibrium_check_tolerance);
 
-  return std::make_unique<LinearSystem<double>>(affine->A(), affine->B(),
-                                                affine->C(), affine->D(),
-                                                affine->time_period());
+  return std::make_unique<LinearSystem<double>>(
+      affine->default_A(), affine->default_B(), affine->default_C(),
+      affine->default_D(), affine->time_period());
 }
 
 std::unique_ptr<AffineSystem<double>> FirstOrderTaylorApproximation(
@@ -268,54 +268,60 @@ std::unique_ptr<AffineSystem<double>> FirstOrderTaylorApproximation(
 }
 
 /// Returns the controllability matrix:  R = [B, AB, ..., A^{n-1}B].
-Eigen::MatrixXd ControllabilityMatrix(const LinearSystem<double>& sys) {
+Eigen::MatrixXd ControllabilityMatrix(const LinearSystem<double>& sys,
+                                      const Context<double>& context) {
   DRAKE_DEMAND(sys.time_period() == 0.0);
   // TODO(russt): handle the discrete time case
 
-  const int num_states = sys.B().rows(), num_inputs = sys.B().cols();
+  const int num_states = sys.B(context).rows(),
+            num_inputs = sys.B(context).cols();
   Eigen::MatrixXd R(num_states, num_states * num_inputs);
-  R.leftCols(num_inputs) = sys.B();
+  R.leftCols(num_inputs) = sys.B(context);
   for (int i = 1; i < num_states; i++) {
     R.middleCols(num_inputs * i, num_inputs) =
-        sys.A() * R.middleCols(num_inputs * (i - 1), num_inputs);
+        sys.A(context) * R.middleCols(num_inputs * (i - 1), num_inputs);
   }
   return R;
 }
 
 /// Returns true iff the controllability matrix is full row rank.
 bool IsControllable(const LinearSystem<double>& sys,
+                    const Context<double>& context,
                     optional<double> threshold) {
-  const auto R = ControllabilityMatrix(sys);
+  const auto R = ControllabilityMatrix(sys, context);
   Eigen::ColPivHouseholderQR<Eigen::MatrixXd> lu_decomp(R);
   if (threshold) {
     lu_decomp.setThreshold(threshold.value());
   }
-  return lu_decomp.rank() == sys.A().rows();
+  return lu_decomp.rank() == sys.A(context).rows();
 }
 
 /// Returns the observability matrix: O = [ C; CA; ...; CA^{n-1} ].
-Eigen::MatrixXd ObservabilityMatrix(const LinearSystem<double>& sys) {
+Eigen::MatrixXd ObservabilityMatrix(const LinearSystem<double>& sys,
+                                    const Context<double>& context) {
   DRAKE_DEMAND(sys.time_period() == 0.0);
   // TODO(russt): handle the discrete time case
 
-  const int num_states = sys.C().cols(), num_outputs = sys.C().rows();
+  const int num_states = sys.C(context).cols(),
+            num_outputs = sys.C(context).rows();
   Eigen::MatrixXd O(num_states * num_outputs, num_states);
-  O.topRows(num_outputs) = sys.C();
+  O.topRows(num_outputs) = sys.C(context);
   for (int i = 1; i < num_states; i++) {
     O.middleRows(num_outputs * i, num_outputs) =
-        O.middleRows(num_outputs * (i - 1), num_outputs) * sys.A();
+        O.middleRows(num_outputs * (i - 1), num_outputs) * sys.A(context);
   }
   return O;
 }
 
 /// Returns true iff the observability matrix is full column rank.
-bool IsObservable(const LinearSystem<double>& sys, optional<double> threshold) {
-  const auto O = ObservabilityMatrix(sys);
+bool IsObservable(const LinearSystem<double>& sys,
+                  const Context<double>& context, optional<double> threshold) {
+  const auto O = ObservabilityMatrix(sys, context);
   Eigen::ColPivHouseholderQR<Eigen::MatrixXd> lu_decomp(O);
   if (threshold) {
     lu_decomp.setThreshold(threshold.value());
   }
-  return lu_decomp.rank() == sys.A().rows();
+  return lu_decomp.rank() == sys.A(context).rows();
 }
 
 }  // namespace systems

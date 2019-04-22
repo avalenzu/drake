@@ -253,20 +253,24 @@ std::unique_ptr<AffineSystem<double>> FirstOrderTaylorApproximation(
 
 /// Returns the controllability matrix:  R = [B, AB, ..., A^{n-1}B].
 /// @ingroup control_systems
-Eigen::MatrixXd ControllabilityMatrix(const LinearSystem<double>& sys);
+Eigen::MatrixXd ControllabilityMatrix(const LinearSystem<double>& sys,
+                                      const Context<double>& context);
 
 /// Returns true iff the controllability matrix is full row rank.
 /// @ingroup control_systems
 bool IsControllable(const LinearSystem<double>& sys,
+                    const Context<double>& context,
                     optional<double> threshold = nullopt);
 
 /// Returns the observability matrix: O = [ C; CA; ...; CA^{n-1} ].
 /// @ingroup estimator_systems
-Eigen::MatrixXd ObservabilityMatrix(const LinearSystem<double>& sys);
+Eigen::MatrixXd ObservabilityMatrix(const LinearSystem<double>& sys,
+                                    const Context<double>& context);
 
 /// Returns true iff the observability matrix is full column rank.
 /// @ingroup estimator_systems
 bool IsObservable(const LinearSystem<double>& sys,
+                  const Context<double>& context,
                   optional<double> threshold = nullopt);
 
 }  // namespace systems

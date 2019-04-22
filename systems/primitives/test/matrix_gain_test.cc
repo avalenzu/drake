@@ -35,12 +35,12 @@ class MatrixGainTest : public AffineLinearSystemTest {
 TEST_F(MatrixGainTest, Construction) {
   EXPECT_EQ(context_->num_input_ports(), 1);
   EXPECT_EQ(dut_->get_name(), "test_matrix_gain_system");
-  EXPECT_EQ(dut_->A(), MatrixX<double>::Zero(kNumStates, kNumStates));
-  EXPECT_EQ(dut_->B(), MatrixX<double>::Zero(kNumStates, D_.cols()));
-  EXPECT_EQ(dut_->f0(), Eigen::VectorXd::Zero(kNumStates));
-  EXPECT_EQ(dut_->C(), MatrixX<double>::Zero(D_.rows(), kNumStates));
-  EXPECT_EQ(dut_->D(), D_);
-  EXPECT_EQ(dut_->y0(), Eigen::VectorXd::Zero(2));
+  EXPECT_EQ(dut_->default_A(), MatrixX<double>::Zero(kNumStates, kNumStates));
+  EXPECT_EQ(dut_->default_B(), MatrixX<double>::Zero(kNumStates, D_.cols()));
+  EXPECT_EQ(dut_->default_f0(), Eigen::VectorXd::Zero(kNumStates));
+  EXPECT_EQ(dut_->default_C(), MatrixX<double>::Zero(D_.rows(), kNumStates));
+  EXPECT_EQ(dut_->default_D(), D_);
+  EXPECT_EQ(dut_->default_y0(), Eigen::VectorXd::Zero(2));
   EXPECT_EQ(dut_->num_output_ports(), 1);
   EXPECT_EQ(dut_->num_input_ports(), 1);
 }
@@ -76,10 +76,10 @@ TEST_F(MatrixGainTest, Output) {
 // Tests converting to different scalar types.
 TEST_F(MatrixGainTest, ConvertScalarType) {
   EXPECT_TRUE(is_autodiffxd_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.D(), D_);
+    EXPECT_EQ(converted.default_D(), D_);
   }));
   EXPECT_TRUE(is_symbolic_convertible(*dut_, [&](const auto& converted) {
-    EXPECT_EQ(converted.D(), D_);
+    EXPECT_EQ(converted.default_D(), D_);
   }));
 }
 

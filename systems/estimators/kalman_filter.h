@@ -55,6 +55,7 @@ Eigen::MatrixXd SteadyStateKalmanFilter(
 /// @ingroup estimator_systems
 std::unique_ptr<LuenbergerObserver<double>> SteadyStateKalmanFilter(
     std::unique_ptr<LinearSystem<double>> system,
+    const Context<double>& context,
     const Eigen::Ref<const Eigen::MatrixXd>& W,
     const Eigen::Ref<const Eigen::MatrixXd>& V);
 
