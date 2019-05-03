@@ -938,11 +938,28 @@ MultibodyPlant<AutoDiffXd>::CalcPointPairPenetrations(
   if (num_collision_geometries() > 0) {
     const auto &query_object = get_geometry_query_input_port().
         Eval<geometry::QueryObject<AutoDiffXd>>(context);
-    auto results = query_object.ComputePointPairPenetration();
-    if (results.size() > 0) {
-      throw std::logic_error(
-          "CalcPointPairPenetration() with AutoDiffXd requires scenarios with "
-          "no collisions.");
+    auto results = query_object.ComputeSignedDistancePairwiseClosestPoints();
+    std::vector<PenetrationAsPointPair<AutoDiffXd>> output;
+    for (const auto& distance_pair : results) {
+      if (distance_pair.distance < 0) {
+        output.emplace_back();
+        PenetrationAsPointPair<AutoDiffXd>& penetration_pair = output.back();
+        penetration_pair.id_A = distance_pair.id_A;
+        penetration_pair.id_B = distance_pair.id_B;
+        const GeometryId geometryA_id = distance_pair.id_A;
+        const GeometryId geometryB_id = distance_pair.id_B;
+
+        BodyIndex bodyA_index = geometry_id_to_body_index_.at(geometryA_id);
+        const Body<AutoDiffXd>& bodyA = this->get_body(bodyA_index);
+        BodyIndex bodyB_index = geometry_id_to_body_index_.at(geometryB_id);
+        const Body<AutoDiffXd>& bodyB = this->get_body(bodyB_index);
+        const RigidTransform<AutoDiffXd> X_WA = this->CalcRelativeTransform(
+            context, this->world_frame(), bodyA.body_frame());
+        penetration_pair.p_WCa = X_WA * distance_pair.p_ACa;
+        const RigidTransform<AutoDiffXd> X_WB = this->CalcRelativeTransform(
+            context, this->world_frame(), bodyB.body_frame());
+        penetration_pair.p_WCa = X_WB * distance_pair.p_BCb;
+      }
     }
   }
   return {};
