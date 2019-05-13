@@ -3,11 +3,42 @@
 #include <limits>
 #include <vector>
 
+#include <Eigen/Dense>
+
 #include "drake/multibody/inverse_kinematics/kinematic_constraint_utilities.h"
 
 namespace drake {
 namespace multibody {
 using internal::RefFromPtrOrThrow;
+
+namespace {
+/** Computes log(∑exp(xᵢ)). Exploits the shift invariance of log-sum-exp to
+avoid overflow. */
+template <typename T>
+T LogSumExp(const std::vector<T>& x) {
+  using std::log;
+  using std::exp;
+  const T x_max = *std::max_element(x.begin(), x.end());
+  T sum_exp{0.0};
+  for (const T& xi : x) {
+    sum_exp += exp(xi - x_max);
+  }
+  return x_max + log(sum_exp);
+}
+
+/** Computes a smooth approximation of max(x). */
+template <typename T>
+T SmoothMax(const std::vector<T>& x) {
+  double alpha{100};
+  std::vector<T> x_scaled{x};
+  for (T& xi_scaled : x_scaled) {
+    xi_scaled *= alpha;
+  }
+  drake::log()->trace("SmoothMax: return {}", LogSumExp(x_scaled) / alpha);
+  return LogSumExp(x_scaled) / alpha;
+}
+
+}  // namespace
 
 void ExponentiallySmoothedHingeLoss(double x, double* penalty,
                                     double* dpenalty_dx) {
@@ -50,11 +81,17 @@ void QuadraticallySmoothedHingeLoss(double x, double* penalty,
 MinimumDistanceConstraint::MinimumDistanceConstraint(
     const multibody::MultibodyPlant<double>* const plant,
     double minimum_distance, systems::Context<double>* plant_context,
-    MinimumDistancePenaltyFunction penalty_function)
+    MinimumDistancePenaltyFunction penalty_function, double threshold_distance)
     : solvers::Constraint(1, RefFromPtrOrThrow(plant).num_positions(),
-                          Vector1d(0), Vector1d(0)),
+                          Vector1d(0), Vector1d([&penalty_function](double x) {
+                            double upper_bound{};
+                            double dummy{};
+                            penalty_function(x, &upper_bound, &dummy);
+                            return upper_bound;
+                          }(minimum_distance / threshold_distance - 1))),
       plant_{RefFromPtrOrThrow(plant)},
       minimum_distance_{minimum_distance},
+      threshold_distance_{threshold_distance},
       plant_context_{plant_context},
       penalty_function_{penalty_function} {
   if (!plant_.geometry_source_is_registered()) {
@@ -64,10 +101,19 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
         "AddMultibodyPlantSceneGraph on how to connect MultibodyPlant to "
         "SceneGraph.");
   }
-  if (minimum_distance_ <= 0) {
+  if (minimum_distance_ < 0) {
     throw std::invalid_argument(
-        "MinimumDistanceConstraint: minimum_distance should be positive.");
+        "MinimumDistanceConstraint: minimum_distance should be non-negative.");
   }
+  if (threshold_distance_ <= minimum_distance) {
+    throw std::invalid_argument(
+        "MinimumDistanceConstraint: threshold_distance should be greater than "
+        "minimum_distance.");
+  }
+  drake::log()->trace("MinimumDistanceConstraint: lower_bound: {}",
+                     this->lower_bound().transpose());
+  drake::log()->trace("MinimumDistanceConstraint: upper_bound: {}",
+                     this->upper_bound().transpose());
 }
 
 namespace {
@@ -79,36 +125,37 @@ void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y) {
   (*y) = math::initializeAutoDiffGivenGradientMatrix(
       Vector1d(0), Eigen::RowVectorXd::Zero(x(0).derivatives().size()));
 }
+
 void AddPenalty(const MultibodyPlant<double>&, const systems::Context<double>&,
                 const Frame<double>&, const Frame<double>&,
                 const Eigen::Vector3d&, double distance,
-                double minimum_distance,
+                double threshold_distance,
                 MinimumDistancePenaltyFunction penalty_function,
                 const Eigen::Vector3d&, const Eigen::Vector3d&,
-                const Eigen::Ref<const Eigen::VectorXd>&, Eigen::VectorXd* y) {
+                const Eigen::Ref<const Eigen::VectorXd>&, double* y) {
   double penalty;
-  const double x = distance / minimum_distance - 1;
+  const double x = distance / threshold_distance - 1;
   penalty_function(x, &penalty, nullptr);
-  (*y)(0) += penalty;
+  *y += penalty;
 }
 
 void AddPenalty(const MultibodyPlant<double>& plant,
                 const systems::Context<double>& context,
                 const Frame<double>& frameA, const Frame<double>& frameB,
                 const Eigen::Vector3d& p_ACa, double distance,
-                double minimum_distance,
+                double threshold_distance,
                 MinimumDistancePenaltyFunction penalty_function,
                 const Eigen::Vector3d& p_WCa, const Eigen::Vector3d& p_WCb,
-                const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y) {
+                const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffXd* y) {
   // The distance is d = sign * |p_CbCa_B|, where the
   // closest points are Ca on object A, and Cb on object B.
   // So the gradient ∂d/∂q = p_CbCa_W * ∂p_BCa_B/∂q / d
   // where p_CbCa_W = p_WCa - p_WCb = p_WA + R_WA * p_ACa - (p_WB + R_WB *
   // p_BCb)
   double penalty, dpenalty_dx;
-  const double penalty_x = distance / minimum_distance - 1;
+  const double penalty_x = distance / threshold_distance - 1;
   penalty_function(penalty_x, &penalty, &dpenalty_dx);
-  const double dpenalty_ddistance = dpenalty_dx / minimum_distance;
+  const double dpenalty_ddistance = dpenalty_dx / threshold_distance;
 
   Eigen::Matrix<double, 6, Eigen::Dynamic> Jq_V_BCa_W(6, plant.num_positions());
   plant.CalcJacobianSpatialVelocity(context, JacobianWrtVariable::kQDot, frameA,
@@ -120,7 +167,12 @@ void AddPenalty(const MultibodyPlant<double>& plant,
       math::initializeAutoDiffGivenGradientMatrix(
           Vector1d(penalty), dpenalty_ddistance * ddistance_dq *
                                  math::autoDiffToGradientMatrix(x));
-  *y += penalty_autodiff;
+  *y += penalty_autodiff(0);
+  drake::log()->trace("MinimumDistanceConstraint::AddPenalty:");
+  drake::log()->trace("    frameA:   {}", frameA.name());
+  drake::log()->trace("    frameB:   {}", frameB.name());
+  drake::log()->trace("    distance: {}", distance);
+  drake::log()->trace("    penalty:  {}", penalty);
 }
 }  // namespace
 
@@ -144,13 +196,15 @@ void MinimumDistanceConstraint::DoEvalGeneric(
 
   const std::vector<geometry::SignedDistancePair<double>>
       signed_distance_pairs =
-          query_object.ComputeSignedDistancePairwiseClosestPoints();
+          query_object.ComputeSignedDistancePairwiseClosestPoints(
+              threshold_distance_);
 
   InitializeY(x, y);
 
+  std::vector<T> penalties;
   for (const auto& signed_distance_pair : signed_distance_pairs) {
     const double distance = signed_distance_pair.distance;
-    if (distance < minimum_distance_) {
+    if (distance < threshold_distance_) {
       Vector3<double> p_WCa, p_WCb;
       const geometry::SceneGraphInspector<double>& inspector =
           query_object.inspector();
@@ -170,13 +224,18 @@ void MinimumDistanceConstraint::DoEvalGeneric(
                                  inspector.X_FG(signed_distance_pair.id_B) *
                                      signed_distance_pair.p_BCb,
                                  plant_.world_frame(), &p_WCb);
+      penalties.push_back(0.0);
       AddPenalty(plant_, *plant_context_, frameA, frameB,
                  inspector.X_FG(signed_distance_pair.id_A) *
                      signed_distance_pair.p_ACa,
-                 distance, minimum_distance_, penalty_function_, p_WCa, p_WCb,
-                 x, y);
+                 distance, threshold_distance_, penalty_function_, p_WCa, p_WCb,
+                 x, &penalties.back());
     }
   }
+  if (!penalties.empty()) {
+    (*y)(0) = SmoothMax(penalties);
+  }
+  drake::log()->trace("MinimumDistanceConstraint: Value: {}", y->transpose());
 }
 
 void MinimumDistanceConstraint::DoEval(
