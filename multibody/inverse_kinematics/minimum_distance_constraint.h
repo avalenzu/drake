@@ -101,6 +101,10 @@ class MinimumDistanceConstraint : public solvers::Constraint {
         "variables.");
   }
 
+  double Penalty(double distance) const;
+
+  AutoDiffXd Penalty(AutoDiffXd distance) const;
+
   template <typename T>
   void DoEvalGeneric(const Eigen::Ref<const VectorX<T>>& x,
                      VectorX<T>* y) const;
@@ -108,6 +112,7 @@ class MinimumDistanceConstraint : public solvers::Constraint {
   const multibody::MultibodyPlant<double>& plant_;
   const double minimum_distance_;
   const double threshold_distance_;
+  const double penalty_scaling_;
   systems::Context<double>* const plant_context_;
   MinimumDistancePenaltyFunction penalty_function_;
 };

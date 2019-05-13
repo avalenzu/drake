@@ -83,15 +83,16 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
     double minimum_distance, systems::Context<double>* plant_context,
     MinimumDistancePenaltyFunction penalty_function, double threshold_distance)
     : solvers::Constraint(1, RefFromPtrOrThrow(plant).num_positions(),
-                          Vector1d(0), Vector1d([&penalty_function](double x) {
-                            double upper_bound{};
-                            double dummy{};
-                            penalty_function(x, &upper_bound, &dummy);
-                            return upper_bound;
-                          }(minimum_distance / threshold_distance - 1))),
+                          Vector1d(0), Vector1d(1)),
       plant_{RefFromPtrOrThrow(plant)},
       minimum_distance_{minimum_distance},
       threshold_distance_{threshold_distance},
+      penalty_scaling_{1.0/[&penalty_function](double x) {
+        double scaling{};
+        double dummy{};
+        penalty_function(x, &scaling, &dummy);
+        return scaling;
+      }(-1.0)},
       plant_context_{plant_context},
       penalty_function_{penalty_function} {
   if (!plant_.geometry_source_is_registered()) {
@@ -126,55 +127,83 @@ void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y) {
       Vector1d(0), Eigen::RowVectorXd::Zero(x(0).derivatives().size()));
 }
 
-void AddPenalty(const MultibodyPlant<double>&, const systems::Context<double>&,
-                const Frame<double>&, const Frame<double>&,
-                const Eigen::Vector3d&, double distance,
-                double threshold_distance,
-                MinimumDistancePenaltyFunction penalty_function,
-                const Eigen::Vector3d&, const Eigen::Vector3d&,
-                const Eigen::Ref<const Eigen::VectorXd>&, double* y) {
-  double penalty;
-  const double x = distance / threshold_distance - 1;
-  penalty_function(x, &penalty, nullptr);
-  *y += penalty;
+void Distance(const MultibodyPlant<double>&, const systems::Context<double>&,
+              const geometry::SignedDistancePair<double> signed_distance_pair,
+              double* distance) {
+  DRAKE_ASSERT(distance != nullptr);
+  *distance = signed_distance_pair.distance;
 }
 
-void AddPenalty(const MultibodyPlant<double>& plant,
-                const systems::Context<double>& context,
-                const Frame<double>& frameA, const Frame<double>& frameB,
-                const Eigen::Vector3d& p_ACa, double distance,
-                double threshold_distance,
-                MinimumDistancePenaltyFunction penalty_function,
-                const Eigen::Vector3d& p_WCa, const Eigen::Vector3d& p_WCb,
-                const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffXd* y) {
+void Distance(const MultibodyPlant<double>& plant,
+              const systems::Context<double>& plant_context,
+              const geometry::SignedDistancePair<double> signed_distance_pair,
+              AutoDiffXd* distance) {
+  DRAKE_ASSERT(distance != nullptr);
+  const auto& query_port = plant.get_geometry_query_input_port();
+  if (!query_port.HasValue(plant_context)) {
+    throw std::invalid_argument(
+        "MinimumDistanceConstraint: Cannot get a valid geometry::QueryObject. "
+        "Either the plant geometry_query_input_port() is not properly "
+        "connected to the SceneGraph's output port, or the plant_context is "
+        "incorrect. Please refer to AddMultibodyPlantSceneGraph on connecting "
+        "MultibodyPlant to SceneGraph.");
+  }
+  Vector3<double> p_WCa, p_WCb;
+  const auto& query_object =
+      query_port.Eval<geometry::QueryObject<double>>(plant_context);
+  const geometry::SceneGraphInspector<double>& inspector =
+      query_object.inspector();
+  const geometry::FrameId frame_A_id =
+      inspector.GetFrameId(signed_distance_pair.id_A);
+  const geometry::FrameId frame_B_id =
+      inspector.GetFrameId(signed_distance_pair.id_B);
+  const Frame<double>& frame_A =
+      plant.GetBodyFromFrameId(frame_A_id)->body_frame();
+  const Frame<double>& frame_B =
+      plant.GetBodyFromFrameId(frame_B_id)->body_frame();
+  plant.CalcPointsPositions(
+      plant_context, frame_A,
+      inspector.X_FG(signed_distance_pair.id_A) * signed_distance_pair.p_ACa,
+      plant.world_frame(), &p_WCa);
+  plant.CalcPointsPositions(
+      plant_context, frame_B,
+      inspector.X_FG(signed_distance_pair.id_B) * signed_distance_pair.p_BCb,
+      plant.world_frame(), &p_WCb);
+
   // The distance is d = sign * |p_CbCa_B|, where the
   // closest points are Ca on object A, and Cb on object B.
   // So the gradient ∂d/∂q = p_CbCa_W * ∂p_BCa_B/∂q / d
   // where p_CbCa_W = p_WCa - p_WCb = p_WA + R_WA * p_ACa - (p_WB + R_WB *
   // p_BCb)
-  double penalty, dpenalty_dx;
-  const double penalty_x = distance / threshold_distance - 1;
-  penalty_function(penalty_x, &penalty, &dpenalty_dx);
-  const double dpenalty_ddistance = dpenalty_dx / threshold_distance;
-
   Eigen::Matrix<double, 6, Eigen::Dynamic> Jq_V_BCa_W(6, plant.num_positions());
-  plant.CalcJacobianSpatialVelocity(context, JacobianWrtVariable::kQDot, frameA,
-                                    p_ACa, frameB, plant.world_frame(),
-                                    &Jq_V_BCa_W);
+  plant.CalcJacobianSpatialVelocity(plant_context, JacobianWrtVariable::kQDot,
+                                    frame_A, signed_distance_pair.p_ACa, frame_B,
+                                    plant.world_frame(), &Jq_V_BCa_W);
   const Eigen::RowVectorXd ddistance_dq =
-      (p_WCa - p_WCb).transpose() * Jq_V_BCa_W.bottomRows<3>() / distance;
-  const Vector1<AutoDiffXd> penalty_autodiff =
-      math::initializeAutoDiffGivenGradientMatrix(
-          Vector1d(penalty), dpenalty_ddistance * ddistance_dq *
-                                 math::autoDiffToGradientMatrix(x));
-  *y += penalty_autodiff(0);
-  drake::log()->trace("MinimumDistanceConstraint::AddPenalty:");
-  drake::log()->trace("    frameA:   {}", frameA.name());
-  drake::log()->trace("    frameB:   {}", frameB.name());
-  drake::log()->trace("    distance: {}", distance);
-  drake::log()->trace("    penalty:  {}", penalty);
+      (p_WCa - p_WCb).transpose() * Jq_V_BCa_W.bottomRows<3>() / signed_distance_pair.distance;
+  AutoDiffVecXd q = plant.GetPositions(plant_context);
+  *distance = AutoDiffXd{signed_distance_pair.distance,
+                         ddistance_dq * math::autoDiffToGradientMatrix(q)};
 }
+
 }  // namespace
+
+double MinimumDistanceConstraint::Penalty(double distance) const {
+  double penalty{};
+  double dummy{};
+  penalty_function_(distance, &penalty, &dummy);
+  return penalty;
+}
+
+AutoDiffXd MinimumDistanceConstraint::Penalty(AutoDiffXd distance) const {
+  double penalty_double{};
+  double dpenalty_ddistance{};
+  penalty_function_(distance.value(), &penalty_double,
+                    &dpenalty_ddistance);
+  return math::initializeAutoDiffGivenGradientMatrix(
+      Vector1d(penalty_double),
+      Vector1d(dpenalty_ddistance) * distance.derivatives())(0);
+}
 
 template <typename T>
 void MinimumDistanceConstraint::DoEvalGeneric(
@@ -203,33 +232,12 @@ void MinimumDistanceConstraint::DoEvalGeneric(
 
   std::vector<T> penalties;
   for (const auto& signed_distance_pair : signed_distance_pairs) {
-    const double distance = signed_distance_pair.distance;
-    if (distance < threshold_distance_) {
-      Vector3<double> p_WCa, p_WCb;
-      const geometry::SceneGraphInspector<double>& inspector =
-          query_object.inspector();
-      const geometry::FrameId frame_A_id =
-          inspector.GetFrameId(signed_distance_pair.id_A);
-      const geometry::FrameId frame_B_id =
-          inspector.GetFrameId(signed_distance_pair.id_B);
-      const Frame<double>& frameA =
-          plant_.GetBodyFromFrameId(frame_A_id)->body_frame();
-      const Frame<double>& frameB =
-          plant_.GetBodyFromFrameId(frame_B_id)->body_frame();
-      plant_.CalcPointsPositions(*plant_context_, frameA,
-                                 inspector.X_FG(signed_distance_pair.id_A) *
-                                     signed_distance_pair.p_ACa,
-                                 plant_.world_frame(), &p_WCa);
-      plant_.CalcPointsPositions(*plant_context_, frameB,
-                                 inspector.X_FG(signed_distance_pair.id_B) *
-                                     signed_distance_pair.p_BCb,
-                                 plant_.world_frame(), &p_WCb);
-      penalties.push_back(0.0);
-      AddPenalty(plant_, *plant_context_, frameA, frameB,
-                 inspector.X_FG(signed_distance_pair.id_A) *
-                     signed_distance_pair.p_ACa,
-                 distance, threshold_distance_, penalty_function_, p_WCa, p_WCb,
-                 x, &penalties.back());
+    if (signed_distance_pair.distance < threshold_distance_) {
+      T distance{};
+      Distance(plant_, *plant_context_, signed_distance_pair, &distance);
+      penalties.push_back(penalty_scaling_ *
+                          Penalty((distance - threshold_distance_) /
+                                  (threshold_distance_ - minimum_distance_)));
     }
   }
   if (!penalties.empty()) {
