@@ -38,6 +38,12 @@ T SmoothMax(const std::vector<T>& x) {
   return LogSumExp(x_scaled) / alpha;
 }
 
+template <typename T>
+T ScaleDistance(T distance, double minimum_distance, double threshold_distance) {
+  return (distance - threshold_distance) /
+         (threshold_distance - minimum_distance);
+}
+
 }  // namespace
 
 void ExponentiallySmoothedHingeLoss(double x, double* penalty,
@@ -83,12 +89,14 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
     double minimum_distance, systems::Context<double>* plant_context,
     MinimumDistancePenaltyFunction penalty_function, double threshold_distance)
     : solvers::Constraint(1, RefFromPtrOrThrow(plant).num_positions(),
-                          Vector1d(0), Vector1d([&penalty_function](double x) {
+                          Vector1d(0),
+                          Vector1d([&penalty_function](double x) {
                             double upper_bound{};
                             double dummy{};
                             penalty_function(x, &upper_bound, &dummy);
                             return upper_bound;
-                          }(minimum_distance / threshold_distance - 1))),
+                          }(ScaleDistance(minimum_distance, minimum_distance,
+                                          threshold_distance)))),
       plant_{RefFromPtrOrThrow(plant)},
       minimum_distance_{minimum_distance},
       threshold_distance_{threshold_distance},
@@ -129,12 +137,13 @@ void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y) {
 void AddPenalty(const MultibodyPlant<double>&, const systems::Context<double>&,
                 const Frame<double>&, const Frame<double>&,
                 const Eigen::Vector3d&, double distance,
+                double minimum_distance,
                 double threshold_distance,
                 MinimumDistancePenaltyFunction penalty_function,
                 const Eigen::Vector3d&, const Eigen::Vector3d&,
                 const Eigen::Ref<const Eigen::VectorXd>&, double* y) {
   double penalty;
-  const double x = distance / threshold_distance - 1;
+  const double x = ScaleDistance(x, minimum_distance, threshold_distance);
   penalty_function(x, &penalty, nullptr);
   *y += penalty;
 }
@@ -143,6 +152,7 @@ void AddPenalty(const MultibodyPlant<double>& plant,
                 const systems::Context<double>& context,
                 const Frame<double>& frameA, const Frame<double>& frameB,
                 const Eigen::Vector3d& p_ACa, double distance,
+                double minimum_distance,
                 double threshold_distance,
                 MinimumDistancePenaltyFunction penalty_function,
                 const Eigen::Vector3d& p_WCa, const Eigen::Vector3d& p_WCb,
@@ -152,21 +162,26 @@ void AddPenalty(const MultibodyPlant<double>& plant,
   // So the gradient ∂d/∂q = p_CbCa_W * ∂p_BCa_B/∂q / d
   // where p_CbCa_W = p_WCa - p_WCb = p_WA + R_WA * p_ACa - (p_WB + R_WB *
   // p_BCb)
-  double penalty, dpenalty_dx;
-  const double penalty_x = distance / threshold_distance - 1;
-  penalty_function(penalty_x, &penalty, &dpenalty_dx);
-  const double dpenalty_ddistance = dpenalty_dx / threshold_distance;
-
   Eigen::Matrix<double, 6, Eigen::Dynamic> Jq_V_BCa_W(6, plant.num_positions());
   plant.CalcJacobianSpatialVelocity(context, JacobianWrtVariable::kQDot, frameA,
                                     p_ACa, frameB, plant.world_frame(),
                                     &Jq_V_BCa_W);
   const Eigen::RowVectorXd ddistance_dq =
       (p_WCa - p_WCb).transpose() * Jq_V_BCa_W.bottomRows<3>() / distance;
+  AutoDiffXd distance_autodiff{
+      distance, ddistance_dq * math::autoDiffToGradientMatrix(x)};
+  const AutoDiffXd scaled_distance_autodiff =
+      ScaleDistance(distance_autodiff, minimum_distance, threshold_distance);
+  double penalty, dpenalty_dscaled_distance;
+  penalty_function(scaled_distance_autodiff.value(), &penalty,
+                   &dpenalty_dscaled_distance);
+
   const Vector1<AutoDiffXd> penalty_autodiff =
       math::initializeAutoDiffGivenGradientMatrix(
-          Vector1d(penalty), dpenalty_ddistance * ddistance_dq *
-                                 math::autoDiffToGradientMatrix(x));
+          Vector1d(penalty),
+          dpenalty_dscaled_distance *
+              math::autoDiffToGradientMatrix(
+                  Vector1<AutoDiffXd>{scaled_distance_autodiff}));
   *y += penalty_autodiff(0);
   drake::log()->trace("MinimumDistanceConstraint::AddPenalty:");
   drake::log()->trace("    frameA:   {}", frameA.name());
@@ -228,7 +243,7 @@ void MinimumDistanceConstraint::DoEvalGeneric(
       AddPenalty(plant_, *plant_context_, frameA, frameB,
                  inspector.X_FG(signed_distance_pair.id_A) *
                      signed_distance_pair.p_ACa,
-                 distance, threshold_distance_, penalty_function_, p_WCa, p_WCb,
+                 distance, minimum_distance_, threshold_distance_, penalty_function_, p_WCa, p_WCb,
                  x, &penalties.back());
     }
   }
