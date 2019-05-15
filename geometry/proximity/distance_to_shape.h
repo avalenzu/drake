@@ -401,8 +401,10 @@ struct ScalarSupport<Eigen::AutoDiffScalar<DerType>> {
     // either a box or sphere. This will be replaced in the near
     // future with something that is less obfuscated.
     return (node1 == fcl::GEOM_SPHERE &&
-        (node2 == fcl::GEOM_SPHERE || node2 == fcl::GEOM_BOX)) ||
-        (node2 == fcl::GEOM_SPHERE && node1 == fcl::GEOM_BOX);
+            (node2 == fcl::GEOM_SPHERE || node2 == fcl::GEOM_BOX ||
+             node2 == fcl::GEOM_CYLINDER)) ||
+           (node2 == fcl::GEOM_SPHERE && node1 == fcl::GEOM_BOX) ||
+           (node2 == fcl::GEOM_SPHERE && node1 == fcl::GEOM_CYLINDER);
   }
 };
 
