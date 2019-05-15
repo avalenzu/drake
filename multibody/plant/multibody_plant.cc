@@ -938,7 +938,7 @@ MultibodyPlant<AutoDiffXd>::CalcPointPairPenetrations(
   if (num_collision_geometries() > 0) {
     const auto &query_object = get_geometry_query_input_port().
         Eval<geometry::QueryObject<AutoDiffXd>>(context);
-    auto results = query_object.ComputeSignedDistancePairwiseClosestPoints();
+    auto results = query_object.ComputeSignedDistancePairwiseClosestPoints(0.0);
     std::vector<PenetrationAsPointPair<AutoDiffXd>> output;
     for (const auto& distance_pair : results) {
       if (distance_pair.distance < 0) {
