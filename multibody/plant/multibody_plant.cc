@@ -959,6 +959,7 @@ MultibodyPlant<AutoDiffXd>::CalcPointPairPenetrations(
         const RigidTransform<AutoDiffXd> X_WB = this->CalcRelativeTransform(
             context, this->world_frame(), bodyB.body_frame());
         penetration_pair.p_WCa = X_WB * distance_pair.p_BCb;
+        penetration_pair.nhat_BA_W = distance_pair.nhat_BA_W;
       }
     }
   }
