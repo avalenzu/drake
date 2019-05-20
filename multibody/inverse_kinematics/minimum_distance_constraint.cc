@@ -158,28 +158,21 @@ void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y,
       Vector1d(y_value), Eigen::RowVectorXd::Zero(x(0).derivatives().size()));
 }
 
-void Penalty(const MultibodyPlant<double>&, const systems::Context<double>&,
-             const Frame<double>&, const Frame<double>&, const Eigen::Vector3d&,
-             double distance, double minimum_distance,
-             double influence_distance,
-             MinimumDistancePenaltyFunction penalty_function,
-             const Eigen::Vector3d&, const Eigen::Ref<const Eigen::VectorXd>&,
-             double* y) {
-  double penalty;
-  const double x =
-      ScaleDistance(distance, minimum_distance, influence_distance);
-  penalty_function(x, &penalty, nullptr);
-  *y = penalty;
+void Distance(const MultibodyPlant<double>&,
+              const systems::Context<double>&, const Frame<double>&,
+              const Frame<double>&, const Eigen::Vector3d&, double distance,
+              const Eigen::Vector3d&, const Eigen::Ref<const AutoDiffVecXd>&,
+              double* distance_double) {
+  *distance_double = distance;
 }
 
-void Penalty(const MultibodyPlant<double>& plant,
-             const systems::Context<double>& context,
-             const Frame<double>& frameA, const Frame<double>& frameB,
-             const Eigen::Vector3d& p_ACa, double distance,
-             double minimum_distance, double influence_distance,
-             MinimumDistancePenaltyFunction penalty_function,
-             const Eigen::Vector3d& nhat_BA_W,
-             const Eigen::Ref<const AutoDiffVecXd>& q, AutoDiffXd* y) {
+void Distance(const MultibodyPlant<double>& plant,
+              const systems::Context<double>& context,
+              const Frame<double>& frameA, const Frame<double>& frameB,
+              const Eigen::Vector3d& p_ACa, double distance,
+              const Eigen::Vector3d& nhat_BA_W,
+              const Eigen::Ref<const AutoDiffVecXd>& q,
+              AutoDiffXd* distance_autodiff) {
   // The distance is d = sign * |p_CbCa_B|, where the
   // closest points are Ca on object A, and Cb on object B.
   // So the gradient ∂d/∂q = p_CbCa_W * ∂p_BCa_B/∂q / d (Note that
@@ -194,10 +187,26 @@ void Penalty(const MultibodyPlant<double>& plant,
                                           frameA, p_ACa, frameB,
                                           plant.world_frame(), &Jq_v_BCa_W);
   const Eigen::RowVectorXd ddistance_dq = nhat_BA_W.transpose() * Jq_v_BCa_W;
-  AutoDiffXd distance_autodiff{
-      distance, ddistance_dq * math::autoDiffToGradientMatrix(q)};
+  distance_autodiff->value() = distance;
+  distance_autodiff->derivatives() =
+      ddistance_dq * math::autoDiffToGradientMatrix(q);
+}
+
+void Penalty(double distance, double minimum_distance,
+             double influence_distance,
+             MinimumDistancePenaltyFunction penalty_function, double* y) {
+  double penalty;
+  const double x =
+      ScaleDistance(distance, minimum_distance, influence_distance);
+  penalty_function(x, &penalty, nullptr);
+  *y = penalty;
+}
+
+void Penalty(AutoDiffXd distance, double minimum_distance,
+             double influence_distance,
+             MinimumDistancePenaltyFunction penalty_function, AutoDiffXd* y) {
   const AutoDiffXd scaled_distance_autodiff =
-      ScaleDistance(distance_autodiff, minimum_distance, influence_distance);
+      ScaleDistance(distance, minimum_distance, influence_distance);
   double penalty, dpenalty_dscaled_distance;
   penalty_function(scaled_distance_autodiff.value(), &penalty,
                    &dpenalty_dscaled_distance);
@@ -239,10 +248,9 @@ void MinimumDistanceConstraint::DoEvalGeneric(
   InitializeY(x, y,
               SmoothMax(std::vector<double>(num_collision_candidates_, 0.0)));
 
-  std::vector<T> penalties;
+  std::vector<T> distances;
   for (const auto& signed_distance_pair : signed_distance_pairs) {
-    const double distance = signed_distance_pair.distance;
-    if (distance < influence_distance_) {
+    if (signed_distance_pair.distance < influence_distance_) {
       const geometry::SceneGraphInspector<double>& inspector =
           query_object.inspector();
       const geometry::FrameId frame_A_id =
@@ -253,13 +261,20 @@ void MinimumDistanceConstraint::DoEvalGeneric(
           plant_.GetBodyFromFrameId(frame_A_id)->body_frame();
       const Frame<double>& frameB =
           plant_.GetBodyFromFrameId(frame_B_id)->body_frame();
+      distances.emplace_back();
+      Distance(plant_, *plant_context_, frameA, frameB,
+               inspector.X_FG(signed_distance_pair.id_A) *
+                   signed_distance_pair.p_ACa,
+               signed_distance_pair.distance, signed_distance_pair.nhat_BA_W, x,
+               &distances.back());
+    }
+  }
+  std::vector<T> penalties;
+  for (const auto& distance : distances) {
+    if (distance < influence_distance_) {
       penalties.emplace_back();
-      Penalty(plant_, *plant_context_, frameA, frameB,
-              inspector.X_FG(signed_distance_pair.id_A) *
-                  signed_distance_pair.p_ACa,
-              distance, minimum_distance_, influence_distance_,
-              penalty_function_, signed_distance_pair.nhat_BA_W, x,
-              &penalties.back());
+      Penalty(distance, minimum_distance_, influence_distance_,
+              penalty_function_, &penalties.back());
       penalties.back() *= penalty_output_scaling_;
     }
   }
