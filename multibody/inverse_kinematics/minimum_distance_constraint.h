@@ -15,7 +15,10 @@ penalty functions must meet the following criteria:
 1.     γ(x) ≥ 0 ∀ x ∈ ℝ.
 2. dγ(x)/dx ≤ 0 ∀ x ∈ ℝ.
 3.     γ(x) = 0 ∀ x ≥ 0.
-4. dγ(x)/dx < 0 ∀ x < 0. */
+4. dγ(x)/dx < 0 ∀ x < 0.
+
+If `dpenalty_dx` is nullptr, the function should only compute γ(x).
+*/
 using MinimumDistancePenaltyFunction =
     std::function<void(double x, double* penalty, double* dpenalty_dx)>;
 
