@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/solvers/constraint.h"
@@ -117,6 +118,9 @@ class MinimumDistanceConstraint : public solvers::Constraint {
   template <typename T>
   void DoEvalGeneric(const Eigen::Ref<const VectorX<T>>& x,
                      VectorX<T>* y) const;
+
+  template <typename T>
+  std::vector<T> Distances(const Eigen::Ref<const VectorX<T>>& x) const;
 
   const multibody::MultibodyPlant<double>& plant_;
   const double minimum_distance_;

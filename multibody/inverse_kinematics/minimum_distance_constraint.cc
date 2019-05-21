@@ -222,11 +222,9 @@ void Penalty(AutoDiffXd distance, double minimum_distance,
 }  // namespace
 
 template <typename T>
-void MinimumDistanceConstraint::DoEvalGeneric(
-    const Eigen::Ref<const VectorX<T>>& x, VectorX<T>* y) const {
-  y->resize(1);
-
-  internal::UpdateContextConfiguration(plant_context_, plant_, x);
+std::vector<T> MinimumDistanceConstraint::Distances(
+    const Eigen::Ref<const VectorX<T>>& q) const {
+  internal::UpdateContextConfiguration(plant_context_, plant_, q);
   const auto& query_port = plant_.get_geometry_query_input_port();
   if (!query_port.HasValue(*plant_context_)) {
     throw std::invalid_argument(
@@ -241,13 +239,8 @@ void MinimumDistanceConstraint::DoEvalGeneric(
 
   const std::vector<geometry::SignedDistancePair<double>>
       signed_distance_pairs =
-          query_object.ComputeSignedDistancePairwiseClosestPoints(
-              influence_distance_);
-
-  // Initialize y to SmoothMax([0, 0, ..., 0]).
-  InitializeY(x, y,
-              SmoothMax(std::vector<double>(num_collision_candidates_, 0.0)));
-
+      query_object.ComputeSignedDistancePairwiseClosestPoints(
+          influence_distance_);
   std::vector<T> distances;
   for (const auto& signed_distance_pair : signed_distance_pairs) {
     if (signed_distance_pair.distance < influence_distance_) {
@@ -264,11 +257,26 @@ void MinimumDistanceConstraint::DoEvalGeneric(
       distances.emplace_back();
       Distance(plant_, *plant_context_, frameA, frameB,
                inspector.X_FG(signed_distance_pair.id_A) *
-                   signed_distance_pair.p_ACa,
-               signed_distance_pair.distance, signed_distance_pair.nhat_BA_W, x,
+               signed_distance_pair.p_ACa,
+               signed_distance_pair.distance, signed_distance_pair.nhat_BA_W, q,
                &distances.back());
     }
   }
+  return distances;
+}
+
+template <typename T>
+void MinimumDistanceConstraint::DoEvalGeneric(
+    const Eigen::Ref<const VectorX<T>>& x, VectorX<T>* y) const {
+  y->resize(1);
+
+
+  // Initialize y to SmoothMax([0, 0, ..., 0]).
+  InitializeY(x, y,
+              SmoothMax(std::vector<double>(num_collision_candidates_, 0.0)));
+
+  std::vector<T> distances = Distances(x);
+
   std::vector<T> penalties;
   for (const auto& distance : distances) {
     if (distance < influence_distance_) {
