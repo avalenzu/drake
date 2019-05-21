@@ -48,6 +48,135 @@ T ScaleDistance(T distance, double minimum_distance,
          (influence_distance - minimum_distance);
 }
 
+void InitializeY(const Eigen::Ref<const Eigen::VectorXd>&, Eigen::VectorXd* y,
+                 double y_value) {
+  (*y)(0) = y_value;
+}
+
+void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y,
+                 double y_value) {
+  (*y) = math::initializeAutoDiffGivenGradientMatrix(
+      Vector1d(y_value), Eigen::RowVectorXd::Zero(x(0).derivatives().size()));
+}
+
+void Penalty(double distance, double minimum_distance,
+             double influence_distance,
+             MinimumDistancePenaltyFunction penalty_function, double* y) {
+  double penalty;
+  const double x =
+      ScaleDistance(distance, minimum_distance, influence_distance);
+  penalty_function(x, &penalty, nullptr);
+  *y = penalty;
+}
+
+void Penalty(AutoDiffXd distance, double minimum_distance,
+             double influence_distance,
+             MinimumDistancePenaltyFunction penalty_function, AutoDiffXd* y) {
+  const AutoDiffXd scaled_distance_autodiff =
+      ScaleDistance(distance, minimum_distance, influence_distance);
+  double penalty, dpenalty_dscaled_distance;
+  penalty_function(scaled_distance_autodiff.value(), &penalty,
+                   &dpenalty_dscaled_distance);
+
+  const Vector1<AutoDiffXd> penalty_autodiff =
+      math::initializeAutoDiffGivenGradientMatrix(
+          Vector1d(penalty),
+          dpenalty_dscaled_distance *
+              math::autoDiffToGradientMatrix(
+                  Vector1<AutoDiffXd>{scaled_distance_autodiff}));
+  *y = penalty_autodiff(0);
+}
+
+
+class GenericMinimumDistanceConstraint : public solvers::Constraint {
+ public:
+  GenericMinimumDistanceConstraint(
+      int num_vars, double minimum_distance, double influence_distance_offset,
+      int max_num_distances,
+      std::function<AutoDiffVecXd(const Eigen::Ref<const AutoDiffVecXd>&)>
+          distance_function_autodiff,
+      std::function<VectorX<double>(const Eigen::Ref<const VectorX<double>>&)>
+          distance_function_double = {})
+      : solvers::Constraint(1, num_vars, Vector1d(0), Vector1d(1)),
+        distance_function_autodiff_{distance_function_autodiff},
+        distance_function_double_{distance_function_double},
+        minimum_distance_{minimum_distance},
+        influence_distance_{minimum_distance + influence_distance_offset},
+        max_num_distances_{max_num_distances} {
+    set_penalty_function(QuadraticallySmoothedHingeLoss);
+  }
+
+  void set_penalty_function(MinimumDistancePenaltyFunction new_penalty_function) {
+    penalty_function_ = new_penalty_function;
+    penalty_function_(ScaleDistance(minimum_distance_, minimum_distance_,
+                                    influence_distance_), &penalty_output_scaling_, nullptr);
+  }
+
+ protected:
+ private:
+  template <typename T>
+  void DoEvalGenericFromDistance(const Eigen::Ref<const VectorX<T>>& distances,
+                                 VectorX<T>* y) const {
+    y->resize(1);
+
+    // Initialize y to SmoothMax([0, 0, ..., 0]).
+    InitializeY(distances, y,
+                SmoothMax(std::vector<double>(max_num_distances_, 0.0)));
+
+    std::vector<T> penalties{};
+    const int num_distances = static_cast<int>(distances.size());
+    penalties.reserve(max_num_distances_);
+    for (int i = 0; i < num_distances; ++i) {
+      const T& distance = distances(i);
+      if (distance < influence_distance_) {
+        penalties.emplace_back();
+        Penalty(distance, minimum_distance_, influence_distance_,
+                penalty_function_, &penalties.back());
+        penalties.back() *= penalty_output_scaling_;
+      }
+    }
+    if (!penalties.empty()) {
+      // Pad penalties up to num_collision_candidates_ so that the constraint
+      // function is actually smooth.
+      penalties.resize(max_num_distances_, T{0.0});
+      (*y)(0) = SmoothMax(penalties);
+    }
+  }
+
+  void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+              Eigen::VectorXd* y) const override {
+    DoEvalGenericFromDistance<double>(
+        distance_function_double_
+            ? distance_function_double_(x)
+            : math::autoDiffToValueMatrix(
+                  distance_function_autodiff_(math::initializeAutoDiff(x))),
+        y);
+  }
+
+  void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+              AutoDiffVecXd* y) const override {
+    DoEvalGenericFromDistance<AutoDiffXd>(distance_function_autodiff_(x), y);
+  }
+
+  void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>&,
+              VectorX<symbolic::Expression>*) const override {
+    throw std::logic_error(
+        "MinimumDistanceConstraint::DoEval() does not work for symbolic "
+        "variables.");
+  }
+
+  std::function<AutoDiffVecXd(const AutoDiffVecXd&)> distance_function_autodiff_;
+  std::function<VectorX<double>(const VectorX<double>&)> distance_function_double_;
+  const double minimum_distance_;
+  const double influence_distance_;
+  /** Stores the value of
+      1 / γ((dₘᵢₙ - d_influence)/(d_influence - dₘᵢₙ)) = 1 / γ(-1). This is used to
+      scale the output of the penalty function to be 1 when d == dₘᵢₙ. */
+  double penalty_output_scaling_;
+  int max_num_distances_{};
+  MinimumDistancePenaltyFunction penalty_function_{};
+};
+
 }  // namespace
 
 void ExponentiallySmoothedHingeLoss(double x, double* penalty,
@@ -147,17 +276,6 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
 }
 
 namespace {
-void InitializeY(const Eigen::Ref<const Eigen::VectorXd>&, Eigen::VectorXd* y,
-                 double y_value) {
-  (*y)(0) = y_value;
-}
-
-void InitializeY(const Eigen::Ref<const AutoDiffVecXd>& x, AutoDiffVecXd* y,
-                 double y_value) {
-  (*y) = math::initializeAutoDiffGivenGradientMatrix(
-      Vector1d(y_value), Eigen::RowVectorXd::Zero(x(0).derivatives().size()));
-}
-
 void Distance(const MultibodyPlant<double>&,
               const systems::Context<double>&, const Frame<double>&,
               const Frame<double>&, const Eigen::Vector3d&, double distance,
@@ -190,34 +308,6 @@ void Distance(const MultibodyPlant<double>& plant,
   distance_autodiff->value() = distance;
   distance_autodiff->derivatives() =
       ddistance_dq * math::autoDiffToGradientMatrix(q);
-}
-
-void Penalty(double distance, double minimum_distance,
-             double influence_distance,
-             MinimumDistancePenaltyFunction penalty_function, double* y) {
-  double penalty;
-  const double x =
-      ScaleDistance(distance, minimum_distance, influence_distance);
-  penalty_function(x, &penalty, nullptr);
-  *y = penalty;
-}
-
-void Penalty(AutoDiffXd distance, double minimum_distance,
-             double influence_distance,
-             MinimumDistancePenaltyFunction penalty_function, AutoDiffXd* y) {
-  const AutoDiffXd scaled_distance_autodiff =
-      ScaleDistance(distance, minimum_distance, influence_distance);
-  double penalty, dpenalty_dscaled_distance;
-  penalty_function(scaled_distance_autodiff.value(), &penalty,
-                   &dpenalty_dscaled_distance);
-
-  const Vector1<AutoDiffXd> penalty_autodiff =
-      math::initializeAutoDiffGivenGradientMatrix(
-          Vector1d(penalty),
-          dpenalty_dscaled_distance *
-              math::autoDiffToGradientMatrix(
-                  Vector1<AutoDiffXd>{scaled_distance_autodiff}));
-  *y = penalty_autodiff(0);
 }
 }  // namespace
 
@@ -269,7 +359,6 @@ template <typename T>
 void MinimumDistanceConstraint::DoEvalGeneric(
     const Eigen::Ref<const VectorX<T>>& x, VectorX<T>* y) const {
   y->resize(1);
-
 
   // Initialize y to SmoothMax([0, 0, ..., 0]).
   InitializeY(x, y,
