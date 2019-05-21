@@ -123,18 +123,13 @@ class MinimumDistanceConstraint : public solvers::Constraint {
                      VectorX<T>* y) const;
 
   template <typename T>
-  std::vector<T> Distances(const Eigen::Ref<const VectorX<T>>& x) const;
+  VectorX<T> Distances(const Eigen::Ref<const VectorX<T>>& x) const;
 
   const multibody::MultibodyPlant<double>& plant_;
   const double minimum_distance_;
   const double influence_distance_;
-  /** Stores the value of
-  1 / γ((dₘᵢₙ - d_influence)/(d_influence - dₘᵢₙ)) = 1 / γ(-1). This is used to
-  scale the output of the penalty function to be 1 when d == dₘᵢₙ. */
-  const double penalty_output_scaling_;
-  int num_collision_candidates_{};
   systems::Context<double>* const plant_context_;
-  MinimumDistancePenaltyFunction penalty_function_;
+  std::shared_ptr<solvers::Constraint> generic_minimum_distance_constraint_;
 };
 }  // namespace multibody
 }  // namespace drake

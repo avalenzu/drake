@@ -106,25 +106,41 @@ class GenericMinimumDistanceConstraint : public solvers::Constraint {
     set_penalty_function(QuadraticallySmoothedHingeLoss);
   }
 
-  void set_penalty_function(MinimumDistancePenaltyFunction new_penalty_function) {
+  void set_penalty_function(
+      MinimumDistancePenaltyFunction new_penalty_function) {
     penalty_function_ = new_penalty_function;
+    double unscaled_penalty_at_minimum_distance{};
     penalty_function_(ScaleDistance(minimum_distance_, minimum_distance_,
-                                    influence_distance_), &penalty_output_scaling_, nullptr);
+                                    influence_distance_),
+                      &unscaled_penalty_at_minimum_distance, nullptr);
+    penalty_output_scaling_ = 1 / unscaled_penalty_at_minimum_distance;
   }
 
- protected:
  private:
+  VectorX<double> Distances(const Eigen::Ref<const VectorX<double>>& x) const {
+    return distance_function_double_
+        ? distance_function_double_(x)
+        : math::autoDiffToValueMatrix(
+              distance_function_autodiff_(math::initializeAutoDiff(x)));
+  }
+
+  AutoDiffVecXd Distances(const Eigen::Ref<const AutoDiffVecXd>& x) const {
+    return distance_function_autodiff_(x);
+  }
+
   template <typename T>
-  void DoEvalGenericFromDistance(const Eigen::Ref<const VectorX<T>>& distances,
+  void DoEvalGeneric(const Eigen::Ref<const VectorX<T>>& x,
                                  VectorX<T>* y) const {
     y->resize(1);
 
     // Initialize y to SmoothMax([0, 0, ..., 0]).
-    InitializeY(distances, y,
+    InitializeY(x, y,
                 SmoothMax(std::vector<double>(max_num_distances_, 0.0)));
 
+    VectorX<T> distances = Distances(x);
     std::vector<T> penalties{};
     const int num_distances = static_cast<int>(distances.size());
+    DRAKE_ASSERT(num_distances <= max_num_distances_);
     penalties.reserve(max_num_distances_);
     for (int i = 0; i < num_distances; ++i) {
       const T& distance = distances(i);
@@ -145,17 +161,12 @@ class GenericMinimumDistanceConstraint : public solvers::Constraint {
 
   void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
               Eigen::VectorXd* y) const override {
-    DoEvalGenericFromDistance<double>(
-        distance_function_double_
-            ? distance_function_double_(x)
-            : math::autoDiffToValueMatrix(
-                  distance_function_autodiff_(math::initializeAutoDiff(x))),
-        y);
+    DoEvalGeneric(x, y);
   }
 
   void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
               AutoDiffVecXd* y) const override {
-    DoEvalGenericFromDistance<AutoDiffXd>(distance_function_autodiff_(x), y);
+    DoEvalGeneric(x, y);
   }
 
   void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>&,
@@ -165,8 +176,10 @@ class GenericMinimumDistanceConstraint : public solvers::Constraint {
         "variables.");
   }
 
-  std::function<AutoDiffVecXd(const AutoDiffVecXd&)> distance_function_autodiff_;
-  std::function<VectorX<double>(const VectorX<double>&)> distance_function_double_;
+  std::function<AutoDiffVecXd(const AutoDiffVecXd&)>
+      distance_function_autodiff_;
+  std::function<VectorX<double>(const VectorX<double>&)>
+      distance_function_double_;
   const double minimum_distance_;
   const double influence_distance_;
   /** Stores the value of
@@ -227,20 +240,7 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
       plant_{RefFromPtrOrThrow(plant)},
       minimum_distance_{minimum_distance},
       influence_distance_{minimum_distance + influence_distance_offset},
-      // Since penalty_function uses output parameters rather than a return
-      // value, we construct a lambda and then call it immediately to compute
-      // the output scaling factor.
-      penalty_output_scaling_{
-          1.0 /
-          [&penalty_function](double x) {
-            double upper_bound{};
-            double dummy{};
-            penalty_function(x, &upper_bound, &dummy);
-            return upper_bound;
-          }(ScaleDistance(minimum_distance, minimum_distance,
-                          minimum_distance + influence_distance_offset))},
-      plant_context_{plant_context},
-      penalty_function_{penalty_function} {
+      plant_context_{plant_context} {
   if (!plant_.geometry_source_is_registered()) {
     throw std::invalid_argument(
         "MinimumDistanceConstraint: MultibodyPlant has not registered its "
@@ -268,11 +268,22 @@ MinimumDistanceConstraint::MinimumDistanceConstraint(
   }
   // Maximum number of SignedDistancePairs returned by calls to
   // ComputeSignedDistancePairwiseClosestPoints().
-  num_collision_candidates_ =
+  const int num_collision_candidates =
       query_port.Eval<geometry::QueryObject<double>>(*plant_context_)
           .inspector()
           .GetCollisionCandidates()
           .size();
+  generic_minimum_distance_constraint_ =
+      std::make_shared<GenericMinimumDistanceConstraint>(
+          this->num_vars(), minimum_distance, influence_distance_offset,
+          num_collision_candidates,
+          std::bind(&MinimumDistanceConstraint::Distances<AutoDiffXd>, this,
+                    std::placeholders::_1),
+          std::bind(&MinimumDistanceConstraint::Distances<double>, this,
+                    std::placeholders::_1));
+  static_cast<GenericMinimumDistanceConstraint*>(
+      generic_minimum_distance_constraint_.get())
+      ->set_penalty_function(penalty_function);
 }
 
 namespace {
@@ -312,7 +323,7 @@ void Distance(const MultibodyPlant<double>& plant,
 }  // namespace
 
 template <typename T>
-std::vector<T> MinimumDistanceConstraint::Distances(
+VectorX<T> MinimumDistanceConstraint::Distances(
     const Eigen::Ref<const VectorX<T>>& q) const {
   internal::UpdateContextConfiguration(plant_context_, plant_, q);
   const auto& query_port = plant_.get_geometry_query_input_port();
@@ -331,7 +342,8 @@ std::vector<T> MinimumDistanceConstraint::Distances(
       signed_distance_pairs =
       query_object.ComputeSignedDistancePairwiseClosestPoints(
           influence_distance_);
-  std::vector<T> distances;
+  VectorX<T> distances(signed_distance_pairs.size());
+  int distance_count{0};
   for (const auto& signed_distance_pair : signed_distance_pairs) {
     if (signed_distance_pair.distance < influence_distance_) {
       const geometry::SceneGraphInspector<double>& inspector =
@@ -344,43 +356,21 @@ std::vector<T> MinimumDistanceConstraint::Distances(
           plant_.GetBodyFromFrameId(frame_A_id)->body_frame();
       const Frame<double>& frameB =
           plant_.GetBodyFromFrameId(frame_B_id)->body_frame();
-      distances.emplace_back();
       Distance(plant_, *plant_context_, frameA, frameB,
                inspector.X_FG(signed_distance_pair.id_A) *
                signed_distance_pair.p_ACa,
                signed_distance_pair.distance, signed_distance_pair.nhat_BA_W, q,
-               &distances.back());
+               &distances(distance_count++));
     }
   }
+  distances.resize(distance_count);
   return distances;
 }
 
 template <typename T>
 void MinimumDistanceConstraint::DoEvalGeneric(
     const Eigen::Ref<const VectorX<T>>& x, VectorX<T>* y) const {
-  y->resize(1);
-
-  // Initialize y to SmoothMax([0, 0, ..., 0]).
-  InitializeY(x, y,
-              SmoothMax(std::vector<double>(num_collision_candidates_, 0.0)));
-
-  std::vector<T> distances = Distances(x);
-
-  std::vector<T> penalties;
-  for (const auto& distance : distances) {
-    if (distance < influence_distance_) {
-      penalties.emplace_back();
-      Penalty(distance, minimum_distance_, influence_distance_,
-              penalty_function_, &penalties.back());
-      penalties.back() *= penalty_output_scaling_;
-    }
-  }
-  if (!penalties.empty()) {
-    // Pad penalties up to num_collision_candidates_ so that the constraint
-    // function is actually smooth.
-    penalties.resize(num_collision_candidates_, T{0.0});
-    (*y)(0) = SmoothMax(penalties);
-  }
+  generic_minimum_distance_constraint_->Eval(x, y);
 }
 
 void MinimumDistanceConstraint::DoEval(
