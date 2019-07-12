@@ -96,7 +96,7 @@ class AcrobotSpongController : public systems::LeafSystem<T> {
 
     const T cost = (x - x0).dot(S_ * (x - x0));
     T u;
-    if (cost < 1e3) {
+    if (cost < get_parameters(context).balancing_threshold()) {
       /*
        * Balancing control law
        * When the robot is close enough to the upright fixed point, i.e.

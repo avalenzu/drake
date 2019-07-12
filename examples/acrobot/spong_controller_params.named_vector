@@ -25,3 +25,10 @@ element {
     default_value: "5.0"
     min_value: "0.0"
 }
+element {
+    name: "balancing_threshold"
+    doc: "Cost value at which to switch from swing up to balancing."
+    doc_units: ""
+    default_value: "1e3"
+    min_value: "0.0"
+}

@@ -42,6 +42,8 @@ PYBIND11_MODULE(acrobot, m) {
           doc.AcrobotPlant.DoCalcKineticEnergy.doc)
       .def("DynamicsBiasTerm", &AcrobotPlant<T>::DynamicsBiasTerm,
           doc.AcrobotPlant.DynamicsBiasTerm.doc)
+      .def("SetMITAcrobotParameters", &AcrobotPlant<T>::SetMITAcrobotParameters,
+           doc.AcrobotPlant.SetMITAcrobotParameters.doc)
       .def("MassMatrix", &AcrobotPlant<T>::MassMatrix,
           doc.AcrobotPlant.MassMatrix.doc);
 
@@ -104,12 +106,24 @@ PYBIND11_MODULE(acrobot, m) {
   py::class_<SpongControllerParams<T>, BasicVector<T>>(
       m, "SpongControllerParams", doc.AcrobotParams.doc)
       .def(py::init<>(), doc.SpongControllerParams.ctor.doc)
-      .def("k_e", &SpongControllerParams<T>::k_e, doc.SpongControllerParams.k_e.doc)
-      .def("k_p", &SpongControllerParams<T>::k_p, doc.SpongControllerParams.k_p.doc)
-      .def("k_d", &SpongControllerParams<T>::k_d, doc.SpongControllerParams.k_d.doc)
-      .def("set_k_e", &SpongControllerParams<T>::set_k_e, doc.SpongControllerParams.set_k_e.doc)
-      .def("set_k_p", &SpongControllerParams<T>::set_k_p, doc.SpongControllerParams.set_k_p.doc)
-      .def("set_k_d", &SpongControllerParams<T>::set_k_d, doc.SpongControllerParams.set_k_d.doc);
+      .def("k_e", &SpongControllerParams<T>::k_e,
+          doc.SpongControllerParams.k_e.doc)
+      .def("k_p", &SpongControllerParams<T>::k_p,
+          doc.SpongControllerParams.k_p.doc)
+      .def("k_d", &SpongControllerParams<T>::k_d,
+          doc.SpongControllerParams.k_d.doc)
+      .def("balancing_threshold",
+          &SpongControllerParams<T>::balancing_threshold,
+          doc.SpongControllerParams.balancing_threshold.doc)
+      .def("set_k_e", &SpongControllerParams<T>::set_k_e,
+          doc.SpongControllerParams.set_k_e.doc)
+      .def("set_k_p", &SpongControllerParams<T>::set_k_p,
+          doc.SpongControllerParams.set_k_p.doc)
+      .def("set_k_d", &SpongControllerParams<T>::set_k_d,
+          doc.SpongControllerParams.set_k_d.doc)
+      .def("set_balancing_threshold",
+          &SpongControllerParams<T>::set_balancing_threshold,
+          doc.SpongControllerParams.set_balancing_threshold.doc);
 }
 
 }  // namespace pydrake
