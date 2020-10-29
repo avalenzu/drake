@@ -1,0 +1,6 @@
+view.camera().SetPosition(0., -1., 0.4)
+view.camera().SetFocalPoint(0, 0., 0.4)
+view.camera().SetParallelScale(0.75)
+view.camera().ParallelProjectionOn()
+view.backgroundRenderer().SetBackground((1., 1., 1.))
+view.backgroundRenderer().SetBackground2((1., 1., 1.))
