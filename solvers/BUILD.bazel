@@ -464,6 +464,19 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "bspline_curve_optimization_utilities",
+    srcs = ["bspline_curve_optimization_utilities.cc"],
+    hdrs = ["bspline_curve_optimization_utilities.h"],
+    deps = [
+        ":mathematical_program",
+        ":mathematical_program_result",
+        ":solve",
+        "//common:essential",
+        "//common/trajectories:bspline_trajectory",
+    ],
+)
+
+drake_cc_library(
     name = "rotation_constraint_visualization",
     testonly = 1,
     srcs = [
@@ -1629,6 +1642,18 @@ drake_cc_binary(
     srcs = ["test/plot_rotation_mccormick_envelope.cc"],
     deps = [
         ":rotation_constraint_visualization",
+    ],
+)
+
+drake_cc_googletest(
+    name = "bspline_micp_test",
+    testonly = 1,
+    srcs = ["test/bspline_micp_test.cc"],
+    deps = [
+        ":bspline_curve_optimization_utilities",
+        ":solve",
+        "//common/proto:call_python",
+        "@gflags"
     ],
 )
 
