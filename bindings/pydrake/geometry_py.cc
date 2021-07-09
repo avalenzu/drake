@@ -19,6 +19,7 @@
 #include "drake/geometry/geometry_instance.h"
 #include "drake/geometry/geometry_properties.h"
 #include "drake/geometry/geometry_roles.h"
+#include "drake/geometry/optimization/graph_of_convex_sets.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/geometry/optimization/iris.h"
@@ -1440,6 +1441,29 @@ void def_geometry_optimization(py::module m) {
 
   m.def("MakeIrisObstacles", &MakeIrisObstacles, py::arg("query_object"),
       py::arg("reference_frame") = std::nullopt, doc.MakeIrisObstacles.doc);
+
+/*
+  {
+    const auto& cls_doc = doc.ShortestPathProblem;
+    py::class_<ShortestPathProblem>(m, "ShortestPathProblem", cls_doc.doc)
+        .def(py::init<>(), cls_doc.ctor.doc)
+        .def("vertices", &ShortestPathProblem::vertices, cls_doc.vertices.doc)
+        .def("edges", &ShortestPathProblem::edges, cls_doc.edges.doc)
+        .def(
+            "AddVertex", &ShortestPathProblem::AddVertex, cls_doc.AddVertex.doc)
+        .def("set_source", &ShortestPathProblem::set_source, py::arg("s"),
+            cls_doc.set_source.doc_1arg_s)
+        .def("set_source", &ShortestPathProblem::set_source, py::arg("s_index"),
+            cls_doc.set_source.doc_1arg_s_index)
+        .def("set_target", &ShortestPathProblem::set_source, py::arg("s"),
+            cls_doc.set_target.doc_1arg_t)
+        .def("set_target", &ShortestPathProblem::set_source, py::arg("t_index"),
+            cls_doc.set_target.doc_1arg_t_index)
+        .def("AddEdge", &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc)
+        .def("AddEdge", &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc)
+        .def("Solve", &ShortestPathProblem::Solve, cls_doc.Solve.doc)
+  }
+  */
 }
 
 void def_geometry_testing(py::module m) {
