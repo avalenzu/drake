@@ -41,6 +41,10 @@ class BsplineTrajectoryThroughUnionOfHPolyhedra {
     extra_control_points_per_region_ = extra_control_points_per_region;
   }
 
+  void set_max_velocity(const VectorX<double>& max_velocity) {
+    max_velocity_ = max_velocity;
+  }
+
   int ambient_dimension() const { return regions_.back().ambient_dimension(); }
 
   int num_regions() const { return regions_.size(); }
@@ -53,6 +57,8 @@ class BsplineTrajectoryThroughUnionOfHPolyhedra {
 
   const VectorX<double>& target() const { return target_; }
 
+  const VectorX<double>& max_velocity() const { return max_velocity_; }
+
  private:
   int source_index_{};
   int target_index_{};
@@ -61,6 +67,7 @@ class BsplineTrajectoryThroughUnionOfHPolyhedra {
   int order_{6};
   int max_repetitions_{1};
   int extra_control_points_per_region_{0};
+  VectorX<double> max_velocity_{};
   std::vector<HPolyhedron> regions_;
 };
 }  // namespace optimization

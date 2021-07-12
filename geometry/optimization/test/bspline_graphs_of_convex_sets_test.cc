@@ -44,6 +44,10 @@ GTEST_TEST(BsplineTrajectoryThroughUnionOfHPolyhedraTests, Constructor) {
   EXPECT_EQ(problem.num_regions(), 4);
   EXPECT_EQ(problem.max_repetitions(), 1);
   EXPECT_EQ(problem.order(), 6);
+  EXPECT_EQ(problem.source(), Vector2d(0.0, 0.0));
+  EXPECT_EQ(problem.target(), Vector2d(3.0, 3.0));
+  EXPECT_EQ(problem.max_velocity().size(), problem.ambient_dimension());
+  EXPECT_TRUE(problem.max_velocity().array().isInf().all());
 }
 
 GTEST_TEST(BsplineTrajectoryThroughUnionOfHPolyhedraTests, SetMaxRepetitions) {

@@ -42,6 +42,8 @@ BsplineTrajectoryThroughUnionOfHPolyhedra::
       regions_(regions) {
   DRAKE_THROW_UNLESS(source.size() == ambient_dimension());
   DRAKE_THROW_UNLESS(target.size() == ambient_dimension());
+  max_velocity_ = VectorXd::Constant(ambient_dimension(),
+                                     std::numeric_limits<double>::infinity());
   for (const auto& region : regions_) {
     DRAKE_THROW_UNLESS(region.ambient_dimension() == ambient_dimension());
   }
