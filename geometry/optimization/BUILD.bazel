@@ -14,6 +14,7 @@ drake_cc_package_library(
     name = "optimization",
     visibility = ["//visibility:public"],
     deps = [
+        ":bspline_graphs_of_convex_sets",
         ":convex_set",
         ":graph_of_convex_sets",
         ":iris",
@@ -73,6 +74,18 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "bspline_graphs_of_convex_sets",
+    srcs = ["bspline_graphs_of_convex_sets.cc"],
+    hdrs = ["bspline_graphs_of_convex_sets.h"],
+    deps = [
+        ":convex_set",
+        ":graph_of_convex_sets",
+        "//common/trajectories:bspline_trajectory",
+        "//common:symbolic",
+    ],
+)
+
 drake_cc_googletest(
     name = "convex_set_test",
     deps = [
@@ -85,6 +98,14 @@ drake_cc_googletest(
     name = "graph_of_convex_sets_test",
     deps = [
         ":graph_of_convex_sets",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
+drake_cc_googletest(
+    name = "bspline_graphs_of_convex_sets_test",
+    deps = [
+        ":bspline_graphs_of_convex_sets",
         "//common/test_utilities:eigen_matrix_compare",
     ],
 )
