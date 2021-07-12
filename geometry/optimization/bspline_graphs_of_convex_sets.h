@@ -19,9 +19,10 @@ class BsplineTrajectoryThroughUnionOfHPolyhedra {
       BsplineTrajectoryThroughUnionOfHPolyhedra);
 
   /** Constructs the problem. */
-  BsplineTrajectoryThroughUnionOfHPolyhedra(VectorX<double> source,
-                                            VectorX<double> target,
-                                            std::vector<HPolyhedron> regions);
+  BsplineTrajectoryThroughUnionOfHPolyhedra(
+    const Eigen::Ref<const Eigen::VectorXd>& source,
+    const Eigen::Ref<const Eigen::VectorXd>& target,
+    const std::vector<HPolyhedron>& regions);
 
   std::optional<trajectories::BsplineTrajectory<double>> Solve(
       bool use_rounding = false) const;
@@ -41,7 +42,7 @@ class BsplineTrajectoryThroughUnionOfHPolyhedra {
     extra_control_points_per_region_ = extra_control_points_per_region;
   }
 
-  void set_max_velocity(const VectorX<double>& max_velocity) {
+  void set_max_velocity(const Eigen::Ref<const Eigen::VectorXd>& max_velocity) {
     max_velocity_ = max_velocity;
   }
 

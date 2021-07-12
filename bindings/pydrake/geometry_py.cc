@@ -19,6 +19,7 @@
 #include "drake/geometry/geometry_instance.h"
 #include "drake/geometry/geometry_properties.h"
 #include "drake/geometry/geometry_roles.h"
+#include "drake/geometry/optimization/bspline_graphs_of_convex_sets.h"
 #include "drake/geometry/optimization/graph_of_convex_sets.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
@@ -1442,28 +1443,64 @@ void def_geometry_optimization(py::module m) {
   m.def("MakeIrisObstacles", &MakeIrisObstacles, py::arg("query_object"),
       py::arg("reference_frame") = std::nullopt, doc.MakeIrisObstacles.doc);
 
-/*
+  /*
+    {
+      const auto& cls_doc = doc.ShortestPathProblem;
+      py::class_<ShortestPathProblem>(m, "ShortestPathProblem", cls_doc.doc)
+          .def(py::init<>(), cls_doc.ctor.doc)
+          .def("vertices", &ShortestPathProblem::vertices, cls_doc.vertices.doc)
+          .def("edges", &ShortestPathProblem::edges, cls_doc.edges.doc)
+          .def(
+              "AddVertex", &ShortestPathProblem::AddVertex,
+    cls_doc.AddVertex.doc) .def("set_source", &ShortestPathProblem::set_source,
+    py::arg("s"), cls_doc.set_source.doc_1arg_s) .def("set_source",
+    &ShortestPathProblem::set_source, py::arg("s_index"),
+              cls_doc.set_source.doc_1arg_s_index)
+          .def("set_target", &ShortestPathProblem::set_source, py::arg("s"),
+              cls_doc.set_target.doc_1arg_t)
+          .def("set_target", &ShortestPathProblem::set_source,
+    py::arg("t_index"), cls_doc.set_target.doc_1arg_t_index) .def("AddEdge",
+    &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc) .def("AddEdge",
+    &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc) .def("Solve",
+    &ShortestPathProblem::Solve, cls_doc.Solve.doc)
+    }
+    */
+
   {
-    const auto& cls_doc = doc.ShortestPathProblem;
-    py::class_<ShortestPathProblem>(m, "ShortestPathProblem", cls_doc.doc)
-        .def(py::init<>(), cls_doc.ctor.doc)
-        .def("vertices", &ShortestPathProblem::vertices, cls_doc.vertices.doc)
-        .def("edges", &ShortestPathProblem::edges, cls_doc.edges.doc)
-        .def(
-            "AddVertex", &ShortestPathProblem::AddVertex, cls_doc.AddVertex.doc)
-        .def("set_source", &ShortestPathProblem::set_source, py::arg("s"),
-            cls_doc.set_source.doc_1arg_s)
-        .def("set_source", &ShortestPathProblem::set_source, py::arg("s_index"),
-            cls_doc.set_source.doc_1arg_s_index)
-        .def("set_target", &ShortestPathProblem::set_source, py::arg("s"),
-            cls_doc.set_target.doc_1arg_t)
-        .def("set_target", &ShortestPathProblem::set_source, py::arg("t_index"),
-            cls_doc.set_target.doc_1arg_t_index)
-        .def("AddEdge", &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc)
-        .def("AddEdge", &ShortestPathProblem::AddEdge, cls_doc.AddEdge.doc)
-        .def("Solve", &ShortestPathProblem::Solve, cls_doc.Solve.doc)
+    const auto& cls_doc = doc.BsplineTrajectoryThroughUnionOfHPolyhedra;
+    using Class = BsplineTrajectoryThroughUnionOfHPolyhedra;
+    py::class_<Class>(
+        m, "BsplineTrajectoryThroughUnionOfHPolyhedra", cls_doc.doc)
+        .def(py::init<const Eigen::Ref<const Eigen::VectorXd>&,
+                 const Eigen::Ref<const Eigen::VectorXd>&,
+                 const std::vector<HPolyhedron>&>(),
+            py::arg("source"), py::arg("target"), py::arg("regions"),
+            cls_doc.ctor.doc)
+        .def("Solve", &Class::Solve, py::arg("use_rounding") = false,
+            cls_doc.Solve.doc)
+        .def("order", &Class::order, cls_doc.order.doc)
+        .def("max_repetitions", &Class::max_repetitions,
+            cls_doc.max_repetitions.doc)
+        .def("set_order", &Class::set_order, py::arg("order"),
+            cls_doc.set_order.doc)
+        .def("set_max_repetitions", &Class::set_max_repetitions,
+            py::arg("max_repetitions"), cls_doc.set_max_repetitions.doc)
+        .def("set_extra_control_points_per_region",
+            &Class::set_extra_control_points_per_region,
+            py::arg("extra_control_points_per_region"),
+            cls_doc.set_extra_control_points_per_region.doc)
+        .def("set_max_velocity", &Class::set_max_velocity,
+            py::arg("max_velocity"), cls_doc.set_max_velocity.doc)
+        .def("ambient_dimension", &Class::ambient_dimension,
+            cls_doc.ambient_dimension.doc)
+        .def("num_regions", &Class::num_regions, cls_doc.num_regions.doc)
+        .def("extra_control_points_per_region",
+            &Class::extra_control_points_per_region,
+            cls_doc.extra_control_points_per_region.doc)
+        .def("source", &Class::source, cls_doc.source.doc)
+        .def("target", &Class::target, cls_doc.target.doc)
+        .def("max_velocity", &Class::max_velocity, cls_doc.max_velocity.doc);
   }
-  */
 }
 
 void def_geometry_testing(py::module m) {

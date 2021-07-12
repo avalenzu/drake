@@ -32,9 +32,10 @@ using symbolic::Variables;
 using trajectories::BsplineTrajectory;
 
 BsplineTrajectoryThroughUnionOfHPolyhedra::
-    BsplineTrajectoryThroughUnionOfHPolyhedra(VectorX<double> source,
-                                              VectorX<double> target,
-                                              std::vector<HPolyhedron> regions)
+    BsplineTrajectoryThroughUnionOfHPolyhedra(
+      const Eigen::Ref<const Eigen::VectorXd>& source,
+      const Eigen::Ref<const Eigen::VectorXd>& target,
+      const std::vector<HPolyhedron>& regions)
     : source_index_(regions.size()),
       target_index_(regions.size() + 1),
       source_(source),
