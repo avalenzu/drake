@@ -71,11 +71,14 @@ GTEST_TEST(BsplineTrajectoryThroughUnionOfHPolyhedraTests, SetOrder) {
 
 GTEST_TEST(BsplineTrajectoryThroughUnionOfHPolyhedraTests, Solve) {
   BsplineTrajectoryThroughUnionOfHPolyhedra problem = MakeSimpleProblem();
+  problem.set_max_velocity(Eigen::Vector2d(1, 1));
   std::optional<BsplineTrajectory<double>> solution_trajectory =
       problem.Solve();
   EXPECT_TRUE(solution_trajectory.has_value());
   EXPECT_EQ(solution_trajectory->InitialValue(), problem.source());
   EXPECT_EQ(solution_trajectory->FinalValue(), problem.target());
+  drake::log()->info("start_time: {}", solution_trajectory->start_time());
+  drake::log()->info("end_time: {}", solution_trajectory->end_time());
 }
 
 }  // namespace optimization
